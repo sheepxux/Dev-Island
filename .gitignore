@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Private role/design docs — owner-local, not shared
+CLAUDE_CLIENT.md
+CLAUDE_SERVER.md
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Editors
+.vscode/
+.idea/
+
+# Claude Code local settings (per-machine)
+.claude/

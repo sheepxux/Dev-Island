@@ -16,25 +16,16 @@ struct NotchPanelView: View {
     var body: some View {
         ZStack(alignment: .top) {
             NotchPanelShape(
-                notchWidth: layout.notchWidth * (layout.hasNotch ? 1 : 0),
-                notchHeight: layout.notchHeight
+                notchWidth: layout.hasNotch ? layout.notchWidth : 0,
+                notchHeight: layout.hasNotch ? layout.notchHeight : 0
             )
             .fill(Palette.notchBlack)
 
             VStack(spacing: 0) {
-                // Reserve vertical room for the hardware notch on notched
-                // displays so the header doesn't fight with it.
-                Color.clear.frame(height: notchReserve)
-
-                header
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 10)
-
+                topRow
                 taskList
-
+                    .padding(.top, layout.hasNotch ? 8 : 0)
                 footerDivider
-
                 connectFooter
             }
         }
@@ -42,10 +33,42 @@ struct NotchPanelView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    // MARK: - Subviews
+    // MARK: - Top row (header)
+
+    /// On notched displays, header content is split into the side extensions
+    /// flanking the hardware notch so the otherwise-empty space is used.
+    /// On synthetic-notch displays, the header sits at the top of the
+    /// panel below a small padding.
+    @ViewBuilder
+    private var topRow: some View {
+        if layout.hasNotch {
+            HStack(spacing: 0) {
+                titleLabel
+                    .padding(.leading, 14)
+                    .frame(width: sideExtensionWidth, alignment: .leading)
+
+                // Hardware notch corridor — transparent
+                Spacer().frame(width: layout.notchWidth)
+
+                trailingCluster
+                    .padding(.trailing, 10)
+                    .frame(width: sideExtensionWidth, alignment: .trailing)
+            }
+            .frame(height: layout.notchHeight)
+        } else {
+            HStack(spacing: 6) {
+                titleLabel
+                Spacer()
+                trailingCluster
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+        }
+    }
 
     @ViewBuilder
-    private var header: some View {
+    private var titleLabel: some View {
         HStack(spacing: 6) {
             Text("Tasks")
                 .font(Typo.sectionHeader)
@@ -54,11 +77,13 @@ struct NotchPanelView: View {
                 .font(Typo.sectionHeader)
                 .foregroundStyle(.white.opacity(0.45))
                 .monospacedDigit()
+        }
+    }
 
-            Spacer()
-
+    @ViewBuilder
+    private var trailingCluster: some View {
+        HStack(spacing: 8) {
             connectionDot
-
             Button(action: onSettingsTap) {
                 Image(systemName: "gearshape")
                     .font(.system(size: 13, weight: .medium))
@@ -68,6 +93,10 @@ struct NotchPanelView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private var sideExtensionWidth: CGFloat {
+        (panelWidth - layout.notchWidth) / 2
     }
 
     @ViewBuilder
@@ -164,9 +193,6 @@ struct NotchPanelView: View {
         return NotchMetrics.panelWidth
     }
 
-    private var notchReserve: CGFloat {
-        layout.hasNotch ? layout.notchHeight + 4 : 0
-    }
 }
 
 #if PREVIEWS

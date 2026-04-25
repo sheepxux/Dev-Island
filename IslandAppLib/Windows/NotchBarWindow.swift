@@ -25,7 +25,10 @@ public final class NotchBarWindow: NSWindow {
 
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = false
+        // System-rendered shadow — follows the bar's alpha silhouette
+        // (because isOpaque=false). Apple's native ambient + key shadow
+        // model, no compositor seams.
+        hasShadow = true
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         ignoresMouseEvents = false
@@ -90,58 +93,21 @@ struct NotchBarRootView: View {
         // edge — matching the real MacBook hardware notch on notched
         // displays and giving the no-notch fake notch the same flush-top
         // silhouette. Hover grows the bar downward (and wider).
-        ZStack(alignment: .top) {
-            // Soft halo behind the bar — a blurred, scaled-up copy of the
-            // bar shape. Fades smoothly because the blur itself produces
-            // anti-aliased falloff, no SwiftUI shadow compositor seam.
-            shadowHalo
-                .frame(
-                    width: displayLayout.totalWidth,
-                    height: displayLayout.barHeight
-                )
-                .scaleEffect(x: 1.06, y: 1.20, anchor: .center)
-                .blur(radius: 18)
-                .opacity(isHovering ? 0.55 : 0)
-                .allowsHitTesting(false)
-
-            NotchBarView(
-                state: BarState.derive(from: store.tasks),
-                taskCount: activeCount,
-                layout: displayLayout,
-                showsContent: baseLayout.hasNotch || isHovering
-            )
-            .contentShape(barHitShape)
-            .onHover(perform: handleHover)
-        }
+        // Shadow comes from NSWindow.hasShadow (system-rendered against
+        // the bar's alpha silhouette). No SwiftUI .shadow needed.
+        NotchBarView(
+            state: BarState.derive(from: store.tasks),
+            taskCount: activeCount,
+            layout: displayLayout,
+            showsContent: baseLayout.hasNotch || isHovering
+        )
+        .contentShape(barHitShape)
+        .onHover(perform: handleHover)
         .frame(
             width: baseLayout.hovered().totalWidth + 2 * NotchMetrics.shadowPadding,
             height: baseLayout.hovered().barHeight + NotchMetrics.shadowPadding,
             alignment: .top
         )
-    }
-
-    /// Halo shape for the soft hover glow — same silhouette as the bar so
-    /// the blur falloff hugs the bar's curves.
-    @ViewBuilder
-    private var shadowHalo: some View {
-        if displayLayout.hasNotch {
-            NotchBarShape(
-                notchWidth: displayLayout.notchWidth,
-                notchHeight: displayLayout.notchHeight
-            )
-            .fill(Color.black)
-        } else {
-            UnevenRoundedRectangle(
-                cornerRadii: RectangleCornerRadii(
-                    topLeading: 0,
-                    bottomLeading: NotchMetrics.cornerRadius,
-                    bottomTrailing: NotchMetrics.cornerRadius,
-                    topTrailing: 0
-                ),
-                style: .continuous
-            )
-            .fill(Color.black)
-        }
     }
 
     // MARK: - Hover handling

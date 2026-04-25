@@ -27,15 +27,21 @@ public final class NotchBarWindow: NSWindow {
         backgroundColor = .clear
         // System-rendered shadow — follows the bar's alpha silhouette
         // (because isOpaque=false). Apple's native ambient + key shadow
-        // model, no compositor seams.
-        hasShadow = true
+        // model, no compositor seams. Toggled on/off on hover by
+        // NotchBarRootView via the onHoverChange closure below.
+        hasShadow = false
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         ignoresMouseEvents = false
         isMovable = false
         isReleasedWhenClosed = false
 
-        let host = NSHostingView(rootView: NotchBarRootView(baseLayout: initialLayout))
+        let host = NSHostingView(rootView: NotchBarRootView(
+            baseLayout: initialLayout,
+            onHoverChange: { [weak self] hovering in
+                self?.setShadow(hovering)
+            }
+        ))
         self.hostingView = host
         contentView = host
 
@@ -50,7 +56,12 @@ public final class NotchBarWindow: NSWindow {
         let newLayout = NotchMetrics.layout(for: screen)
         layout = newLayout
 
-        hostingView.rootView = NotchBarRootView(baseLayout: newLayout)
+        hostingView.rootView = NotchBarRootView(
+            baseLayout: newLayout,
+            onHoverChange: { [weak self] hovering in
+                self?.setShadow(hovering)
+            }
+        )
 
         let containerSize = NotchBarWindow.containerSize(for: newLayout)
         let frame = screen.frame
@@ -61,6 +72,14 @@ public final class NotchBarWindow: NSWindow {
             y: frame.maxY - containerSize.height - newLayout.topMargin
         )
         setFrame(NSRect(origin: origin, size: containerSize), display: true)
+    }
+
+    /// Toggle the system shadow and force it to recompute. Called from
+    /// SwiftUI hover state changes.
+    fileprivate func setShadow(_ enabled: Bool) {
+        guard hasShadow != enabled else { return }
+        hasShadow = enabled
+        invalidateShadow()
     }
 
     private static func containerSize(for layout: NotchMetrics.Layout) -> NSSize {
@@ -81,6 +100,9 @@ public final class NotchBarWindow: NSWindow {
 /// between idle ↔ hover layout.
 struct NotchBarRootView: View {
     let baseLayout: NotchMetrics.Layout
+    /// Notifies the host NSWindow when hover state flips, so it can toggle
+    /// `hasShadow` to make the system shadow appear/disappear in sync.
+    var onHoverChange: ((Bool) -> Void)? = nil
     @State private var isHovering = false
     @State private var store = TaskStore.shared
 
@@ -121,6 +143,7 @@ struct NotchBarRootView: View {
         } else {
             NSCursor.pop()
         }
+        onHoverChange?(hovering)
     }
 
     /// Restrict hover detection to the actual bar shape (so the cursor

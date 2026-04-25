@@ -14,8 +14,14 @@ public enum NotchMetrics {
     /// Status dot diameter.
     public static let dotSize: CGFloat = 12
     /// Outer-bottom corner radius for the notch bar extensions and the
-    /// no-notch capsule. Also the design language for the panel (Task 2).
+    /// no-notch capsule.
     public static let cornerRadius: CGFloat = 11
+    /// Outer-bottom corner radius for the expanded panel (Task 2).
+    public static let panelCornerRadius: CGFloat = 22
+    /// Default panel width (synthetic-notch displays).
+    public static let panelWidth: CGFloat = 380
+    /// Maximum panel width on notched displays — never exceed this.
+    public static let panelMaxWidth: CGFloat = 480
     /// How far the bar protrudes BELOW the hardware notch on notched
     /// displays. Gives a longer straight vertical edge before the corner
     /// curve starts (Dynamic Island feel).

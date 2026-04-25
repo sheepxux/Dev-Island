@@ -38,10 +38,6 @@ public enum NotchMetrics {
 
     // No-notch fallback (per CLAUDE_CLIENT.md §6 task 7)
     public static let fallbackWidth: CGFloat = 168
-    /// How much shorter the idle capsule is than the OS menu-bar height,
-    /// leaving breathing room top + bottom inside the status-bar zone.
-    /// Hover removes this inset so the capsule fills the status bar exactly.
-    public static let capsuleVerticalInset: CGFloat = 4
 
     // MARK: - Layout descriptor
 
@@ -110,7 +106,7 @@ public enum NotchMetrics {
             let thickness = NSStatusBar.system.thickness
             return Layout(
                 hasNotch: false,
-                barHeight: max(0, thickness - capsuleVerticalInset),
+                barHeight: thickness,
                 notchHeight: 0,
                 menuBarHeight: thickness,
                 notchWidth: defaultNotchWidth,
@@ -137,14 +133,14 @@ public enum NotchMetrics {
             // Use the screen's actual menu-bar height (frame.maxY -
             // visibleFrame.maxY) instead of NSStatusBar.system.thickness:
             // on macOS 26 the visible menu bar is taller than `thickness`,
-            // and we need the right value so the window fits the status
-            // bar zone exactly (otherwise the capsule centers in a too-
-            // small window and visually drifts upward).
+            // and we need the right value so the bar fits the status bar
+            // zone exactly. Both idle and hover use this full height; only
+            // width grows on hover.
             let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
             let measured = menuBar > 0 ? menuBar : NSStatusBar.system.thickness
             return Layout(
                 hasNotch: false,
-                barHeight: max(0, measured - capsuleVerticalInset),
+                barHeight: measured,
                 notchHeight: 0,
                 menuBarHeight: measured,
                 notchWidth: defaultNotchWidth,

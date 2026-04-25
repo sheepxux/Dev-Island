@@ -32,6 +32,8 @@ public enum NotchMetrics {
     public static let hoverWidthBoostNotched: CGFloat = 30   // 15pt each side
     public static let hoverHeightBoostNotched: CGFloat = 4
     public static let hoverWidthBoostCapsule: CGFloat = 50
+    /// Extra height the synthetic notch drops below the menu bar on hover.
+    public static let hoverHeightBoostCapsule: CGFloat = 8
     /// Conservative default notch width (14" ≈ 200, 16" ≈ 220) used when
     /// the OS doesn't expose the real one.
     public static let defaultNotchWidth: CGFloat = 200
@@ -83,10 +85,11 @@ public enum NotchMetrics {
                     widthBoost: NotchMetrics.hoverWidthBoostNotched
                 )
             } else {
-                // Fill the OS status bar exactly — no overflow.
+                // Drop slightly past the menu bar bottom on hover for a
+                // Dynamic-Island-style anticipation of the panel expansion.
                 return Layout(
                     hasNotch: false,
-                    barHeight: menuBarHeight,
+                    barHeight: menuBarHeight + NotchMetrics.hoverHeightBoostCapsule,
                     notchHeight: 0,
                     menuBarHeight: menuBarHeight,
                     notchWidth: notchWidth,

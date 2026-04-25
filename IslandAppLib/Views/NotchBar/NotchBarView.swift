@@ -13,11 +13,18 @@ struct NotchBarView: View {
     let state: BarState
     let taskCount: Int
     let layout: NotchMetrics.Layout
+    /// Whether to show the status dot + count inside the bar. On notched
+    /// displays this is always true (the bar is always visible *around*
+    /// the hardware notch). On synthetic-notch (no-notch) displays the
+    /// content is hidden at idle for a clean notch silhouette and faded
+    /// in on hover.
+    var showsContent: Bool = true
 
     var body: some View {
         ZStack {
             backdrop
             content
+                .opacity(showsContent ? 1 : 0)
         }
         .frame(width: layout.totalWidth, height: layout.barHeight)
     }

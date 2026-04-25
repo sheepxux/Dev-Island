@@ -61,13 +61,11 @@ public final class NotchBarWindow: NSWindow {
     }
 
     private static func containerSize(for layout: NotchMetrics.Layout) -> NSSize {
+        // Window is sized to the hover-expanded dimensions for both modes
+        // so the bar can grow without touching the NSWindow frame. Idle
+        // bar anchors to top; the empty space below is where it expands.
         let hover = layout.hovered()
-        // No-notch: window height = exact OS menu-bar height. Capsule
-        //   centers within that for true vertical alignment.
-        // Notched: window height = the (taller) hover bar height because
-        //   the notched bar grows downward past the menu-bar zone.
-        let height = layout.hasNotch ? hover.barHeight : layout.menuBarHeight
-        return NSSize(width: hover.totalWidth, height: height)
+        return NSSize(width: hover.totalWidth, height: hover.barHeight)
     }
 }
 
@@ -90,21 +88,18 @@ struct NotchBarRootView: View {
         NotchBarView(
             state: BarState.derive(from: store.tasks),
             taskCount: activeCount,
-            layout: displayLayout
+            layout: displayLayout,
+            // Notched bar always shows status. Synthetic notch shows it
+            // only on hover for a cleaner idle silhouette.
+            showsContent: baseLayout.hasNotch || isHovering
         )
         .contentShape(barHitShape)
         .onHover(perform: handleHover)
         .frame(
             width: baseLayout.hovered().totalWidth,
-            height: containerHeight,
+            height: baseLayout.hovered().barHeight,
             alignment: .top
         )
-    }
-
-    private var containerHeight: CGFloat {
-        baseLayout.hasNotch
-            ? baseLayout.hovered().barHeight
-            : baseLayout.menuBarHeight   // window EQUALS the menu-bar zone
     }
 
     // MARK: - Hover handling

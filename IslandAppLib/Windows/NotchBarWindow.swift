@@ -61,11 +61,16 @@ public final class NotchBarWindow: NSWindow {
     }
 
     private static func containerSize(for layout: NotchMetrics.Layout) -> NSSize {
-        // Window is sized to the hover-expanded dimensions for both modes
-        // so the bar can grow without touching the NSWindow frame. Idle
-        // bar anchors to top; the empty space below is where it expands.
+        // Window is sized to hover-expanded dimensions PLUS shadow padding
+        // around so the SwiftUI .shadow on hover renders without clipping.
+        // Idle bar anchors to top of the inner area; the empty space is
+        // where the bar expands and where the shadow falls.
         let hover = layout.hovered()
-        return NSSize(width: hover.totalWidth, height: hover.barHeight)
+        let pad = NotchMetrics.shadowPadding
+        return NSSize(
+            width: hover.totalWidth + 2 * pad,
+            height: hover.barHeight + pad      // pad only at bottom
+        )
     }
 }
 
@@ -95,9 +100,16 @@ struct NotchBarRootView: View {
         )
         .contentShape(barHitShape)
         .onHover(perform: handleHover)
+        // Shadow lifts the bar off the screen on hover.
+        .shadow(
+            color: .black.opacity(isHovering ? 0.45 : 0),
+            radius: isHovering ? 16 : 0,
+            x: 0,
+            y: isHovering ? 8 : 0
+        )
         .frame(
-            width: baseLayout.hovered().totalWidth,
-            height: baseLayout.hovered().barHeight,
+            width: baseLayout.hovered().totalWidth + 2 * NotchMetrics.shadowPadding,
+            height: baseLayout.hovered().barHeight + NotchMetrics.shadowPadding,
             alignment: .top
         )
     }

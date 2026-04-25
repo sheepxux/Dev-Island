@@ -34,6 +34,10 @@ public enum NotchMetrics {
     public static let hoverWidthBoostCapsule: CGFloat = 50
     /// Extra height the synthetic notch drops below the menu bar on hover.
     public static let hoverHeightBoostCapsule: CGFloat = 8
+
+    /// Padding around the bar inside the window so SwiftUI .shadow renders
+    /// fully (the NSWindow content view clips otherwise).
+    public static let shadowPadding: CGFloat = 28
     /// Conservative default notch width (14" ≈ 200, 16" ≈ 220) used when
     /// the OS doesn't expose the real one.
     public static let defaultNotchWidth: CGFloat = 200

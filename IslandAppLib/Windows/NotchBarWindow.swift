@@ -140,8 +140,10 @@ struct NotchBarRootView: View {
         }
         if hovering {
             NSCursor.pointingHand.push()
+            IslandCoordinator.shared.scheduleExpand()
         } else {
             NSCursor.pop()
+            IslandCoordinator.shared.cancelExpand()
         }
         onHoverChange?(hovering)
     }

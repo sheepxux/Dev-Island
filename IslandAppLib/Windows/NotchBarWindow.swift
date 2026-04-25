@@ -7,8 +7,8 @@ import IslandCore
 /// Placed at `.statusBar` level so it sits above the menu bar layer, with
 /// `[.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]` so it persists
 /// across Spaces and stays visible in full-screen apps.
-final class NotchBarWindow: NSWindow {
-    init() {
+public final class NotchBarWindow: NSWindow {
+    public init() {
         let size = NSSize(width: NotchMetrics.totalWidth, height: NotchMetrics.barHeight)
         super.init(
             contentRect: NSRect(origin: .zero, size: size),
@@ -32,7 +32,7 @@ final class NotchBarWindow: NSWindow {
     }
 
     /// Pin the window to the top-center of the main display.
-    func reposition() {
+    public func reposition() {
         guard let screen = NSScreen.main else { return }
         let frame = screen.frame
         let size = NSSize(width: NotchMetrics.totalWidth, height: NotchMetrics.barHeight)

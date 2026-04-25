@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import IslandAppLib
 import IslandCore
 
 @main

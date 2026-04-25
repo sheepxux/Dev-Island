@@ -14,13 +14,23 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "IslandApp", targets: ["IslandApp"]),
+        .library(name: "IslandAppLib", targets: ["IslandAppLib"]),
         .library(name: "IslandCore", targets: ["IslandCore"]),
     ],
     targets: [
+        // Tiny exec shim: @main + AppDelegate. All view code lives in
+        // IslandAppLib so SwiftUI Previews work under Xcode 26 (executable
+        // targets require ENABLE_DEBUG_DYLIB which SPM does not expose).
         .executableTarget(
             name: "IslandApp",
-            dependencies: ["IslandCore"],
+            dependencies: ["IslandAppLib", "IslandCore"],
             path: "IslandApp",
+            swiftSettings: appSettings
+        ),
+        .target(
+            name: "IslandAppLib",
+            dependencies: ["IslandCore"],
+            path: "IslandAppLib",
             swiftSettings: appSettings
         ),
         .target(

@@ -83,11 +83,10 @@ struct NotchBarRootView: View {
     }
 
     var body: some View {
-        // Outer container = hover-sized window.
-        // - Notched: anchor to TOP so the bar grows downward into the menu
-        //   bar zone (Dynamic Island feel).
-        // - Capsule: anchor to CENTER so the pill grows symmetrically and
-        //   fills the OS status bar exactly at hover.
+        // Both modes anchor to TOP so the bar hangs flush with the screen
+        // edge — matching the real MacBook hardware notch on notched
+        // displays and giving the no-notch fake notch the same flush-top
+        // silhouette. Hover grows the bar downward (and wider).
         NotchBarView(
             state: BarState.derive(from: store.tasks),
             taskCount: activeCount,
@@ -97,9 +96,15 @@ struct NotchBarRootView: View {
         .onHover(perform: handleHover)
         .frame(
             width: baseLayout.hovered().totalWidth,
-            height: baseLayout.hovered().barHeight,
-            alignment: baseLayout.hasNotch ? .top : .center
+            height: containerHeight,
+            alignment: .top
         )
+    }
+
+    private var containerHeight: CGFloat {
+        baseLayout.hasNotch
+            ? baseLayout.hovered().barHeight
+            : baseLayout.menuBarHeight   // window EQUALS the menu-bar zone
     }
 
     // MARK: - Hover handling
@@ -124,7 +129,15 @@ struct NotchBarRootView: View {
                 notchHeight: displayLayout.notchHeight
             ))
         } else {
-            return AnyShape(Capsule())
+            return AnyShape(UnevenRoundedRectangle(
+                cornerRadii: RectangleCornerRadii(
+                    topLeading: 0,
+                    bottomLeading: NotchMetrics.cornerRadius,
+                    bottomTrailing: NotchMetrics.cornerRadius,
+                    topTrailing: 0
+                ),
+                style: .continuous
+            ))
         }
     }
 

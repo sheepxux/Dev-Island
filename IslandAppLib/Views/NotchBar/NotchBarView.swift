@@ -33,8 +33,20 @@ struct NotchBarView: View {
             )
             .fill(Palette.notchBlack)
         } else {
-            Capsule()
-                .fill(Palette.capsuleBlack)
+            // Synthetic notch: flat top flush with the screen edge,
+            // continuous-curvature rounded bottom corners. Same colour as
+            // the hardware notch so the visual language is unified across
+            // notched and non-notched Macs.
+            UnevenRoundedRectangle(
+                cornerRadii: RectangleCornerRadii(
+                    topLeading: 0,
+                    bottomLeading: NotchMetrics.cornerRadius,
+                    bottomTrailing: NotchMetrics.cornerRadius,
+                    topTrailing: 0
+                ),
+                style: .continuous
+            )
+            .fill(Palette.notchBlack)
         }
     }
 

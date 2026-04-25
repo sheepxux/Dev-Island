@@ -78,23 +78,22 @@ struct NotchBarRootView: View {
     }
 
     var body: some View {
-        // Outer container = hover-sized window. The bar lives at the top,
-        // centered horizontally. Empty space below the idle bar is where
-        // the bar grows into on hover.
-        VStack(spacing: 0) {
-            NotchBarView(
-                state: BarState.derive(from: store.tasks),
-                taskCount: activeCount,
-                layout: displayLayout
-            )
-            .contentShape(barHitShape)
-            .onHover(perform: handleHover)
-            Spacer(minLength: 0)
-        }
+        // Outer container = hover-sized window.
+        // - Notched: anchor to TOP so the bar grows downward into the menu
+        //   bar zone (Dynamic Island feel).
+        // - Capsule: anchor to CENTER so the pill grows symmetrically and
+        //   fills the OS status bar exactly at hover.
+        NotchBarView(
+            state: BarState.derive(from: store.tasks),
+            taskCount: activeCount,
+            layout: displayLayout
+        )
+        .contentShape(barHitShape)
+        .onHover(perform: handleHover)
         .frame(
             width: baseLayout.hovered().totalWidth,
             height: baseLayout.hovered().barHeight,
-            alignment: .top
+            alignment: baseLayout.hasNotch ? .top : .center
         )
     }
 

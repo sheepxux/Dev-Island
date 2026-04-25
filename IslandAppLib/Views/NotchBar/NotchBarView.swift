@@ -108,10 +108,10 @@ private let notchedLayout = NotchMetrics.Layout(
 
 private let plainLayout = NotchMetrics.Layout(
     hasNotch: false,
-    barHeight: 24,
+    barHeight: 18,                    // idle (24pt status bar - 6pt inset)
     notchHeight: 0,
     notchWidth: NotchMetrics.defaultNotchWidth,
-    topMargin: NotchMetrics.fallbackTopMargin
+    topMargin: 0
 )
 
 #Preview("Bar — notched, five states") {

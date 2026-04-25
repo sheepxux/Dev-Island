@@ -24,17 +24,24 @@ public enum NotchMetrics {
     // Hover affordance — how much the bar grows when the mouse enters,
     // signalling "clickable". Pre-Task-2 polish; the panel expansion that
     // fires after 120ms still belongs to Task 2.
+    //
+    // Notched displays grow downward by hoverHeightBoostNotched. No-notch
+    // capsules grow to fill the OS status bar exactly (no overflow), so
+    // idle height is `thickness - capsuleVerticalInset` and hover height
+    // is `thickness`.
     public static let hoverWidthBoostNotched: CGFloat = 30   // 15pt each side
     public static let hoverHeightBoostNotched: CGFloat = 4
     public static let hoverWidthBoostCapsule: CGFloat = 50
-    public static let hoverHeightBoostCapsule: CGFloat = 6
     /// Conservative default notch width (14" ≈ 200, 16" ≈ 220) used when
     /// the OS doesn't expose the real one.
     public static let defaultNotchWidth: CGFloat = 200
 
     // No-notch fallback (per CLAUDE_CLIENT.md §6 task 7)
     public static let fallbackWidth: CGFloat = 140
-    public static let fallbackTopMargin: CGFloat = 4
+    /// How much shorter the idle capsule is than the OS menu-bar height,
+    /// leaving breathing room top + bottom inside the status-bar zone.
+    /// Hover removes this inset so the capsule fills the status bar exactly.
+    public static let capsuleVerticalInset: CGFloat = 6
 
     // MARK: - Layout descriptor
 
@@ -75,9 +82,10 @@ public enum NotchMetrics {
                     widthBoost: NotchMetrics.hoverWidthBoostNotched
                 )
             } else {
+                // Fill the OS status bar exactly — no overflow.
                 return Layout(
                     hasNotch: false,
-                    barHeight: barHeight + NotchMetrics.hoverHeightBoostCapsule,
+                    barHeight: NSStatusBar.system.thickness,
                     notchHeight: 0,
                     notchWidth: notchWidth,
                     topMargin: topMargin,
@@ -93,12 +101,13 @@ public enum NotchMetrics {
     /// if `NSScreen.main` is unavailable (e.g. headless test).
     public static func current() -> Layout {
         guard let screen = NSScreen.main else {
+            let thickness = NSStatusBar.system.thickness
             return Layout(
                 hasNotch: false,
-                barHeight: NSStatusBar.system.thickness,
+                barHeight: max(0, thickness - capsuleVerticalInset),
                 notchHeight: 0,
                 notchWidth: defaultNotchWidth,
-                topMargin: fallbackTopMargin
+                topMargin: 0
             )
         }
         return layout(for: screen)
@@ -117,15 +126,17 @@ public enum NotchMetrics {
                 topMargin: 0
             )
         } else {
-            // Match the OS menu bar height so the capsule reads as part of
-            // the menu bar visually. NSStatusBar.system.thickness accounts
-            // for "Larger Text" + scaling tweaks the user may have set.
+            // Idle capsule is `capsuleVerticalInset` shorter than the OS
+            // status bar so it sits inside it with margin. Hover grows it
+            // to the full status-bar height. NSStatusBar.system.thickness
+            // tracks "Larger Text" + display scaling automatically.
+            let thickness = NSStatusBar.system.thickness
             return Layout(
                 hasNotch: false,
-                barHeight: NSStatusBar.system.thickness,
+                barHeight: max(0, thickness - capsuleVerticalInset),
                 notchHeight: 0,
                 notchWidth: defaultNotchWidth,
-                topMargin: fallbackTopMargin
+                topMargin: 0
             )
         }
     }

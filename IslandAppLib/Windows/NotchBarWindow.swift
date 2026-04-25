@@ -2,14 +2,23 @@ import AppKit
 import SwiftUI
 import IslandCore
 
-/// Borderless NSWindow that hugs the notch.
+/// Borderless NSWindow that hosts the collapsed bar.
 ///
 /// Placed at `.statusBar` level so it sits above the menu bar layer, with
 /// `[.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]` so it persists
 /// across Spaces and stays visible in full-screen apps.
+///
+/// Reads its dimensions from `NotchMetrics.current()` on every reposition,
+/// so a screen-parameter change (notch detected/removed, menu bar height
+/// change, display swap) is fully self-correcting.
 public final class NotchBarWindow: NSWindow {
+    private var hostingView: NSHostingView<NotchBarRootView>!
+    private(set) var layout: NotchMetrics.Layout = NotchMetrics.current()
+
     public init() {
-        let size = NSSize(width: NotchMetrics.totalWidth, height: NotchMetrics.barHeight)
+        let initialLayout = NotchMetrics.current()
+        let size = NSSize(width: initialLayout.totalWidth, height: initialLayout.barHeight)
+
         super.init(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless],
@@ -26,20 +35,30 @@ public final class NotchBarWindow: NSWindow {
         isMovable = false
         isReleasedWhenClosed = false
 
-        contentView = NSHostingView(rootView: NotchBarRootView())
+        let host = NSHostingView(rootView: NotchBarRootView(layout: initialLayout))
+        self.hostingView = host
+        contentView = host
 
+        self.layout = initialLayout
         reposition()
     }
 
-    /// Pin the window to the top-center of the main display.
+    /// Re-measure the active screen and pin the window to the top, centered.
+    /// Call from `didChangeScreenParametersNotification` and on launch.
     public func reposition() {
         guard let screen = NSScreen.main else { return }
+        let newLayout = NotchMetrics.layout(for: screen)
+        layout = newLayout
+
+        // Push the new layout into the SwiftUI tree so the shape switches
+        // (notched ⇄ capsule) and dimensions update without a relaunch.
+        hostingView.rootView = NotchBarRootView(layout: newLayout)
+
+        let size = NSSize(width: newLayout.totalWidth, height: newLayout.barHeight)
         let frame = screen.frame
-        let size = NSSize(width: NotchMetrics.totalWidth, height: NotchMetrics.barHeight)
-        // Top of the screen — y origin from bottom-left coordinate space.
         let origin = NSPoint(
             x: frame.midX - size.width / 2,
-            y: frame.maxY - size.height
+            y: frame.maxY - size.height - newLayout.topMargin
         )
         setFrame(NSRect(origin: origin, size: size), display: true)
     }
@@ -47,7 +66,8 @@ public final class NotchBarWindow: NSWindow {
 
 /// Root SwiftUI view for the bar window. Subscribes to the shared store and
 /// derives state + count.
-private struct NotchBarRootView: View {
+struct NotchBarRootView: View {
+    let layout: NotchMetrics.Layout
     @State private var store = TaskStore.shared
 
     var body: some View {
@@ -55,7 +75,8 @@ private struct NotchBarRootView: View {
             state: BarState.derive(from: store.tasks),
             taskCount: store.tasks.filter {
                 $0.status == .running || $0.status == .waiting
-            }.count
+            }.count,
+            layout: layout
         )
     }
 }

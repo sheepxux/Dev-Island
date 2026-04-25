@@ -100,12 +100,21 @@ struct NotchBarRootView: View {
         )
         .contentShape(barHitShape)
         .onHover(perform: handleHover)
-        // Shadow lifts the bar off the screen on hover.
+        // Subtle ambient shadow on hover — soft, diffuse, no directional
+        // offset so there's no visible edge between the bar bottom and the
+        // shadow. Two stacked layers: a tight close shadow + a wide ambient
+        // glow, mimicking real-world soft lighting.
         .shadow(
-            color: .black.opacity(isHovering ? 0.45 : 0),
-            radius: isHovering ? 16 : 0,
+            color: .black.opacity(isHovering ? 0.18 : 0),
+            radius: isHovering ? 6 : 0,
             x: 0,
-            y: isHovering ? 8 : 0
+            y: isHovering ? 2 : 0
+        )
+        .shadow(
+            color: .black.opacity(isHovering ? 0.12 : 0),
+            radius: isHovering ? 22 : 0,
+            x: 0,
+            y: isHovering ? 4 : 0
         )
         .frame(
             width: baseLayout.hovered().totalWidth + 2 * NotchMetrics.shadowPadding,

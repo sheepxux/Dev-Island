@@ -62,7 +62,12 @@ public final class NotchBarWindow: NSWindow {
 
     private static func containerSize(for layout: NotchMetrics.Layout) -> NSSize {
         let hover = layout.hovered()
-        return NSSize(width: hover.totalWidth, height: hover.barHeight)
+        // No-notch: window height = exact OS menu-bar height. Capsule
+        //   centers within that for true vertical alignment.
+        // Notched: window height = the (taller) hover bar height because
+        //   the notched bar grows downward past the menu-bar zone.
+        let height = layout.hasNotch ? hover.barHeight : layout.menuBarHeight
+        return NSSize(width: hover.totalWidth, height: height)
     }
 }
 

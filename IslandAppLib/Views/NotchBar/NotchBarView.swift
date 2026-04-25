@@ -102,14 +102,16 @@ private let notchedLayout = NotchMetrics.Layout(
     hasNotch: true,
     barHeight: 32 + NotchMetrics.bottomOverhang,
     notchHeight: 32,
+    menuBarHeight: 32,
     notchWidth: NotchMetrics.defaultNotchWidth,
     topMargin: 0
 )
 
 private let plainLayout = NotchMetrics.Layout(
     hasNotch: false,
-    barHeight: 18,                    // idle (24pt status bar - 6pt inset)
+    barHeight: 24,                    // idle within a 28pt menu bar
     notchHeight: 0,
+    menuBarHeight: 28,
     notchWidth: NotchMetrics.defaultNotchWidth,
     topMargin: 0
 )

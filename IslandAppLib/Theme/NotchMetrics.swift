@@ -37,11 +37,11 @@ public enum NotchMetrics {
     public static let defaultNotchWidth: CGFloat = 200
 
     // No-notch fallback (per CLAUDE_CLIENT.md §6 task 7)
-    public static let fallbackWidth: CGFloat = 140
+    public static let fallbackWidth: CGFloat = 168
     /// How much shorter the idle capsule is than the OS menu-bar height,
     /// leaving breathing room top + bottom inside the status-bar zone.
     /// Hover removes this inset so the capsule fills the status bar exactly.
-    public static let capsuleVerticalInset: CGFloat = 6
+    public static let capsuleVerticalInset: CGFloat = 4
 
     // MARK: - Layout descriptor
 
@@ -55,6 +55,10 @@ public enum NotchMetrics {
         /// Hardware notch height. 0 on no-notch displays. Used to size the
         /// cutout in `NotchBarShape`.
         public let notchHeight: CGFloat
+        /// True OS menu-bar height for this screen. Drives the window
+        /// container height so the capsule centers in the status bar zone
+        /// exactly. On notched displays this equals `notchHeight`.
+        public let menuBarHeight: CGFloat
         public let notchWidth: CGFloat
         public let topMargin: CGFloat   // distance from screen top edge to bar top
         /// Extra width applied on top of the base extensions / fallback
@@ -77,6 +81,7 @@ public enum NotchMetrics {
                     hasNotch: true,
                     barHeight: barHeight + NotchMetrics.hoverHeightBoostNotched,
                     notchHeight: notchHeight,
+                    menuBarHeight: menuBarHeight,
                     notchWidth: notchWidth,
                     topMargin: topMargin,
                     widthBoost: NotchMetrics.hoverWidthBoostNotched
@@ -85,8 +90,9 @@ public enum NotchMetrics {
                 // Fill the OS status bar exactly — no overflow.
                 return Layout(
                     hasNotch: false,
-                    barHeight: NSStatusBar.system.thickness,
+                    barHeight: menuBarHeight,
                     notchHeight: 0,
+                    menuBarHeight: menuBarHeight,
                     notchWidth: notchWidth,
                     topMargin: topMargin,
                     widthBoost: NotchMetrics.hoverWidthBoostCapsule
@@ -106,6 +112,7 @@ public enum NotchMetrics {
                 hasNotch: false,
                 barHeight: max(0, thickness - capsuleVerticalInset),
                 notchHeight: 0,
+                menuBarHeight: thickness,
                 notchWidth: defaultNotchWidth,
                 topMargin: 0
             )
@@ -122,19 +129,24 @@ public enum NotchMetrics {
                 hasNotch: true,
                 barHeight: safeTop + bottomOverhang,
                 notchHeight: safeTop,
+                menuBarHeight: safeTop,
                 notchWidth: detectNotchWidth(on: screen),
                 topMargin: 0
             )
         } else {
-            // Idle capsule is `capsuleVerticalInset` shorter than the OS
-            // status bar so it sits inside it with margin. Hover grows it
-            // to the full status-bar height. NSStatusBar.system.thickness
-            // tracks "Larger Text" + display scaling automatically.
-            let thickness = NSStatusBar.system.thickness
+            // Use the screen's actual menu-bar height (frame.maxY -
+            // visibleFrame.maxY) instead of NSStatusBar.system.thickness:
+            // on macOS 26 the visible menu bar is taller than `thickness`,
+            // and we need the right value so the window fits the status
+            // bar zone exactly (otherwise the capsule centers in a too-
+            // small window and visually drifts upward).
+            let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
+            let measured = menuBar > 0 ? menuBar : NSStatusBar.system.thickness
             return Layout(
                 hasNotch: false,
-                barHeight: max(0, thickness - capsuleVerticalInset),
+                barHeight: max(0, measured - capsuleVerticalInset),
                 notchHeight: 0,
+                menuBarHeight: measured,
                 notchWidth: defaultNotchWidth,
                 topMargin: 0
             )

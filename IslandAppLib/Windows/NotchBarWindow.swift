@@ -4,23 +4,20 @@ import IslandCore
 
 /// Borderless NSWindow that hosts the collapsed bar.
 ///
-/// Placed at `.statusBar` level so it sits above the menu bar layer, with
-/// `[.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]` so it persists
-/// across Spaces and stays visible in full-screen apps.
-///
-/// Reads its dimensions from `NotchMetrics.current()` on every reposition,
-/// so a screen-parameter change (notch detected/removed, menu bar height
-/// change, display swap) is fully self-correcting.
+/// The window's frame is sized for the **hover-expanded** dimensions so the
+/// bar can animate fluidly without any NSWindow frame changes (which are
+/// not as smooth as SwiftUI layout animations). The bar itself snaps
+/// between idle and hover sizes inside the window via `withAnimation`.
 public final class NotchBarWindow: NSWindow {
     private var hostingView: NSHostingView<NotchBarRootView>!
     private(set) var layout: NotchMetrics.Layout = NotchMetrics.current()
 
     public init() {
         let initialLayout = NotchMetrics.current()
-        let size = NSSize(width: initialLayout.totalWidth, height: initialLayout.barHeight)
+        let containerSize = NotchBarWindow.containerSize(for: initialLayout)
 
         super.init(
-            contentRect: NSRect(origin: .zero, size: size),
+            contentRect: NSRect(origin: .zero, size: containerSize),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -35,7 +32,7 @@ public final class NotchBarWindow: NSWindow {
         isMovable = false
         isReleasedWhenClosed = false
 
-        let host = NSHostingView(rootView: NotchBarRootView(layout: initialLayout))
+        let host = NSHostingView(rootView: NotchBarRootView(baseLayout: initialLayout))
         self.hostingView = host
         contentView = host
 
@@ -43,40 +40,91 @@ public final class NotchBarWindow: NSWindow {
         reposition()
     }
 
-    /// Re-measure the active screen and pin the window to the top, centered.
-    /// Call from `didChangeScreenParametersNotification` and on launch.
+    /// Re-measure the active screen and pin the window. Window size always
+    /// equals the hover-expanded size so the bar can grow/shrink internally.
     public func reposition() {
         guard let screen = NSScreen.main else { return }
         let newLayout = NotchMetrics.layout(for: screen)
         layout = newLayout
 
-        // Push the new layout into the SwiftUI tree so the shape switches
-        // (notched ⇄ capsule) and dimensions update without a relaunch.
-        hostingView.rootView = NotchBarRootView(layout: newLayout)
+        hostingView.rootView = NotchBarRootView(baseLayout: newLayout)
 
-        let size = NSSize(width: newLayout.totalWidth, height: newLayout.barHeight)
+        let containerSize = NotchBarWindow.containerSize(for: newLayout)
         let frame = screen.frame
         let origin = NSPoint(
-            x: frame.midX - size.width / 2,
-            y: frame.maxY - size.height - newLayout.topMargin
+            x: frame.midX - containerSize.width / 2,
+            // Window TOP stays at `screen.maxY - topMargin`; extra hover
+            // height extends downward.
+            y: frame.maxY - containerSize.height - newLayout.topMargin
         )
-        setFrame(NSRect(origin: origin, size: size), display: true)
+        setFrame(NSRect(origin: origin, size: containerSize), display: true)
+    }
+
+    private static func containerSize(for layout: NotchMetrics.Layout) -> NSSize {
+        let hover = layout.hovered()
+        return NSSize(width: hover.totalWidth, height: hover.barHeight)
     }
 }
 
-/// Root SwiftUI view for the bar window. Subscribes to the shared store and
-/// derives state + count.
+/// Root SwiftUI view for the bar window. Holds hover state and animates
+/// between idle ↔ hover layout.
 struct NotchBarRootView: View {
-    let layout: NotchMetrics.Layout
+    let baseLayout: NotchMetrics.Layout
+    @State private var isHovering = false
     @State private var store = TaskStore.shared
 
+    private var displayLayout: NotchMetrics.Layout {
+        isHovering ? baseLayout.hovered() : baseLayout
+    }
+
     var body: some View {
-        NotchBarView(
-            state: BarState.derive(from: store.tasks),
-            taskCount: store.tasks.filter {
-                $0.status == .running || $0.status == .waiting
-            }.count,
-            layout: layout
+        // Outer container = hover-sized window. The bar lives at the top,
+        // centered horizontally. Empty space below the idle bar is where
+        // the bar grows into on hover.
+        VStack(spacing: 0) {
+            NotchBarView(
+                state: BarState.derive(from: store.tasks),
+                taskCount: activeCount,
+                layout: displayLayout
+            )
+            .contentShape(barHitShape)
+            .onHover(perform: handleHover)
+            Spacer(minLength: 0)
+        }
+        .frame(
+            width: baseLayout.hovered().totalWidth,
+            height: baseLayout.hovered().barHeight,
+            alignment: .top
         )
+    }
+
+    // MARK: - Hover handling
+
+    private func handleHover(_ hovering: Bool) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            isHovering = hovering
+        }
+        if hovering {
+            NSCursor.pointingHand.push()
+        } else {
+            NSCursor.pop()
+        }
+    }
+
+    /// Restrict hover detection to the actual bar shape (so the cursor
+    /// doesn't change while crossing transparent corners).
+    private var barHitShape: AnyShape {
+        if displayLayout.hasNotch {
+            return AnyShape(NotchBarShape(
+                notchWidth: displayLayout.notchWidth,
+                notchHeight: displayLayout.notchHeight
+            ))
+        } else {
+            return AnyShape(Capsule())
+        }
+    }
+
+    private var activeCount: Int {
+        store.tasks.filter { $0.status == .running || $0.status == .waiting }.count
     }
 }

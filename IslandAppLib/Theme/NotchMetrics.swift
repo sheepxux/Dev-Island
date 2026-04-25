@@ -20,6 +20,14 @@ public enum NotchMetrics {
     /// displays. Gives a longer straight vertical edge before the corner
     /// curve starts (Dynamic Island feel).
     public static let bottomOverhang: CGFloat = 7
+
+    // Hover affordance — how much the bar grows when the mouse enters,
+    // signalling "clickable". Pre-Task-2 polish; the panel expansion that
+    // fires after 120ms still belongs to Task 2.
+    public static let hoverWidthBoostNotched: CGFloat = 30   // 15pt each side
+    public static let hoverHeightBoostNotched: CGFloat = 4
+    public static let hoverWidthBoostCapsule: CGFloat = 50
+    public static let hoverHeightBoostCapsule: CGFloat = 6
     /// Conservative default notch width (14" ≈ 200, 16" ≈ 220) used when
     /// the OS doesn't expose the real one.
     public static let defaultNotchWidth: CGFloat = 200
@@ -42,11 +50,40 @@ public enum NotchMetrics {
         public let notchHeight: CGFloat
         public let notchWidth: CGFloat
         public let topMargin: CGFloat   // distance from screen top edge to bar top
+        /// Extra width applied on top of the base extensions / fallback
+        /// pill. Non-zero on hover.
+        public var widthBoost: CGFloat = 0
 
         public var totalWidth: CGFloat {
-            hasNotch
+            let base: CGFloat = hasNotch
                 ? notchWidth + 2 * NotchMetrics.sideExtension
                 : NotchMetrics.fallbackWidth
+            return base + widthBoost
+        }
+
+        /// Hover-expanded variant. Wider + slightly taller; the cutout
+        /// stays at the original notch dimensions because the hardware
+        /// notch never moves.
+        public func hovered() -> Layout {
+            if hasNotch {
+                return Layout(
+                    hasNotch: true,
+                    barHeight: barHeight + NotchMetrics.hoverHeightBoostNotched,
+                    notchHeight: notchHeight,
+                    notchWidth: notchWidth,
+                    topMargin: topMargin,
+                    widthBoost: NotchMetrics.hoverWidthBoostNotched
+                )
+            } else {
+                return Layout(
+                    hasNotch: false,
+                    barHeight: barHeight + NotchMetrics.hoverHeightBoostCapsule,
+                    notchHeight: 0,
+                    notchWidth: notchWidth,
+                    topMargin: topMargin,
+                    widthBoost: NotchMetrics.hoverWidthBoostCapsule
+                )
+            }
         }
     }
 

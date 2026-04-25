@@ -15,7 +15,11 @@ public enum NotchMetrics {
     public static let dotSize: CGFloat = 12
     /// Outer-bottom corner radius for the notch bar extensions and the
     /// no-notch capsule. Also the design language for the panel (Task 2).
-    public static let cornerRadius: CGFloat = 14
+    public static let cornerRadius: CGFloat = 11
+    /// How far the bar protrudes BELOW the hardware notch on notched
+    /// displays. Gives a longer straight vertical edge before the corner
+    /// curve starts (Dynamic Island feel).
+    public static let bottomOverhang: CGFloat = 7
     /// Conservative default notch width (14" ≈ 200, 16" ≈ 220) used when
     /// the OS doesn't expose the real one.
     public static let defaultNotchWidth: CGFloat = 200
@@ -31,7 +35,11 @@ public enum NotchMetrics {
     /// tree so the same values drive Window framing + Shape drawing.
     public struct Layout: Equatable {
         public let hasNotch: Bool
+        /// Full bar height. On notched displays this is `notchHeight + bottomOverhang`.
         public let barHeight: CGFloat
+        /// Hardware notch height. 0 on no-notch displays. Used to size the
+        /// cutout in `NotchBarShape`.
+        public let notchHeight: CGFloat
         public let notchWidth: CGFloat
         public let topMargin: CGFloat   // distance from screen top edge to bar top
 
@@ -51,6 +59,7 @@ public enum NotchMetrics {
             return Layout(
                 hasNotch: false,
                 barHeight: NSStatusBar.system.thickness,
+                notchHeight: 0,
                 notchWidth: defaultNotchWidth,
                 topMargin: fallbackTopMargin
             )
@@ -65,7 +74,8 @@ public enum NotchMetrics {
         if hasNotch {
             return Layout(
                 hasNotch: true,
-                barHeight: safeTop,
+                barHeight: safeTop + bottomOverhang,
+                notchHeight: safeTop,
                 notchWidth: detectNotchWidth(on: screen),
                 topMargin: 0
             )
@@ -76,6 +86,7 @@ public enum NotchMetrics {
             return Layout(
                 hasNotch: false,
                 barHeight: NSStatusBar.system.thickness,
+                notchHeight: 0,
                 notchWidth: defaultNotchWidth,
                 topMargin: fallbackTopMargin
             )

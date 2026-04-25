@@ -4,12 +4,11 @@ import IslandCore
 /// Collapsed bar.
 ///
 /// Two visual modes driven by `NotchMetrics.Layout`:
-/// - **Notched display**: two black extensions flanking the hardware notch,
-///   each with a rounded outer-bottom corner.
-/// - **No-notch display** (e.g. Mac mini, external display): a single
-///   capsule sitting `topMargin` below the screen edge.
-///
-/// Both modes use the same status dot + task count layout.
+/// - **Notched display**: one connected black shape that protrudes
+///   `bottomOverhang` below the hardware notch, with a notch-shaped cutout
+///   at top center.
+/// - **No-notch display** (Mac mini, external displays): a single capsule
+///   sitting `topMargin` below the screen edge.
 struct NotchBarView: View {
     let state: BarState
     let taskCount: Int
@@ -28,8 +27,11 @@ struct NotchBarView: View {
     @ViewBuilder
     private var backdrop: some View {
         if layout.hasNotch {
-            NotchBarShape(notchWidth: layout.notchWidth)
-                .fill(Palette.notchBlack)
+            NotchBarShape(
+                notchWidth: layout.notchWidth,
+                notchHeight: layout.notchHeight
+            )
+            .fill(Palette.notchBlack)
         } else {
             Capsule()
                 .fill(Palette.capsuleBlack)
@@ -41,8 +43,10 @@ struct NotchBarView: View {
     @ViewBuilder
     private var content: some View {
         if layout.hasNotch {
+            // Content sits in the side extensions, vertically centered against
+            // the FULL bar height — the dot and number visually align across
+            // the cutout because both extensions share the same center line.
             HStack(spacing: 0) {
-                // Left extension
                 HStack {
                     StatusDot(state: state)
                     Spacer(minLength: 0)
@@ -50,10 +54,9 @@ struct NotchBarView: View {
                 .frame(width: NotchMetrics.sideExtension)
                 .padding(.leading, NotchMetrics.sideInset)
 
-                // Hardware notch corridor — transparent
+                // Hardware notch corridor — transparent (filled by hardware notch)
                 Spacer().frame(width: layout.notchWidth)
 
-                // Right extension
                 HStack {
                     Spacer(minLength: 0)
                     Text("\(taskCount)")
@@ -65,7 +68,6 @@ struct NotchBarView: View {
                 .padding(.trailing, NotchMetrics.sideInset)
             }
         } else {
-            // No-notch capsule: dot left, count right, both inside the pill
             HStack {
                 StatusDot(state: state)
                 Spacer(minLength: 8)
@@ -98,7 +100,8 @@ private let barPreviewCases: [BarPreviewSample] = [
 
 private let notchedLayout = NotchMetrics.Layout(
     hasNotch: true,
-    barHeight: 32,
+    barHeight: 32 + NotchMetrics.bottomOverhang,
+    notchHeight: 32,
     notchWidth: NotchMetrics.defaultNotchWidth,
     topMargin: 0
 )
@@ -106,12 +109,13 @@ private let notchedLayout = NotchMetrics.Layout(
 private let plainLayout = NotchMetrics.Layout(
     hasNotch: false,
     barHeight: 24,
+    notchHeight: 0,
     notchWidth: NotchMetrics.defaultNotchWidth,
     topMargin: NotchMetrics.fallbackTopMargin
 )
 
 #Preview("Bar — notched, five states") {
-    VStack(spacing: 20) {
+    VStack(spacing: 18) {
         ForEach(barPreviewCases, id: \.label) { sample in
             VStack(spacing: 6) {
                 NotchBarView(state: sample.state, taskCount: sample.count, layout: notchedLayout)
@@ -125,8 +129,8 @@ private let plainLayout = NotchMetrics.Layout(
     .background(Color.gray.opacity(0.25))
 }
 
-#Preview("Bar — capsule (no notch), five states") {
-    VStack(spacing: 16) {
+#Preview("Bar — capsule (no notch)") {
+    VStack(spacing: 14) {
         ForEach(barPreviewCases, id: \.label) { sample in
             VStack(spacing: 6) {
                 NotchBarView(state: sample.state, taskCount: sample.count, layout: plainLayout)
@@ -137,17 +141,6 @@ private let plainLayout = NotchMetrics.Layout(
         }
     }
     .padding(32)
-    .background(Color.gray.opacity(0.25))
-}
-
-#Preview("Bar — derived from store") {
-    let store = TaskStore.mock()
-    return NotchBarView(
-        state: BarState.derive(from: store.tasks),
-        taskCount: store.tasks.filter { $0.status == .running || $0.status == .waiting }.count,
-        layout: notchedLayout
-    )
-    .padding(40)
     .background(Color.gray.opacity(0.25))
 }
 #endif

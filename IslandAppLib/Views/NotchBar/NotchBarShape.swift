@@ -1,65 +1,53 @@
 import SwiftUI
 
-/// Shape of the collapsed Notch Bar — TWO subpaths, one per side extension,
-/// each with a continuous-curvature ("squircle") outer-bottom corner.
+/// Shape of the collapsed Notch Bar — ONE connected outline that protrudes
+/// `bottomOverhang` below the hardware notch, with a rectangular cutout at
+/// top center matching the notch dimensions.
 ///
-/// The hardware notch fills the corridor in the middle so we leave it
-/// transparent. The S-curve transition into the notch lands in Task 2 with
-/// the panel.
+/// Drawn as `outerShape.subtracting(notchCutout)` so the bottom corners get
+/// continuous-curvature rounding (Apple squircle) while the cutout edges
+/// stay sharp. The S-curve at the cutout's bottom corners is layered in
+/// Task 2 with the panel.
 struct NotchBarShape: Shape {
     var notchWidth: CGFloat
+    var notchHeight: CGFloat
     var cornerRadius: CGFloat = NotchMetrics.cornerRadius
 
     func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let sideWidth = (rect.width - notchWidth) / 2
-        let r = min(cornerRadius, rect.height, sideWidth / 2)
-
-        // Left extension — round only bottom-LEADING corner (outer side).
-        let leftRect = CGRect(x: 0, y: 0, width: sideWidth, height: rect.height)
-        let leftCorners = RectangleCornerRadii(
-            topLeading: 0,
-            bottomLeading: r,
-            bottomTrailing: 0,
-            topTrailing: 0
-        )
-        path.addPath(UnevenRoundedRectangle(
-            cornerRadii: leftCorners,
+        let outer = UnevenRoundedRectangle(
+            cornerRadii: RectangleCornerRadii(
+                topLeading: 0,
+                bottomLeading: cornerRadius,
+                bottomTrailing: cornerRadius,
+                topTrailing: 0
+            ),
             style: .continuous
-        ).path(in: leftRect))
+        ).path(in: rect)
 
-        // Right extension — round only bottom-TRAILING corner (outer side).
-        let rightRect = CGRect(
-            x: rect.width - sideWidth,
+        let cutoutX = (rect.width - notchWidth) / 2
+        let cutoutRect = CGRect(
+            x: cutoutX,
             y: 0,
-            width: sideWidth,
-            height: rect.height
+            width: notchWidth,
+            height: notchHeight
         )
-        let rightCorners = RectangleCornerRadii(
-            topLeading: 0,
-            bottomLeading: 0,
-            bottomTrailing: r,
-            topTrailing: 0
-        )
-        path.addPath(UnevenRoundedRectangle(
-            cornerRadii: rightCorners,
-            style: .continuous
-        ).path(in: rightRect))
+        let cutout = Path(cutoutRect)
 
-        return path
+        return outer.subtracting(cutout)
     }
 }
 
 #if PREVIEWS
-#Preview("Notch shape — continuous corners") {
+#Preview("Notch shape — overhang + cutout") {
     VStack(spacing: 24) {
-        NotchBarShape(notchWidth: NotchMetrics.defaultNotchWidth, cornerRadius: 14)
+        NotchBarShape(notchWidth: 200, notchHeight: 32)
             .fill(Palette.notchBlack)
-            .frame(width: NotchMetrics.defaultNotchWidth + 2 * NotchMetrics.sideExtension, height: 32)
+            .frame(width: 380, height: 39)  // 32 notch + 7 overhang
 
-        NotchBarShape(notchWidth: NotchMetrics.defaultNotchWidth, cornerRadius: 22)
+        // With a wider notch (16" class)
+        NotchBarShape(notchWidth: 220, notchHeight: 38)
             .fill(Palette.notchBlack)
-            .frame(width: NotchMetrics.defaultNotchWidth + 2 * NotchMetrics.sideExtension, height: 38)
+            .frame(width: 400, height: 45)
     }
     .padding(40)
     .background(Color.gray.opacity(0.2))

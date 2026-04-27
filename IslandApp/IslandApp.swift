@@ -26,6 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Cleared on every collapse so we don't leak handlers.
     private var panelEventMonitors: [Any] = []
 
+    #if DEBUG
+    /// In-app sandbox for driving the island without Manus (CLAUDE_CLIENT.md
+    /// §6 task 10). Only ever instantiated in DEBUG builds.
+    private var debugSandboxWindow: DebugSandboxWindow?
+    #endif
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         let window = IslandWindow()
         window.makeKeyAndOrderFront(nil)
@@ -34,6 +40,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // §6 task-1 gotcha: setActivationPolicy(.accessory) must come AFTER
         // makeKeyAndOrderFront on the first window, otherwise nothing shows.
         NSApp.setActivationPolicy(.accessory)
+
+        #if DEBUG
+        // Open the Debug Sandbox alongside the island so every dev launch
+        // has live controls without any extra step. Release builds skip
+        // this entire block (and don't link the sandbox types at all).
+        let sandbox = DebugSandboxWindow(onReposition: { [weak self] in
+            self?.islandWindow?.reposition()
+        })
+        sandbox.orderFront(nil)
+        self.debugSandboxWindow = sandbox
+        #endif
 
         // Bridge coordinator mode → AppKit-side concerns (event monitors).
         // The visual morph is driven entirely inside `IslandRootView` via

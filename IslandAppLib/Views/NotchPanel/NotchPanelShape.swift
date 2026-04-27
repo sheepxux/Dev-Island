@@ -14,6 +14,22 @@ struct NotchPanelShape: Shape {
     var notchHeight: CGFloat = 0
     var cornerRadius: CGFloat = NotchMetrics.panelCornerRadius
 
+    /// Interpolate all three geometric parameters during `withAnimation` so
+    /// the bar↔panel morph stays consistent with its frame size at every
+    /// step. Without this, `cornerRadius` (and the notch dims) snap to
+    /// their target value on the first frame of the morph — when the shape
+    /// is still bar-sized (~39pt tall), a 22pt bottom radius briefly
+    /// over-rounds the silhouette, leaving a visible seam at the bottom
+    /// edge as the spring expands.
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> {
+        get { AnimatablePair(cornerRadius, AnimatablePair(notchWidth, notchHeight)) }
+        set {
+            cornerRadius = newValue.first
+            notchWidth = newValue.second.first
+            notchHeight = newValue.second.second
+        }
+    }
+
     func path(in rect: CGRect) -> Path {
         let outer = UnevenRoundedRectangle(
             cornerRadii: RectangleCornerRadii(

@@ -19,14 +19,46 @@ struct NotchBarView: View {
     /// content is hidden at idle for a clean notch silhouette and faded
     /// in on hover.
     var showsContent: Bool = true
+    /// When `false` the view renders content only — no background shape and
+    /// no outer glow. Use this when the parent (`IslandRootView`) is drawing
+    /// a single morphing shape that spans both bar and panel modes; the
+    /// content is laid on top of that shared shape.
+    var drawsBackdrop: Bool = true
 
     var body: some View {
-        ZStack {
-            backdrop
+        if drawsBackdrop {
+            // Glow is keyed off the same `StatusPhase` time source as
+            // `StatusDot` so the bar's outer halo pulses in lockstep with
+            // the indicator dot. For idle/failed/completed the phase is
+            // static so we let the timeline pause; running/waiting need the
+            // per-frame tick.
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !needsTimeline)) { context in
+                let phase = StatusPhase.compute(state: state, at: context.date)
+                ZStack {
+                    backdrop
+                        .shadow(
+                            color: state.color.opacity(phase.glowOpacity * 0.55),
+                            radius: phase.glowRadius * 1.3
+                        )
+                        .animation(Motion.colorTransition, value: state)
+                    content
+                        .opacity(showsContent ? 1 : 0)
+                }
+                .frame(width: layout.totalWidth, height: layout.barHeight)
+            }
+        } else {
+            // Content-only mode: no shape, no glow. Caller composes its own
+            // shared backdrop.
             content
                 .opacity(showsContent ? 1 : 0)
+                .frame(width: layout.totalWidth, height: layout.barHeight)
         }
-        .frame(width: layout.totalWidth, height: layout.barHeight)
+    }
+
+    /// Whether the timeline should drive frames. Only running/waiting have
+    /// time-varying glow; the rest are static and the timeline can pause.
+    private var needsTimeline: Bool {
+        state == .running || state == .waiting
     }
 
     // MARK: - Backdrop (shape + color)

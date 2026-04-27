@@ -1,17 +1,22 @@
 import AppKit
 import Foundation
+import Observation
+import SwiftUI
 
 /// Orchestrates the bar ⇄ panel transition.
 ///
 /// Owns hover-dwell timers and the current display mode; the AppDelegate
 /// listens to `onModeChange` and toggles which NSWindow is visible.
 ///
-/// Hover semantics (per CLAUDE_CLIENT.md §6 task 2):
-/// - Bar hover IN  → `scheduleExpand()`   (fires after `expandDelay`)
-/// - Bar hover OUT → `cancelExpand()`     (cancels pending expand)
-/// - Panel hover IN  → `cancelCollapse()` (mouse re-entered, abort collapse)
-/// - Panel hover OUT → `scheduleCollapse()` (fires after `collapseDelay`)
-@MainActor
+/// Trigger semantics (current — deviates from CLAUDE_CLIENT.md §2):
+/// - Bar **click**       → `expand()`           (hover only widens the bar)
+/// - Panel hover OUT     → `scheduleCollapse()` (fires after `collapseDelay`)
+/// - Panel hover IN      → `cancelCollapse()`
+/// - Esc / click outside → `collapse()` (installed by AppDelegate)
+///
+/// `scheduleExpand` / `cancelExpand` are retained for symmetry / future
+/// hover-dwell experiments but are not called from production paths.
+@Observable @MainActor
 public final class IslandCoordinator {
     public static let shared = IslandCoordinator()
 
@@ -22,14 +27,33 @@ public final class IslandCoordinator {
 
     public private(set) var mode: Mode = .collapsed
 
-    /// Called on the main thread whenever `mode` actually changes.
+    /// Called on the main thread whenever `mode` actually changes. Kept for
+    /// AppKit-side window plumbing (e.g. installing event monitors). SwiftUI
+    /// views can observe `mode` directly via Observation.
+    @ObservationIgnored
     public var onModeChange: ((Mode) -> Void)?
 
     public static let expandDelay: TimeInterval = 0.12
     public static let collapseDelay: TimeInterval = 0.30
 
-    private var expandTimer: Timer?
-    private var collapseTimer: Timer?
+    /// Animation applied to every mode flip. Used by SwiftUI views
+    /// observing `mode` so the bar↔panel morph feels like a single shape
+    /// breathing.
+    ///
+    /// `.smooth` (critically-damped, zero overshoot) is deliberate here:
+    /// the morph spans ~7× in height (≈43→360pt), and any spring overshoot
+    /// at that scale reads as the whole panel "wobbling" rather than as
+    /// playful bounce. The Dynamic-Island feel comes from the bar's hover-
+    /// widen (small delta, where bounce sits well); the bar↔panel morph
+    /// itself is too big for bounce to look intentional. `.smooth` also
+    /// gives a continuous velocity profile (no abrupt acceleration at
+    /// t=0), which keeps the silhouette's edge crisp through the first
+    /// few frames where sub-pixel reflow would otherwise show as a seam.
+    @ObservationIgnored
+    public static let modeAnimation: Animation = .smooth(duration: 0.42, extraBounce: 0.0)
+
+    @ObservationIgnored private var expandTimer: Timer?
+    @ObservationIgnored private var collapseTimer: Timer?
 
     private init() {}
 
@@ -92,7 +116,13 @@ public final class IslandCoordinator {
 
     private func setMode(_ newMode: Mode) {
         guard mode != newMode else { return }
-        mode = newMode
+        // Wrap the property change in withAnimation so every SwiftUI view
+        // observing `mode` (e.g. IslandRootView) interpolates its
+        // dependent properties — width, height, corner radius, opacity —
+        // with the shared `modeAnimation` spring.
+        withAnimation(Self.modeAnimation) {
+            mode = newMode
+        }
         onModeChange?(mode)
     }
 

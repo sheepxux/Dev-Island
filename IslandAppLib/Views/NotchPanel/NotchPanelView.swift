@@ -12,14 +12,20 @@ struct NotchPanelView: View {
     let onTaskTap: (AgentTask) -> Void
     let onSettingsTap: () -> Void
     let onConnectTap: () -> Void
+    /// When `false` the view renders content only — the parent
+    /// (`IslandRootView`) is drawing a shared backdrop that spans both bar
+    /// and panel states for a single SwiftUI morph.
+    var drawsBackdrop: Bool = true
 
     var body: some View {
         ZStack(alignment: .top) {
-            NotchPanelShape(
-                notchWidth: layout.hasNotch ? layout.notchWidth : 0,
-                notchHeight: layout.hasNotch ? layout.notchHeight : 0
-            )
-            .fill(Palette.notchBlack)
+            if drawsBackdrop {
+                NotchPanelShape(
+                    notchWidth: layout.hasNotch ? layout.notchWidth : 0,
+                    notchHeight: layout.hasNotch ? layout.notchHeight : 0
+                )
+                .fill(Palette.notchBlack)
+            }
 
             VStack(spacing: 0) {
                 topRow

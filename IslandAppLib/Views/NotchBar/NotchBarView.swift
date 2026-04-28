@@ -13,11 +13,9 @@ struct NotchBarView: View {
     let state: BarState
     let taskCount: Int
     let layout: NotchMetrics.Layout
-    /// Whether to show the status dot + count inside the bar. On notched
-    /// displays this is always true (the bar is always visible *around*
-    /// the hardware notch). On synthetic-notch (no-notch) displays the
-    /// content is hidden at idle for a clean notch silhouette and faded
-    /// in on hover.
+    /// Whether to show the status dot + count inside the bar. Normal
+    /// collapsed state keeps this on for both hardware-notch and
+    /// synthetic-notch displays; previews can still toggle it directly.
     var showsContent: Bool = true
     /// When `false` the view renders content only — no background shape and
     /// no outer glow. Use this when the parent (`IslandRootView`) is drawing
@@ -94,29 +92,22 @@ struct NotchBarView: View {
     @ViewBuilder
     private var content: some View {
         if layout.hasNotch {
-            // Content sits in the side extensions, vertically centered against
-            // the FULL bar height — the dot and number visually align across
-            // the cutout because both extensions share the same center line.
-            HStack(spacing: 0) {
+            // Hardware notch pixels are not drawable, and menu-bar content
+            // can visually compete with the side wings. Keep the normal
+            // status readout in the visible black shelf below the notch.
+            VStack(spacing: 0) {
+                Spacer()
+                    .frame(height: layout.notchHeight)
                 HStack {
                     StatusDot(state: state)
-                    Spacer(minLength: 0)
-                }
-                .frame(width: NotchMetrics.sideExtension)
-                .padding(.leading, NotchMetrics.sideInset)
-
-                // Hardware notch corridor — transparent (filled by hardware notch)
-                Spacer().frame(width: layout.notchWidth)
-
-                HStack {
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 12)
                     Text("\(taskCount)")
                         .font(Typo.barCount)
                         .foregroundStyle(.white.opacity(0.85))
                         .monospacedDigit()
                 }
-                .frame(width: NotchMetrics.sideExtension)
-                .padding(.trailing, NotchMetrics.sideInset)
+                .padding(.horizontal, 14)
+                .frame(height: max(18, layout.barHeight - layout.notchHeight))
             }
         } else {
             HStack {

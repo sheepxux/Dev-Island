@@ -76,9 +76,9 @@ struct IslandRootView: View {
             // Bar content — visible while collapsed, faded out while expanded.
             NotchBarView(
                 state: BarState.derive(from: store.tasks),
-                taskCount: activeCount,
+                taskCount: barTaskCount,
                 layout: barLayoutForContent,
-                showsContent: baseLayout.hasNotch || isHovering,
+                showsContent: true,
                 drawsBackdrop: false
             )
             .opacity(mode == .collapsed ? 1 : 0)
@@ -189,8 +189,8 @@ struct IslandRootView: View {
         isHovering ? baseLayout.hovered() : baseLayout
     }
 
-    private var activeCount: Int {
-        store.tasks.filter { $0.status == .running || $0.status == .waiting }.count
+    private var barTaskCount: Int {
+        store.tasks.count
     }
 
     // MARK: - Event handlers

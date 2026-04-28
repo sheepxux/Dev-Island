@@ -23,9 +23,10 @@ public enum NotchMetrics {
     /// Maximum panel width on notched displays — never exceed this.
     public static let panelMaxWidth: CGFloat = 480
     /// How far the bar protrudes BELOW the hardware notch on notched
-    /// displays. Gives a longer straight vertical edge before the corner
-    /// curve starts (Dynamic Island feel).
-    public static let bottomOverhang: CGFloat = 7
+    /// displays. This must be tall enough to host the always-visible
+    /// status dot + task count below the physical notch, since pixels in
+    /// the hardware notch itself are not drawable.
+    public static let bottomOverhang: CGFloat = 24
 
     // Hover affordance — how much the bar grows when the mouse enters,
     // signalling "clickable". Pre-Task-2 polish; the panel expansion that

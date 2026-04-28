@@ -40,14 +40,7 @@ public final class IslandWindow: NSWindow {
         // (flat, embedded). The SwiftUI root view toggles `hasShadow` on
         // hover or expand for the affordance-shadow effect.
         hasShadow = false
-        // `.screenSaver` (1000), not `.statusBar` (25). On macOS 26 the
-        // system menu bar's own translucent overlay sits above .statusBar
-        // and ends up covering the bar's content frame at idle (it only
-        // peeks through during a SwiftUI redraw, which is why content
-        // briefly flashes during animations). .screenSaver is far above
-        // any normal system overlay, guaranteeing the island always
-        // renders on top.
-        level = .screenSaver
+        level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         ignoresMouseEvents = false
         isMovable = false
@@ -95,9 +88,12 @@ public final class IslandWindow: NSWindow {
         let frame = screen.frame
         let origin = NSPoint(
             x: frame.midX - Self.containerWidth / 2,
-            // Anchor TOP edge of window at the screen's top edge so the
-            // shape inside (which top-anchors itself) hugs the menu bar.
-            y: frame.maxY - Self.containerHeight
+            // Window's TOP edge sits `topMargin` below the screen's top.
+            // Notched: 0 → bar wraps the hardware notch at screen top.
+            // Synthetic: menu-bar-height → bar floats just below the
+            //   menu bar, in normal drawable area (macOS 26's menu bar
+            //   refuses to host arbitrary windows on top of itself).
+            y: frame.maxY - Self.containerHeight - newLayout.topMargin
         )
         setFrame(NSRect(origin: origin, size: NSSize(width: Self.containerWidth, height: Self.containerHeight)),
                  display: true)

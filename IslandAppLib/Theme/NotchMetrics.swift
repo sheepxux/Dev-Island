@@ -143,12 +143,15 @@ public enum NotchMetrics {
                 topMargin: 0
             )
         } else {
-            // Use the screen's actual menu-bar height (frame.maxY -
-            // visibleFrame.maxY) instead of NSStatusBar.system.thickness:
-            // on macOS 26 the visible menu bar is taller than `thickness`,
-            // and we need the right value so the bar fits the status bar
-            // zone exactly. Both idle and hover use this full height; only
-            // width grows on hover.
+            // Synthetic notch: park the bar BELOW the menu bar, not on
+            // top of it. macOS 26's menu bar treats its own zone as
+            // off-limits to ordinary windows — even at .screenSaver
+            // level the bar's content frame gets sat on by the menu
+            // bar's translucent overlay (only peeking through during
+            // SwiftUI redraws, hence the "only visible during animation"
+            // symptom). Using `topMargin = menu-bar height` pushes the
+            // bar ~one menu-bar's-worth below the screen's top edge so
+            // it lands in normal drawable area where it always renders.
             let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
             let measured = menuBar > 0 ? menuBar : NSStatusBar.system.thickness
             return Layout(
@@ -157,7 +160,7 @@ public enum NotchMetrics {
                 notchHeight: 0,
                 menuBarHeight: measured,
                 notchWidth: defaultNotchWidth,
-                topMargin: 0
+                topMargin: measured
             )
         }
     }

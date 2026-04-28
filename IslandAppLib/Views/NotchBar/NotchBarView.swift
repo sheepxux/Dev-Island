@@ -117,25 +117,28 @@ struct NotchBarView: View {
                 .padding(.trailing, NotchMetrics.sideInset)
             }
         } else {
-            // Synthetic notch: top portion of the bar lives inside the
-            // menu-bar zone (where the OS sits on top of arbitrary
-            // window content on macOS 26), so leave that empty. Anchor
-            // the dot + count to the BOTTOM of the bar via an explicit
-            // `.frame(maxHeight: .infinity, alignment: .bottom)`. Plain
-            // VStack + Spacer didn't claim its share in the parent
-            // frame and ended up centering content at the bar's middle
-            // — i.e. half-inside the menu bar zone where the OS hides it.
-            HStack {
-                StatusDot(state: state)
-                Spacer(minLength: 8)
-                Text("\(taskCount)")
-                    .font(Typo.barCount)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .monospacedDigit()
+            // Synthetic notch: anchor the dot + count to the BOTTOM of
+            // the bar (the visible "shelf" below the menu-bar zone
+            // macOS 26 reserves for itself). ZStack(alignment: .bottom)
+            // + a Color.clear filler is the most reliable way to do
+            // this in SwiftUI — Color.clear claims the parent's full
+            // proposed size, which forces the ZStack to actually fill
+            // and lets `alignment: .bottom` pin the HStack to the
+            // bottom. Earlier flex-frame attempts kept getting centered
+            // by the outer `.frame(height:)`'s default alignment.
+            ZStack(alignment: .bottom) {
+                Color.clear
+                HStack {
+                    StatusDot(state: state)
+                    Spacer(minLength: 8)
+                    Text("\(taskCount)")
+                        .font(Typo.barCount)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 4)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
     }
 }

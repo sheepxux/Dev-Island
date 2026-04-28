@@ -51,6 +51,16 @@ public enum NotchMetrics {
     // No-notch fallback (per CLAUDE_CLIENT.md §6 task 7)
     public static let fallbackWidth: CGFloat = 168
 
+    /// On synthetic-notch displays, how far the bar extends BELOW the
+    /// menu bar. macOS 26 treats the menu-bar zone as off-limits to
+    /// arbitrary windows — content drawn there gets covered by the
+    /// system's translucent overlay. Giving the bar a "shelf" of
+    /// drawable space below the menu bar lets the status dot + count
+    /// live somewhere the OS won't sit on top of, while keeping the
+    /// bar's TOP edge at the screen's top edge (Dynamic-Island shape:
+    /// hangs from the top, pokes a few pt into the content area).
+    public static let syntheticShelfHeight: CGFloat = 22
+
     // MARK: - Layout descriptor
 
     /// Snapshot of the geometry for a particular screen. Capture once per
@@ -143,24 +153,21 @@ public enum NotchMetrics {
                 topMargin: 0
             )
         } else {
-            // Synthetic notch: park the bar BELOW the menu bar, not on
-            // top of it. macOS 26's menu bar treats its own zone as
-            // off-limits to ordinary windows — even at .screenSaver
-            // level the bar's content frame gets sat on by the menu
-            // bar's translucent overlay (only peeking through during
-            // SwiftUI redraws, hence the "only visible during animation"
-            // symptom). Using `topMargin = menu-bar height` pushes the
-            // bar ~one menu-bar's-worth below the screen's top edge so
-            // it lands in normal drawable area where it always renders.
+            // Synthetic notch: bar's TOP edge stays glued to the
+            // screen's top, but the bar extends past the menu bar by
+            // `syntheticShelfHeight` so its lower portion lands in
+            // normal drawable area. Status dot + count live on that
+            // shelf — the menu-bar zone above is left visually empty
+            // since the OS will overlay it anyway.
             let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
             let measured = menuBar > 0 ? menuBar : NSStatusBar.system.thickness
             return Layout(
                 hasNotch: false,
-                barHeight: measured,
+                barHeight: measured + syntheticShelfHeight,
                 notchHeight: 0,
                 menuBarHeight: measured,
                 notchWidth: defaultNotchWidth,
-                topMargin: measured
+                topMargin: 0
             )
         }
     }

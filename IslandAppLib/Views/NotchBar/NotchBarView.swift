@@ -117,15 +117,24 @@ struct NotchBarView: View {
                 .padding(.trailing, NotchMetrics.sideInset)
             }
         } else {
-            HStack {
-                StatusDot(state: state)
-                Spacer(minLength: 8)
-                Text("\(taskCount)")
-                    .font(Typo.barCount)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .monospacedDigit()
+            // Synthetic notch: top portion of the bar lives inside the
+            // menu-bar zone (where the OS sits on top of arbitrary
+            // window content on macOS 26), so leave that empty. Anchor
+            // the dot + count to the visible "shelf" below the menu bar.
+            VStack(spacing: 0) {
+                Spacer()
+                    .frame(height: layout.menuBarHeight)
+                HStack {
+                    StatusDot(state: state)
+                    Spacer(minLength: 8)
+                    Text("\(taskCount)")
+                        .font(Typo.barCount)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 12)
+                .frame(height: layout.barHeight - layout.menuBarHeight)
             }
-            .padding(.horizontal, 12)
         }
     }
 }

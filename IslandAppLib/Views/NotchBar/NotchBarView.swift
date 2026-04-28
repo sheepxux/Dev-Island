@@ -119,11 +119,13 @@ struct NotchBarView: View {
         } else {
             // Synthetic notch: top portion of the bar lives inside the
             // menu-bar zone (where the OS sits on top of arbitrary
-            // window content on macOS 26), so leave that empty. Anchor
-            // the dot + count to the visible "shelf" below the menu bar.
+            // window content on macOS 26), so leave that empty. A
+            // FLEXIBLE Spacer pushes the dot + count down to the visible
+            // shelf at the bottom — fixed-height Spacers in a VStack
+            // don't always claim their share, so we let SwiftUI
+            // distribute the leftover instead.
             VStack(spacing: 0) {
-                Spacer()
-                    .frame(height: layout.menuBarHeight)
+                Spacer(minLength: 0)
                 HStack {
                     StatusDot(state: state)
                     Spacer(minLength: 8)
@@ -133,7 +135,7 @@ struct NotchBarView: View {
                         .monospacedDigit()
                 }
                 .padding(.horizontal, 12)
-                .frame(height: layout.barHeight - layout.menuBarHeight)
+                .padding(.bottom, 4)
             }
         }
     }

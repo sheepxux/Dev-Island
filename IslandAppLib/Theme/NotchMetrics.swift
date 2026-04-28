@@ -51,15 +51,15 @@ public enum NotchMetrics {
     // No-notch fallback (per CLAUDE_CLIENT.md §6 task 7)
     public static let fallbackWidth: CGFloat = 168
 
-    /// On synthetic-notch displays, how far the bar extends BELOW the
-    /// menu bar. macOS 26 treats the menu-bar zone as off-limits to
-    /// arbitrary windows — content drawn there gets covered by the
-    /// system's translucent overlay. Giving the bar a "shelf" of
-    /// drawable space below the menu bar lets the status dot + count
-    /// live somewhere the OS won't sit on top of, while keeping the
-    /// bar's TOP edge at the screen's top edge (Dynamic-Island shape:
-    /// hangs from the top, pokes a few pt into the content area).
-    public static let syntheticShelfHeight: CGFloat = 22
+    /// Total bar height on synthetic-notch displays. Hardcoded to 48pt
+    /// (matching the reference setup in VoidChecksum/vibe-island) — tall
+    /// enough that on every macOS the lower half of the bar lands well
+    /// below the menu-bar zone where the OS's translucent overlay sits.
+    /// We DON'T compute this as `menuBarHeight + shelf` anymore: macOS
+    /// 26 reports a ~32pt menu bar and a 22pt shelf wasn't enough to
+    /// host the dot + count cleanly below it. 48pt total absorbs any
+    /// menu-bar height up to ~32pt and still leaves ~16pt of shelf.
+    public static let syntheticBarHeight: CGFloat = 48
 
     // MARK: - Layout descriptor
 
@@ -153,17 +153,16 @@ public enum NotchMetrics {
                 topMargin: 0
             )
         } else {
-            // Synthetic notch: bar's TOP edge stays glued to the
-            // screen's top, but the bar extends past the menu bar by
-            // `syntheticShelfHeight` so its lower portion lands in
-            // normal drawable area. Status dot + count live on that
-            // shelf — the menu-bar zone above is left visually empty
-            // since the OS will overlay it anyway.
+            // Synthetic notch: bar is `syntheticBarHeight` tall (48pt)
+            // glued to the screen's top. macOS's menu bar overlays the
+            // upper portion regardless; we anchor the dot + count to
+            // the bottom of the bar so they always land in the
+            // drawable shelf below.
             let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
             let measured = menuBar > 0 ? menuBar : NSStatusBar.system.thickness
             return Layout(
                 hasNotch: false,
-                barHeight: measured + syntheticShelfHeight,
+                barHeight: syntheticBarHeight,
                 notchHeight: 0,
                 menuBarHeight: measured,
                 notchWidth: defaultNotchWidth,

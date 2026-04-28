@@ -73,20 +73,6 @@ struct IslandRootView: View {
             // Backdrop — one shape for both modes.
             backdrop
 
-            // Bar content — visible while collapsed, faded out while expanded.
-            NotchBarView(
-                state: BarState.derive(from: store.tasks),
-                taskCount: barTaskCount,
-                layout: barLayoutForContent,
-                showsContent: true,
-                drawsBackdrop: false
-            )
-            .opacity(mode == .collapsed ? 1 : 0)
-            // Anchor to the very top so the bar content stays where it
-            // belongs as the parent grows downward.
-            .frame(maxHeight: .infinity, alignment: .top)
-            .allowsHitTesting(mode == .collapsed)
-
             // Panel content — visible while expanded.
             NotchPanelView(
                 tasks: store.tasks,
@@ -103,9 +89,19 @@ struct IslandRootView: View {
         }
         .frame(width: shapeWidth, height: shapeHeight)
         .clipShape(silhouette)
+        .overlay(alignment: .top) {
+            if mode == .collapsed {
+                collapsedBarContent
+                    .frame(width: shapeWidth, height: shapeHeight, alignment: .top)
+                    .clipShape(silhouette)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
         .contentShape(silhouette)
         .onHover(perform: handleHover)
         .onTapGesture(perform: handleTap)
+        .allowsHitTesting(mode == .collapsed || mode == .expanded)
     }
 
     // MARK: - Backdrop with synced glow
@@ -115,12 +111,14 @@ struct IslandRootView: View {
     private var backdrop: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !needsTimelineGlow)) { context in
             let phase = StatusPhase.compute(state: BarState.derive(from: store.tasks), at: context.date)
-            silhouette
-                .fill(Palette.notchBlack)
-                .shadow(
-                    color: BarState.derive(from: store.tasks).color.opacity(phase.glowOpacity * 0.55),
-                    radius: phase.glowRadius * 1.3
-                )
+            ZStack(alignment: .top) {
+                silhouette
+                    .fill(Palette.notchBlack)
+                    .shadow(
+                        color: BarState.derive(from: store.tasks).color.opacity(phase.glowOpacity * 0.55),
+                        radius: phase.glowRadius * 1.3
+                    )
+            }
         }
     }
 
@@ -166,9 +164,12 @@ struct IslandRootView: View {
     private var cornerRadius: CGFloat {
         // Smoothly interpolate corner radius between bar (~11) and panel
         // (~22) as the morph progresses — `withAnimation` handles the lerp.
-        mode == .expanded
-            ? NotchMetrics.panelCornerRadius
-            : NotchMetrics.cornerRadius
+        if mode == .expanded {
+            return NotchMetrics.panelCornerRadius
+        }
+        return baseLayout.hasNotch
+            ? NotchMetrics.cornerRadius
+            : NotchMetrics.syntheticCornerRadius
     }
 
     private var panelWidth: CGFloat {
@@ -189,8 +190,71 @@ struct IslandRootView: View {
         isHovering ? baseLayout.hovered() : baseLayout
     }
 
+    @ViewBuilder
+    private var collapsedBarContent: some View {
+        if baseLayout.hasNotch {
+            NotchBarView(
+                state: BarState.derive(from: store.tasks),
+                taskCount: barTaskCount,
+                title: barTitle,
+                layout: barLayoutForContent,
+                showsContent: true,
+                drawsBackdrop: false
+            )
+        } else {
+            syntheticBarContent
+        }
+    }
+
+    private var syntheticBarContent: some View {
+        HStack(spacing: 10) {
+            StatusDot(state: BarState.derive(from: store.tasks), size: 10)
+                .frame(width: 14, height: 14)
+
+            Text(barTitle)
+                .font(Typo.barTitle)
+                .foregroundStyle(.white.opacity(0.68))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("\(barTaskCount)")
+                .font(Typo.barBadge)
+                .foregroundStyle(.white.opacity(0.88))
+                .monospacedDigit()
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.white.opacity(0.14))
+                )
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 12)
+        .frame(
+            width: barLayoutForContent.totalWidth,
+            height: barLayoutForContent.barHeight,
+            alignment: .center
+        )
+    }
+
     private var barTaskCount: Int {
         store.tasks.count
+    }
+
+    private var barTitle: String {
+        guard let task = priorityTask else { return "No tasks" }
+        return task.currentPhase ?? task.title
+    }
+
+    private var priorityTask: AgentTask? {
+        let statuses: [TaskStatus] = [.waiting, .failed, .running, .completed]
+        for status in statuses {
+            if let task = store.tasks.first(where: { $0.status == status }) {
+                return task
+            }
+        }
+        return nil
     }
 
     // MARK: - Event handlers

@@ -4,6 +4,10 @@ import SwiftUI
 enum Typo {
     /// Task count digits in the notch bar.
     static let barCount = Font.system(size: 11, weight: .medium, design: .monospaced)
+    /// Current task label in the synthetic-notch compact bar.
+    static let barTitle = Font.system(size: 12, weight: .regular, design: .monospaced)
+    /// Count badge in the synthetic-notch compact bar.
+    static let barBadge = Font.system(size: 10, weight: .semibold, design: .monospaced)
     /// Task card title (one line).
     static let cardTitle = Font.system(size: 13, weight: .medium)
     /// Phase + duration row.

@@ -12,6 +12,7 @@ import IslandCore
 struct NotchBarView: View {
     let state: BarState
     let taskCount: Int
+    var title: String = "No tasks"
     let layout: NotchMetrics.Layout
     /// Whether to show the status dot + count inside the bar. Normal
     /// collapsed state keeps this on for both hardware-notch and
@@ -77,8 +78,8 @@ struct NotchBarView: View {
             UnevenRoundedRectangle(
                 cornerRadii: RectangleCornerRadii(
                     topLeading: 0,
-                    bottomLeading: NotchMetrics.cornerRadius,
-                    bottomTrailing: NotchMetrics.cornerRadius,
+                    bottomLeading: NotchMetrics.syntheticCornerRadius,
+                    bottomTrailing: NotchMetrics.syntheticCornerRadius,
                     topTrailing: 0
                 ),
                 style: .continuous
@@ -92,44 +93,53 @@ struct NotchBarView: View {
     @ViewBuilder
     private var content: some View {
         if layout.hasNotch {
-            // Content sits in the side extensions, vertically centered against
-            // the FULL bar height — the dot and number visually align across
-            // the cutout because both extensions share the same center line.
-            HStack(spacing: 0) {
-                HStack {
+            // Keep the normal readout centered in the visible black shelf
+            // below the hardware notch. Splitting it into side wings makes
+            // the center look like a plain black notch, and menu-bar items
+            // can visually compete with the side content.
+            VStack(spacing: 0) {
+                Spacer()
+                    .frame(height: layout.notchHeight)
+                HStack(spacing: 8) {
                     StatusDot(state: state)
-                    Spacer(minLength: 0)
-                }
-                .frame(width: NotchMetrics.sideExtension)
-                .padding(.leading, NotchMetrics.sideInset)
-
-                // Hardware notch corridor — transparent (filled by hardware notch)
-                Spacer().frame(width: layout.notchWidth)
-
-                HStack {
-                    Spacer(minLength: 0)
                     Text("\(taskCount)")
                         .font(Typo.barCount)
                         .foregroundStyle(.white.opacity(0.85))
                         .monospacedDigit()
                 }
-                .frame(width: NotchMetrics.sideExtension)
-                .padding(.trailing, NotchMetrics.sideInset)
+                .frame(maxWidth: .infinity)
+                .frame(height: max(18, layout.barHeight - layout.notchHeight))
             }
         } else {
-            // Synthetic notch: bar height matches menu-bar height
-            // exactly. Dot + count laid out in a single horizontal
-            // row, vertically centered inside the bar via the outer
-            // frame's default alignment.
-            HStack {
+            // Synthetic notch: mirror a Dynamic Island compact layout.
+            // Left = state, center = current task label, right = count.
+            HStack(spacing: 12) {
                 StatusDot(state: state)
-                Spacer(minLength: 8)
+                    .frame(width: 16, height: 16)
+
+                Text(title)
+                    .font(Typo.barTitle)
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                 Text("\(taskCount)")
-                    .font(Typo.barCount)
-                    .foregroundStyle(.white.opacity(0.85))
+                    .font(Typo.barBadge)
+                    .foregroundStyle(.white.opacity(0.82))
                     .monospacedDigit()
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.white.opacity(0.13))
+                    )
             }
-            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+            .frame(height: min(28, layout.barHeight), alignment: .center)
+            .frame(maxHeight: .infinity, alignment: .center)
+            .padding(.leading, 18)
+            .padding(.trailing, 16)
         }
     }
 }

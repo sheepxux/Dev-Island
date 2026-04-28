@@ -13,19 +13,21 @@ public enum NotchMetrics {
     public static let sideInset: CGFloat = 10
     /// Status dot diameter.
     public static let dotSize: CGFloat = 12
-    /// Outer-bottom corner radius for the notch bar extensions and the
-    /// no-notch capsule.
+    /// Outer-bottom corner radius for the hardware-notch bar extensions.
     public static let cornerRadius: CGFloat = 11
+    /// Outer-bottom corner radius for the synthetic notch on non-notched Macs.
+    public static let syntheticCornerRadius: CGFloat = 12
     /// Outer-bottom corner radius for the expanded panel (Task 2).
     public static let panelCornerRadius: CGFloat = 22
     /// Default panel width (synthetic-notch displays).
-    public static let panelWidth: CGFloat = 380
+    public static let panelWidth: CGFloat = 480
     /// Maximum panel width on notched displays — never exceed this.
     public static let panelMaxWidth: CGFloat = 480
     /// How far the bar protrudes BELOW the hardware notch on notched
-    /// displays. Gives a longer straight vertical edge before the corner
-    /// curve starts (Dynamic Island feel).
-    public static let bottomOverhang: CGFloat = 7
+    /// displays. Keep this tall enough for a visible status cluster below
+    /// the physical notch, since the notch pixels themselves are not
+    /// drawable.
+    public static let bottomOverhang: CGFloat = 24
 
     // Hover affordance — how much the bar grows when the mouse enters,
     // signalling "clickable". Pre-Task-2 polish; the panel expansion that
@@ -49,7 +51,8 @@ public enum NotchMetrics {
     public static let defaultNotchWidth: CGFloat = 200
 
     // No-notch fallback (per CLAUDE_CLIENT.md §6 task 7)
-    public static let fallbackWidth: CGFloat = 168
+    public static let fallbackWidth: CGFloat = 240
+    public static let fallbackBarHeight: CGFloat = 28
 
 
     // MARK: - Layout descriptor
@@ -100,7 +103,7 @@ public enum NotchMetrics {
                 // Dynamic-Island-style anticipation of the panel expansion.
                 return Layout(
                     hasNotch: false,
-                    barHeight: menuBarHeight + NotchMetrics.hoverHeightBoostCapsule,
+                    barHeight: barHeight + NotchMetrics.hoverHeightBoostCapsule,
                     notchHeight: 0,
                     menuBarHeight: menuBarHeight,
                     notchWidth: notchWidth,
@@ -144,14 +147,15 @@ public enum NotchMetrics {
                 topMargin: 0
             )
         } else {
-            // Synthetic notch: bar height EQUALS the menu-bar height —
-            // hard contract from the user. No shelf below, no overhang.
-            // The bar sits exactly inside the menu-bar zone.
+            // Synthetic notch: keep the simulated island within the menu
+            // bar band so it feels like a status-bar replacement rather
+            // than a large floating panel.
             let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
             let measured = menuBar > 0 ? menuBar : NSStatusBar.system.thickness
+            let barHeight = measured > 0 ? measured : fallbackBarHeight
             return Layout(
                 hasNotch: false,
-                barHeight: measured,
+                barHeight: barHeight,
                 notchHeight: 0,
                 menuBarHeight: measured,
                 notchWidth: defaultNotchWidth,

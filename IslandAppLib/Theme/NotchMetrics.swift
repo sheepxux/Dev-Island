@@ -51,11 +51,6 @@ public enum NotchMetrics {
     // No-notch fallback (per CLAUDE_CLIENT.md §6 task 7)
     public static let fallbackWidth: CGFloat = 168
 
-    /// On synthetic-notch displays, how far the bar extends BELOW the
-    /// menu bar. macOS treats the menu-bar zone as off-limits to
-    /// arbitrary windows, so the bar grows past the menu bar by this
-    /// amount and content is anchored into that "shelf" below.
-    public static let syntheticShelfHeight: CGFloat = 22
 
     // MARK: - Layout descriptor
 
@@ -149,11 +144,14 @@ public enum NotchMetrics {
                 topMargin: 0
             )
         } else {
+            // Synthetic notch: bar height EQUALS the menu-bar height —
+            // hard contract from the user. No shelf below, no overhang.
+            // The bar sits exactly inside the menu-bar zone.
             let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
             let measured = menuBar > 0 ? menuBar : NSStatusBar.system.thickness
             return Layout(
                 hasNotch: false,
-                barHeight: measured + syntheticShelfHeight,
+                barHeight: measured,
                 notchHeight: 0,
                 menuBarHeight: measured,
                 notchWidth: defaultNotchWidth,

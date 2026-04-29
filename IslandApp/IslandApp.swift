@@ -92,6 +92,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             self?.openSettings()
         }
+
+        // Banner notifications for task state transitions
+        // (running → completed, * → waiting). Owns its own
+        // UNUserNotificationCenter delegate + observation re-arming
+        // loop; we just kick it off once.
+        TaskNotifier.shared.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

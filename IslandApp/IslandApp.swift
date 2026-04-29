@@ -18,6 +18,13 @@ struct IslandApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var islandWindow: IslandWindow?
     private var screenChangeObserver: NSObjectProtocol?
+    private var openSettingsObserver: NSObjectProtocol?
+
+    /// Lazily-created so we don't pay the SwiftUI view-construction cost
+    /// until the user actually opens settings. Re-used across opens —
+    /// the second gear tap brings the same window forward instead of
+    /// stacking a new one.
+    private var settingsWindow: SettingsWindow?
 
     /// NSEvent monitors that are alive only while the panel is expanded.
     /// Global monitors fire for events going to OTHER apps (so clicks on
@@ -73,13 +80,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             self?.islandWindow?.reposition()
         }
+
+        // Settings window plumbing. Panel's gear button posts this
+        // notification (defined in IslandAppLib's SettingsWindow.swift);
+        // we lazily create / focus the window here so the SwiftUI side
+        // stays free of AppKit window references.
+        openSettingsObserver = NotificationCenter.default.addObserver(
+            forName: .islandOpenSettingsRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.openSettings()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         if let observer = screenChangeObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = openSettingsObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         removePanelEventMonitors()
+    }
+
+    // MARK: - Settings
+
+    private func openSettings() {
+        if let existing = settingsWindow {
+            existing.bringToFront()
+            return
+        }
+        let window = SettingsWindow()
+        settingsWindow = window
+        window.bringToFront()
     }
 
     // MARK: - Panel-only event monitors

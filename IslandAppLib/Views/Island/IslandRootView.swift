@@ -308,8 +308,13 @@ struct IslandRootView: View {
     }
 
     private func handleSettingsTap() {
-        // Task 6 will route to SettingsWindow.
+        // Collapse first so the panel doesn't visually compete with the
+        // Settings window that's about to open.
         coordinator.collapse()
+        // AppDelegate listens for this notification and lazily creates /
+        // brings the SettingsWindow to front. Decoupled via Notification
+        // so the SwiftUI view doesn't need to know about NSWindow plumbing.
+        NotificationCenter.default.post(name: .islandOpenSettingsRequested, object: nil)
     }
 
     private func handleConnectTap() {

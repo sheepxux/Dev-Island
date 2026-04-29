@@ -62,11 +62,35 @@ public final class IslandWindow: NSWindow {
                 }
             )
         )
+        // Seed `visibleRegion` BEFORE setting contentView so the very
+        // first hitTest after the window appears already filters
+        // correctly. The SwiftUI .onChange(initial: true) callback can
+        // race with `self.hostingView` not being set yet, and after
+        // that `.onChange` only fires on actual silhouette changes —
+        // so without this seed line, visibleRegion stays nil forever
+        // and the whole 408pt window keeps swallowing clicks.
+        host.visibleRegion = Self.idleSilhouetteRect(for: initialLayout)
         self.hostingView = host
         contentView = host
 
         layout = initialLayout
         reposition()
+    }
+
+    /// Silhouette bounding rect for the COLLAPSED, NOT-HOVERED state —
+    /// used as the seed value for `visibleRegion` until SwiftUI's
+    /// `onSilhouetteRectChanged` callback takes over for hover/mode
+    /// transitions. Mirrors the same math `IslandRootView.silhouetteRect`
+    /// uses (container-centered, glued to top).
+    private static func idleSilhouetteRect(for layout: NotchMetrics.Layout) -> CGRect {
+        let w = layout.totalWidth
+        let h = layout.barHeight
+        return CGRect(
+            x: (containerWidth - w) / 2,
+            y: 0,
+            width: w,
+            height: h
+        )
     }
 
     /// Toggle the system-rendered window shadow. Forced recompute via
@@ -95,6 +119,13 @@ public final class IslandWindow: NSWindow {
                 self?.hostingView.visibleRegion = rect
             }
         )
+        // Same seeding rationale as in init — re-assigning rootView on
+        // an already-mounted NSHostingView does NOT re-trigger
+        // .onChange(initial: true), so if `silhouetteRect` happens to
+        // be the same as before (typical when the user moves windows
+        // around without changing screens), the callback never fires
+        // and visibleRegion drifts. Seed it explicitly here too.
+        hostingView.visibleRegion = Self.idleSilhouetteRect(for: newLayout)
 
         let frame = screen.frame
         let origin = NSPoint(

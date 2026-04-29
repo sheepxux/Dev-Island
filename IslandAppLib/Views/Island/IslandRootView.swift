@@ -142,7 +142,7 @@ struct IslandRootView: View {
     /// while the dot smoothly faded.
     private var backdrop: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !needsTimelineGlow)) { context in
-            let state = BarState.derive(from: store.tasks)
+            let state = effectiveBarState
             let phase = StatusPhase.compute(state: state, at: context.date)
             ZStack(alignment: .top) {
                 silhouette
@@ -157,8 +157,29 @@ struct IslandRootView: View {
     }
 
     private var needsTimelineGlow: Bool {
-        let s = BarState.derive(from: store.tasks)
+        let s = effectiveBarState
         return s == .running || s == .waiting
+    }
+
+    /// `BarState` adjusted for the current `ConnectionStatus`. Per
+    /// CLAUDE_CLIENT.md §6 task 8, the bar should "show gray" when
+    /// `connectionStatus` is disconnected or reconnecting — the data
+    /// the user is looking at may be stale, so we don't want to keep
+    /// the dot/glow loudly running/waiting/etc. We collapse to `.idle`
+    /// (gray, no glow, no animation). The 250ms color crossfade in
+    /// StatusDot + backdrop handles the transition smoothly.
+    ///
+    /// `.degraded` is intentionally NOT dimmed — it just means the
+    /// webhook tunnel is down and we're polling, so data is still
+    /// being refreshed every 60s. Status colors stay live.
+    private var effectiveBarState: BarState {
+        let raw = BarState.derive(from: store.tasks)
+        switch store.connectionStatus {
+        case .disconnected, .reconnecting:
+            return .idle
+        case .connected, .degraded:
+            return raw
+        }
     }
 
     /// The shape used for backdrop, clipping, and hit-testing — built once
@@ -228,7 +249,7 @@ struct IslandRootView: View {
     private var collapsedBarContent: some View {
         if baseLayout.hasNotch {
             NotchBarView(
-                state: BarState.derive(from: store.tasks),
+                state: effectiveBarState,
                 taskCount: barTaskCount,
                 title: barTitle,
                 layout: barLayoutForContent,
@@ -242,7 +263,7 @@ struct IslandRootView: View {
 
     private var syntheticBarContent: some View {
         HStack(spacing: 10) {
-            StatusDot(state: BarState.derive(from: store.tasks), size: 10)
+            StatusDot(state: effectiveBarState, size: 10)
                 .frame(width: 14, height: 14)
 
             Text(barTitle)

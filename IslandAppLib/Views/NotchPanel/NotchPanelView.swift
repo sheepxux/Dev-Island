@@ -107,9 +107,13 @@ struct NotchPanelView: View {
 
     @ViewBuilder
     private var connectionDot: some View {
+        // 250ms cross-fade matches the bar's StatusDot color transition
+        // — keeps the panel header consistent with the rest of the
+        // status palette when reconnecting/degraded states flap.
         Circle()
             .fill(connectionColor)
             .frame(width: 6, height: 6)
+            .animation(Motion.colorTransition, value: connectionStatus)
             .help(connectionTooltip)
     }
 

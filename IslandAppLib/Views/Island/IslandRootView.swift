@@ -135,16 +135,23 @@ struct IslandRootView: View {
 
     /// Backdrop shape with a `StatusPhase`-driven outer glow. Pause the
     /// timeline for static states so we don't burn frames at idle.
+    /// `.animation(Motion.colorTransition, value: state)` keeps the
+    /// glow's color in lockstep with the StatusDot's fill — both
+    /// cross-fade over 250ms on state change, per CLAUDE_CLIENT.md §6
+    /// task 3 ("和圆点同相位"). Without it, the glow would jump-cut
+    /// while the dot smoothly faded.
     private var backdrop: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !needsTimelineGlow)) { context in
-            let phase = StatusPhase.compute(state: BarState.derive(from: store.tasks), at: context.date)
+            let state = BarState.derive(from: store.tasks)
+            let phase = StatusPhase.compute(state: state, at: context.date)
             ZStack(alignment: .top) {
                 silhouette
                     .fill(Palette.notchBlack)
                     .shadow(
-                        color: BarState.derive(from: store.tasks).color.opacity(phase.glowOpacity * 0.55),
+                        color: state.color.opacity(phase.glowOpacity * 0.55),
                         radius: phase.glowRadius * 1.3
                     )
+                    .animation(Motion.colorTransition, value: state)
             }
         }
     }

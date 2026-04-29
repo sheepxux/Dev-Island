@@ -172,7 +172,11 @@ private struct ManusServiceRow: View {
     }
 
     private var keyField: some View {
-        SecureField("mk_live_…", text: $apiKeyDraft)
+        // Per S's docs/manus-api-field-notes.md, the real API key
+        // format is `sk-…` (not the `mk_live_…` from the public docs
+        // example). Placeholder updated to match what users actually
+        // get from manus.im.
+        SecureField("sk-…", text: $apiKeyDraft)
             .textFieldStyle(.roundedBorder)
             .font(.system(size: 12, design: .monospaced))
             .onSubmit {

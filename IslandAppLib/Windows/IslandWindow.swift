@@ -8,14 +8,20 @@ import IslandCore
 /// freely morph without triggering an NSWindow frame animation (which is
 /// jankier than SwiftUI's own spring).
 ///
-/// Replaces the prior `NotchBarWindow` + `PanelWindow` pair so the
-/// transition between collapsed and expanded is a single shape morph
-/// instead of a two-window cross-fade.
+/// **Click-through model.** This window is much taller than the actual
+/// visible silhouette (the bar's ~28pt vs. the window's 408pt allowance
+/// for the expanded panel). The empty area is fully transparent, but a
+/// transparent NSWindow still intercepts every mouse event in its frame
+/// — that means clicks across the upper-middle of the screen get
+/// silently swallowed unless we opt out. We do that by polling the
+/// cursor position via a low-frequency timer and toggling
+/// `ignoresMouseEvents` based on whether the cursor is inside the
+/// silhouette's screen-coords rect. Cursor inside silhouette: window
+/// receives events normally (bar is clickable, panel buttons work).
+/// Cursor anywhere else (including the transparent area of our own
+/// window): events fall through to the app below.
 public final class IslandWindow: NSWindow {
-    /// Custom NSHostingView subclass that filters hit-tests to the
-    /// silhouette area so clicks on the otherwise-transparent ~408pt
-    /// window don't get swallowed across the upper-middle of the screen.
-    private var hostingView: ClickThroughHostingView<IslandRootView>!
+    private var hostingView: NSHostingView<IslandRootView>!
     public private(set) var layout: NotchMetrics.Layout = NotchMetrics.current()
 
     /// Outer container size: panel max width + shadow padding on each side,
@@ -23,6 +29,19 @@ public final class IslandWindow: NSWindow {
     /// inside SwiftUI shape never touches the window's edges.
     private static let containerWidth: CGFloat  = NotchMetrics.panelMaxWidth + 2 * NotchMetrics.shadowPadding
     private static let containerHeight: CGFloat = 380 + NotchMetrics.shadowPadding
+
+    /// Cursor-tracking poll interval. 40ms ≈ 25 Hz — enough that the bar
+    /// "feels" instantly clickable on hover without any visible latency,
+    /// cheap enough that the CPU cost is invisible at idle.
+    private static let mouseTrackingInterval: TimeInterval = 0.04
+
+    /// Cached silhouette rect in absolute screen coordinates. Updated
+    /// whenever the SwiftUI side reports a new silhouette (mode flip /
+    /// hover widen) or whenever the window is repositioned. The
+    /// mouse-tracking timer reads this every tick.
+    private var silhouetteScreenRect: CGRect = .zero
+
+    private var mouseTrackingTimer: Timer?
 
     public init() {
         let initialLayout = NotchMetrics.current()
@@ -45,12 +64,15 @@ public final class IslandWindow: NSWindow {
         hasShadow = false
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        ignoresMouseEvents = false
+        // Default to click-through. The mouse-tracking timer below
+        // toggles this back to `false` when the cursor is over the
+        // silhouette so the bar / panel respond to clicks normally.
+        ignoresMouseEvents = true
         isMovable = false
         isReleasedWhenClosed = false
         animationBehavior = .none
 
-        let host = ClickThroughHostingView(
+        let host = NSHostingView(
             rootView: IslandRootView(
                 baseLayout: initialLayout,
                 containerWidth: Self.containerWidth,
@@ -58,40 +80,72 @@ public final class IslandWindow: NSWindow {
                     self?.setShadow(enabled)
                 },
                 onSilhouetteRectChanged: { [weak self] rect in
-                    self?.hostingView.visibleRegion = rect
+                    self?.cacheSilhouetteScreenRect(localRect: rect)
                 }
             )
         )
-        // Seed `visibleRegion` BEFORE setting contentView so the very
-        // first hitTest after the window appears already filters
-        // correctly. The SwiftUI .onChange(initial: true) callback can
-        // race with `self.hostingView` not being set yet, and after
-        // that `.onChange` only fires on actual silhouette changes —
-        // so without this seed line, visibleRegion stays nil forever
-        // and the whole 408pt window keeps swallowing clicks.
-        host.visibleRegion = Self.idleSilhouetteRect(for: initialLayout)
         self.hostingView = host
         contentView = host
 
         layout = initialLayout
         reposition()
+
+        startMouseTracking()
     }
 
-    /// Silhouette bounding rect for the COLLAPSED, NOT-HOVERED state —
-    /// used as the seed value for `visibleRegion` until SwiftUI's
-    /// `onSilhouetteRectChanged` callback takes over for hover/mode
-    /// transitions. Mirrors the same math `IslandRootView.silhouetteRect`
-    /// uses (container-centered, glued to top).
-    private static func idleSilhouetteRect(for layout: NotchMetrics.Layout) -> CGRect {
-        let w = layout.totalWidth
-        let h = layout.barHeight
-        return CGRect(
-            x: (containerWidth - w) / 2,
-            y: 0,
-            width: w,
-            height: h
+    deinit {
+        mouseTrackingTimer?.invalidate()
+    }
+
+    // MARK: - Click-through tracking
+
+    /// Convert a SwiftUI-local silhouette rect (top-left origin, in
+    /// content-view coords) to absolute screen coordinates (bottom-left
+    /// origin) and cache it for the mouse tracker.
+    private func cacheSilhouetteScreenRect(localRect: CGRect) {
+        // Top-left → window-local (bottom-left) Y flip.
+        let contentH = Self.containerHeight
+        let windowLocalY = contentH - localRect.origin.y - localRect.height
+
+        // Window-local → screen by adding the window's frame origin
+        // (which is itself in screen coords, bottom-left).
+        let origin = self.frame.origin
+        silhouetteScreenRect = CGRect(
+            x: origin.x + localRect.origin.x,
+            y: origin.y + windowLocalY,
+            width: localRect.width,
+            height: localRect.height
         )
     }
+
+    private func startMouseTracking() {
+        mouseTrackingTimer?.invalidate()
+        mouseTrackingTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.mouseTrackingInterval,
+            repeats: true
+        ) { [weak self] _ in
+            self?.tickMouseTracking()
+        }
+        // Run during scrolling / dragging too — without .common mode the
+        // timer pauses while the user is actively moving the cursor in
+        // certain UI contexts.
+        if let t = mouseTrackingTimer {
+            RunLoop.main.add(t, forMode: .common)
+        }
+    }
+
+    private func tickMouseTracking() {
+        // Skip work until we have a real silhouette to compare against.
+        guard silhouetteScreenRect.width > 0, silhouetteScreenRect.height > 0 else { return }
+        let cursor = NSEvent.mouseLocation  // already screen coords (bottom-left)
+        let inside = silhouetteScreenRect.contains(cursor)
+        let shouldIgnore = !inside
+        if ignoresMouseEvents != shouldIgnore {
+            ignoresMouseEvents = shouldIgnore
+        }
+    }
+
+    // MARK: - Window plumbing
 
     /// Toggle the system-rendered window shadow. Forced recompute via
     /// `invalidateShadow()` so the shadow follows the morphing alpha
@@ -116,16 +170,9 @@ public final class IslandWindow: NSWindow {
                 self?.setShadow(enabled)
             },
             onSilhouetteRectChanged: { [weak self] rect in
-                self?.hostingView.visibleRegion = rect
+                self?.cacheSilhouetteScreenRect(localRect: rect)
             }
         )
-        // Same seeding rationale as in init — re-assigning rootView on
-        // an already-mounted NSHostingView does NOT re-trigger
-        // .onChange(initial: true), so if `silhouetteRect` happens to
-        // be the same as before (typical when the user moves windows
-        // around without changing screens), the callback never fires
-        // and visibleRegion drifts. Seed it explicitly here too.
-        hostingView.visibleRegion = Self.idleSilhouetteRect(for: newLayout)
 
         let frame = screen.frame
         let origin = NSPoint(
@@ -139,5 +186,26 @@ public final class IslandWindow: NSWindow {
         )
         setFrame(NSRect(origin: origin, size: NSSize(width: Self.containerWidth, height: Self.containerHeight)),
                  display: true)
+
+        // Re-compute the cached silhouette in screen coords now that the
+        // window has a new origin. Use the idle layout as the seed —
+        // SwiftUI's onSilhouetteRectChanged will overwrite it on the next
+        // hover / mode change, but the seed makes click-through work
+        // immediately at idle without waiting for any animation.
+        cacheSilhouetteScreenRect(localRect: idleLocalRect(for: newLayout))
+    }
+
+    /// Silhouette rect in CONTENT VIEW local coords (top-left origin) for
+    /// the COLLAPSED, NOT-HOVERED state. Mirrors
+    /// `IslandRootView.silhouetteRect`'s math.
+    private func idleLocalRect(for layout: NotchMetrics.Layout) -> CGRect {
+        let w = layout.totalWidth
+        let h = layout.barHeight
+        return CGRect(
+            x: (Self.containerWidth - w) / 2,
+            y: 0,
+            width: w,
+            height: h
+        )
     }
 }

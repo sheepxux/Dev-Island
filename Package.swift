@@ -54,14 +54,15 @@ let package = Package(
         ),
 
         // ── S 侧：IslandCore 完整实现 ─────────────────────────────────
-        // The cloudflared resource is a placeholder text file; the real
-        // binary is not committed. Drop the actual binary at
-        // `IslandCore/Sources/IslandCore/Resources/cloudflared` (chmod +x)
-        // to enable webhook tunneling. Without it, TunnelManager catches
-        // the launch failure and falls back to PollingFallback's 60s loop.
-        // The resource declaration is still required so SPM generates
-        // `Bundle.module`, which CloudflaredProcess uses to locate the
-        // binary at runtime.
+        // cloudflared is no longer a bundled resource. CloudflaredProcess
+        // resolves the binary at runtime in this order: bundled (kept as
+        // an opt-in path for future use, currently absent), Homebrew
+        // standard locations (/opt/homebrew/bin, /usr/local/bin), then
+        // `$PATH`. The Cask formula declares
+        // `depends_on cask: "cloudflared"` so brew users get the binary
+        // at install time. If the binary is missing entirely (manual
+        // build, offline machine, etc.), TunnelManager catches the
+        // launch failure and PollingFallback's 60s loop takes over.
         .target(
             name: "IslandCore",
             dependencies: [
@@ -69,9 +70,6 @@ let package = Package(
                 .product(name: "SQLite",      package: "SQLite.swift"),
             ],
             path: "IslandCore/Sources/IslandCore",
-            resources: [
-                .copy("Resources/cloudflared"),
-            ],
             swiftSettings: coreSettings
         ),
 

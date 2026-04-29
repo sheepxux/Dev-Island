@@ -1,0 +1,5 @@
+# Placeholder for the cloudflared binary.
+#
+# The real binary is intentionally not committed (license + size).
+# Drop the actual binary here (chmod +x) to enable webhook tunneling.
+# Without it, TunnelManager falls back to polling-only mode.

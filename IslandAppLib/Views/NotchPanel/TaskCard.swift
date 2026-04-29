@@ -140,7 +140,9 @@ private struct AnimatedProgressBar: View {
     }
 }
 
-#if PREVIEWS
+// PREVIEWS && DEBUG — references TaskStore.previewTasks which is
+// inside a #if DEBUG extension, so release builds must strip this.
+#if PREVIEWS && DEBUG
 #Preview("Task cards — all states") {
     VStack(spacing: 6) {
         ForEach(TaskStore.previewTasks) { task in

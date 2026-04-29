@@ -205,7 +205,10 @@ struct NotchPanelView: View {
 
 }
 
-#if PREVIEWS
+// PREVIEWS && DEBUG — these previews reference TaskStore.previewTasks
+// which lives behind a #if DEBUG extension; release builds (CI / Cask
+// release artifact) need the block stripped entirely.
+#if PREVIEWS && DEBUG
 private let previewLayoutNoNotch = NotchMetrics.Layout(
     hasNotch: false,
     barHeight: 28,

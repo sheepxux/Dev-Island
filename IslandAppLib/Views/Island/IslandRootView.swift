@@ -16,11 +16,22 @@ import IslandCore
 /// active mode so they cross-fade in place during the morph.
 struct IslandRootView: View {
     let baseLayout: NotchMetrics.Layout
+    /// Width of the host NSWindow's content view. The silhouette is
+    /// centered horizontally inside this width, so we need it to compute
+    /// the silhouette's rect for click-through hit-testing.
+    let containerWidth: CGFloat
     /// Notifies the host NSWindow when the desired system-shadow state
     /// changes. The window toggles `hasShadow` so the silhouette only
     /// drops a shadow when (a) hovered in collapsed mode — clickable
     /// affordance — or (b) expanded as a panel. Idle bar has no shadow.
     var onShouldShowShadowChanged: ((Bool) -> Void)? = nil
+    /// Notifies the host NSWindow when the silhouette's bounding rect
+    /// changes (mode flip, hover widen). The window's
+    /// `ClickThroughHostingView` uses the rect to pass clicks through
+    /// any transparent area outside the silhouette — without this the
+    /// 408pt-tall window swallows clicks across the upper-middle of
+    /// the screen.
+    var onSilhouetteRectChanged: ((CGRect) -> Void)? = nil
 
     private let coordinator = IslandCoordinator.shared
     @State private var isHovering = false
@@ -51,6 +62,9 @@ struct IslandRootView: View {
         .onChange(of: shouldShowShadow, initial: true) { _, new in
             onShouldShowShadowChanged?(new)
         }
+        .onChange(of: silhouetteRect, initial: true) { _, new in
+            onSilhouetteRectChanged?(new)
+        }
         // When the panel collapses back, force the bar to idle. Without
         // this `isHovering` would stay `true` from the click-to-expand
         // moment (because handleHover doesn't update it during expanded
@@ -63,6 +77,19 @@ struct IslandRootView: View {
                 isHovering = false
             }
         }
+    }
+
+    /// Bounding rect of the visible silhouette in the host's contentView
+    /// coordinate space (top-left origin, matching SwiftUI). The
+    /// silhouette is centered horizontally inside `containerWidth` and
+    /// glued to the top of the VStack, so x = (container - shape) / 2,
+    /// y = 0. Used by `ClickThroughHostingView.visibleRegion` to make
+    /// clicks outside this rect pass through to the window below.
+    private var silhouetteRect: CGRect {
+        let w = shapeWidth
+        let h = shapeHeight
+        let x = (containerWidth - w) / 2
+        return CGRect(x: x, y: 0, width: w, height: h)
     }
 
     /// The single morphing shape with all overlaid content. Sized to the

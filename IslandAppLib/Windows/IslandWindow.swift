@@ -12,7 +12,10 @@ import IslandCore
 /// transition between collapsed and expanded is a single shape morph
 /// instead of a two-window cross-fade.
 public final class IslandWindow: NSWindow {
-    private var hostingView: NSHostingView<IslandRootView>!
+    /// Custom NSHostingView subclass that filters hit-tests to the
+    /// silhouette area so clicks on the otherwise-transparent ~408pt
+    /// window don't get swallowed across the upper-middle of the screen.
+    private var hostingView: ClickThroughHostingView<IslandRootView>!
     public private(set) var layout: NotchMetrics.Layout = NotchMetrics.current()
 
     /// Outer container size: panel max width + shadow padding on each side,
@@ -47,11 +50,15 @@ public final class IslandWindow: NSWindow {
         isReleasedWhenClosed = false
         animationBehavior = .none
 
-        let host = NSHostingView(
+        let host = ClickThroughHostingView(
             rootView: IslandRootView(
                 baseLayout: initialLayout,
+                containerWidth: Self.containerWidth,
                 onShouldShowShadowChanged: { [weak self] enabled in
                     self?.setShadow(enabled)
+                },
+                onSilhouetteRectChanged: { [weak self] rect in
+                    self?.hostingView.visibleRegion = rect
                 }
             )
         )
@@ -80,8 +87,12 @@ public final class IslandWindow: NSWindow {
         layout = newLayout
         hostingView.rootView = IslandRootView(
             baseLayout: newLayout,
+            containerWidth: Self.containerWidth,
             onShouldShowShadowChanged: { [weak self] enabled in
                 self?.setShadow(enabled)
+            },
+            onSilhouetteRectChanged: { [weak self] rect in
+                self?.hostingView.visibleRegion = rect
             }
         )
 

@@ -50,7 +50,12 @@ jobs:
     # Swift 5.10 chokes on these — see the v0.1.0 attempt that failed
     # at AsyncFlatMapLatestSequence.swift:85.
     runs-on: macos-15
-    timeout-minutes: 30
+    # 60 not 30 because notarytool's wait can take 20-40 minutes when
+    # Apple's queue is busy (we hit a 20m timeout on the first valid
+    # v0.1.0 attempt with submission still "In Progress"). Build itself
+    # completes in 5-10 min on a cold runner, codesign and stapler are
+    # near-instant, so the rest of the budget is all notarization slack.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -184,12 +189,18 @@ jobs:
           # different metadata that occasionally trips notarytool.
           ditto -c -k --keepParent build/Island.app build/Island-notarization.zip
 
+          # 45m, not 20m — Apple's queue varies wildly (median 5-10 min,
+          # tail can hit 30+ min especially for new Developer IDs that
+          # haven't built reputation yet). The v0.1.0 first attempt
+          # timed out at 20 min with submission b3b8e1d3 still "In
+          # Progress" on Apple's side. Job-level timeout in the runner
+          # config (60m) bounds the overall run if Apple goes catastrophic.
           xcrun notarytool submit build/Island-notarization.zip \
             --apple-id "${APPLE_ID}" \
             --team-id "${APPLE_TEAM_ID}" \
             --password "${APPLE_APP_PASSWORD}" \
             --wait \
-            --timeout 20m
+            --timeout 45m
 
           # Staple the notarization ticket onto the .app so users with
           # no internet can still verify the notarization. After this,

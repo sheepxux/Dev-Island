@@ -1,139 +1,188 @@
+<div align="center">
+
+<img src="docs/media/logo-256.png" width="160" alt="Dev Island app icon">
+
 # Dev Island
 
-A macOS island for AI agent tasks.
+**A live status bar for the AI agents working in the background.**
 
-<p align="center">
+<p>
   <a href="https://devisland.app"><img alt="Website" src="https://img.shields.io/badge/website-devisland.app-7DF0B0?style=for-the-badge"></a>
-  <a href="https://github.com/sheepxux/Dev-Island"><img alt="GitHub repository" src="https://img.shields.io/badge/github-Dev--Island-111111?style=for-the-badge&logo=github"></a>
+  <a href="https://github.com/sheepxux/Dev-Island/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/sheepxux/Dev-Island?style=for-the-badge&label=download&color=8B5CF6"></a>
   <a href="https://github.com/sheepxux/Dev-Island/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/sheepxux/Dev-Island?style=for-the-badge&logo=github&color=FACC15"></a>
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111?style=for-the-badge&logo=apple">
-  <img alt="Swift 5.10" src="https://img.shields.io/badge/Swift-5.10-F05138?style=for-the-badge&logo=swift&logoColor=white">
-  <img alt="Release preview" src="https://img.shields.io/badge/release-preview-8B5CF6?style=for-the-badge">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-34D399?style=for-the-badge"></a>
 </p>
 
-Dev Island keeps long-running agent work visible without making you keep a browser,
-terminal, or dashboard in front. The compact island shows the current task state
-and count at a glance, then expands into a local task console when you need more
-context.
+<img src="docs/media/dev-island-hero.svg" alt="Dev Island macOS preview" width="900">
+
+</div>
+
+## Why this exists
+
+AI agents are useful because they keep working after you switch tabs. That's also
+why they're easy to forget about — by the time the result is ready, you've
+already moved on three times.
+
+Dev Island gives that background work a small, persistent home on macOS.
+A capsule sits in your menu bar (or curls around the notch on a 14"/16" MacBook
+Pro), showing how many tasks are in flight and what state they're in. Click it
+and the full task list slides down. A task starts asking for input? The bar
+turns yellow. Something failed? Red. Everything done? Green. Silence? Gray.
+
+It's a Dynamic Island for the agentic stuff happening on the other side of the
+internet.
+
+## What it looks like
 
 <p align="center">
-  <img src="docs/media/dev-island-hero.svg" alt="Dev Island macOS preview" width="900">
+  <img src="docs/media/status-priority-demo.gif" alt="Dev Island state transitions" width="640">
 </p>
 
-## Preview
+The bar carries five states, ordered by priority — the highest one wins:
 
-<p align="center">
-  <img src="docs/media/status-priority-demo.gif" alt="Dev Island status priority demo" width="640">
-</p>
+| Color | State | Meaning |
+| :---: | --- | --- |
+| 🟡 | **Waiting** | An agent paused and is asking for input |
+| 🔴 | **Failed** | At least one task errored out and you should look |
+| 🟢 | **Running** | Work is in flight |
+| 🟦 | **Completed** | Done, nothing to do |
+| ⚪ | **Idle** | No tasks, or sync is paused |
 
-## Why
+Hover the bar and it widens to show the current task title. Click it and the
+panel expands into a scrollable task list with one-click open-in-browser. Click
+outside or press <kbd>Esc</kbd> to collapse it back.
 
-AI agents are useful because they keep working after you switch away. That also
-makes them easy to forget.
+## Install
 
-Dev Island gives that background work a small, persistent surface on macOS:
-running tasks stay visible, waiting tasks can ask for attention, and failures do
-not disappear inside another tab.
+### From the website ← *recommended*
 
-## Highlights
+Go to **[devisland.app](https://devisland.app)** → click **Download for Mac** →
+unzip → drag **Island.app** to **Applications**.
 
-- Compact notch or simulated-island view with a status dot and task count.
-- Works on notched Macs and non-notched Macs.
-- Expandable runtime panel for active, waiting, completed, and failed tasks.
-- Manus connector with local API-key storage and task sync.
-- Webhook tunnel support through `cloudflared`, with polling fallback when a
-  tunnel is unavailable.
-- Launch at Login and local settings UI.
-- Swift package architecture with a narrow `TaskStore` interface between UI and
-  core data code.
+The app is signed with a Developer ID and notarized by Apple, so it opens with
+zero Gatekeeper warnings on first launch.
 
-## Current Status
+### Homebrew Cask
 
-| Area | Status |
-| --- | --- |
-| macOS island UI | Active development |
-| Simulated island for non-notched Macs | Active development |
-| Manus task sync | Implemented and field-tested |
-| Webhook tunnel | Experimental, with polling fallback |
-| Claude Code connector | Planned |
-| Cursor connector | Planned |
-| Signed public download | Pending release workflow |
+*Coming soon.* Once the public tap is published:
+
+```sh
+brew tap sheepxux/island
+brew install --cask island
+```
+
+The Cask will declare `depends_on cask: "cloudflared"` so realtime webhook
+updates work out of the box.
+
+### From source
+
+Requires macOS 14+ and a Swift 6 toolchain (Xcode 16 ships one):
+
+```sh
+git clone https://github.com/sheepxux/Dev-Island.git
+cd Dev-Island
+swift run IslandApp           # dev launch
+./scripts/build-app.sh        # produces build/Island.app (ad-hoc signed)
+```
+
+## First-run setup
+
+1. Click the gear icon in the expanded panel (or pick *Settings* from the menu)
+2. Paste your Manus API key (`sk-…`) and hit **Connect**
+3. The status dot turns green. That's it — your live tasks start syncing.
+
+Keys are stored in the macOS Keychain. Disconnect at any time from the same
+settings pane. Optional **Launch at Login** hooks up via `SMAppService`, no
+LaunchAgent files dropped on disk.
+
+## How sync works
+
+Dev Island prefers a **realtime webhook** path. When `cloudflared` is on your
+`$PATH` (or installed via the Homebrew Cask), the app spins up a tunnel,
+registers a webhook with Manus, and receives task transitions as they happen.
+
+If `cloudflared` is missing, broken, or your network blocks the tunnel, the app
+falls back to **60-second polling** automatically. You don't lose any state, you
+just see updates within a minute instead of a few hundred milliseconds. The app
+prints a small "degraded" reason in the status dot tooltip so you know which
+mode you're in.
 
 ## Sources
 
-| Source | Support |
+| Source | Status |
 | --- | --- |
-| Manus | Available |
-| Claude Code | Planned |
-| Cursor | Planned |
+| Manus | ✅ Available |
+| Claude Code | 🚧 Planned |
+| Cursor | 🚧 Planned |
 
-## Requirements
-
-- macOS 14 or newer.
-- Xcode or Swift 5.10 toolchain.
-- Optional: `cloudflared` for webhook tunnel mode.
-
-## Run From Source
-
-```bash
-swift build
-swift run IslandApp
-```
-
-Run tests:
-
-```bash
-swift test
-```
-
-Build a local `.app` bundle:
-
-```bash
-scripts/build-app.sh
-```
-
-The bundle is written to `build/Island.app`. Local bundles are ad-hoc signed for
-testing; Developer ID signing and notarization belong to the release workflow.
-
-## Configuration
-
-Open Dev Island settings from the macOS menu bar, then connect a Manus API key.
-Keys are stored locally through Keychain-backed storage. When `cloudflared` is
-available, Dev Island can receive webhook updates; otherwise the app falls back
-to polling.
+The connector layer is intentionally pluggable — `IslandCore` exposes an
+`AgentConnector` protocol, and adding a new source is a matter of writing
+`fetchTasks()` + (optionally) a webhook handler that emits `WebhookPayload`.
 
 ## Architecture
 
-This repository is an SPM-native macOS project.
+SPM-native, four targets, single shared contract:
 
 | Target | Role |
 | --- | --- |
-| `IslandApp` | Tiny executable shim and app entry point |
-| `IslandAppLib` | SwiftUI UI layer, windows, settings, island presentation |
-| `IslandCore` | Connectors, persistence, task state, webhooks, tunnel handling |
-| `IslandCoreCLI` | CLI integration/testing utility |
+| `IslandApp` | Tiny `@main` shim + `AppDelegate` |
+| `IslandAppLib` | SwiftUI views, windows, animations, settings, notifications |
+| `IslandCore` | Connectors, persistence (SQLite + Keychain), webhook server, tunnel |
+| `IslandCoreCLI` | Headless integration test harness |
 
-The UI and core layers communicate through the public `TaskStore` surface. See
-[`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md) before changing that
-contract.
+UI ↔ core boundary is the public `TaskStore` surface. Both sides ship in the
+same repo because the shared contract evolves together; cross-side breaking
+changes go through [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
 
-## Distribution Notes
+```
+┌────────────────────────────┐    ┌─────────────────────────────────┐
+│        IslandAppLib        │    │           IslandCore            │
+│                            │    │                                 │
+│   IslandRootView   ────────┼───→│   TaskStore.shared              │
+│   NotchPanelView           │    │     ├─ ManusAPIClient           │
+│   SettingsView             │    │     ├─ TunnelManager (cf'ed)    │
+│   StatusDot                │    │     ├─ PollingFallback (60s)    │
+│                            │    │     ├─ WebhookServer            │
+└────────────────────────────┘    │     └─ SQLiteStore + Keychain   │
+                                  └─────────────────────────────────┘
+```
 
-The release tooling is being prepared around a signed macOS app and a Homebrew
-Cask. The draft Cask lives in [`dist/homebrew-island`](dist/homebrew-island).
+## Status
 
-The official website is [devisland.app](https://devisland.app).
+| Area | State |
+| --- | --- |
+| macOS island UI (notched + non-notched) | ✅ Shipping |
+| Manus task sync (webhook + polling) | ✅ Shipping |
+| Settings + Launch at Login + banner notifications | ✅ Shipping |
+| Signed + notarized public release | 🚧 First v0.1.0 in flight |
+| Homebrew Cask tap | 🚧 Draft in `dist/homebrew-island/` |
+| Claude Code / Cursor connectors | 📋 Planned |
+
+## Contributing
+
+Ideas, bug reports, and connector PRs welcome. If you're adding a new agent
+source, the cleanest entry point is `IslandCore/Sources/IslandCore/Connectors/`
+— start by reading `ManusConnector.swift` and the surrounding webhook +
+polling glue.
+
+For interface-contract changes (anything touching `TaskStore`'s public API),
+see [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md) first.
 
 ## License
 
-Dev Island is released under the [MIT License](LICENSE).
+[MIT](LICENSE). Use it, fork it, ship your own version with a new icon, send
+weird agent task notifications to your friends. Just keep the copyright notice
+intact.
 
-## Project Ownership
+---
 
-- `IslandApp/` and `IslandAppLib/` cover the macOS UI surface.
-- `IslandCore/` covers data, connectors, persistence, and sync.
-- `TaskStore` is the shared contract between those layers.
-
-For interface rules and change requests, see
-[`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
+<div align="center">
+  <sub>
+    Built with SwiftUI, Hummingbird, SQLite.swift, and a healthy distrust
+    of ⌘-Tab.<br>
+    <a href="https://devisland.app">devisland.app</a> ·
+    <a href="https://github.com/sheepxux/Dev-Island/issues">Issues</a> ·
+    <a href="https://github.com/sheepxux/Dev-Island/releases">Releases</a>
+  </sub>
+</div>

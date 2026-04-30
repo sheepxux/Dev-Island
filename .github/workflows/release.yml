@@ -100,12 +100,30 @@ jobs:
 
           echo "${P12_BASE64}" | base64 --decode -o "${CERT_PATH}"
 
+          # Sanity-check the decoded file before handing it to security(1):
+          # if the base64 secret was somehow truncated or whitespace-mangled
+          # in transit, the decoded file is junk and `security import` fails
+          # with "Unknown format in import" — which looks like a credential
+          # problem but is really an upstream encoding problem. Print
+          # `file` output so the failure mode is obvious in the log.
+          file "${CERT_PATH}" || true
+          ls -la "${CERT_PATH}"
+
           security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
           security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
           security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          # `-t agg` is the right type for a PKCS#12 file (it contains
+          # *both* a cert and a private key — `-t cert` told security to
+          # treat the input as a certificate-only blob, which fails with
+          # "Unknown format in import" for real .p12 files).
+          # `-T /usr/bin/codesign` whitelists codesign to use the imported
+          # private key without an interactive password prompt, which the
+          # CI runner can't satisfy.
           security import "${CERT_PATH}" \
             -P "${P12_PASSWORD}" \
-            -A -t cert -f pkcs12 \
+            -A -t agg -f pkcs12 \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security \
             -k "${KEYCHAIN_PATH}"
           security set-key-partition-list \
             -S apple-tool:,apple:,codesign: \

@@ -44,6 +44,17 @@ let package = Package(
             name: "IslandApp",
             dependencies: ["IslandAppLib", "IslandCore"],
             path: "IslandApp",
+            // Info.plist and AppIcon.icns live under IslandApp/Resources/
+            // because that's the conventional bundle layout build-app.sh
+            // copies into Island.app/Contents/. They are NOT swift-side
+            // resources (the SPM binary is wrapped by build-app.sh, not
+            // shipped as an SPM bundle), so excluding them silences the
+            // "unhandled files" warning and prevents SPM from copying
+            // them into the bare executable's resource path.
+            exclude: [
+                "Resources/Info.plist",
+                "Resources/AppIcon.icns",
+            ],
             swiftSettings: appSettings
         ),
         .target(

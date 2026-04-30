@@ -43,23 +43,26 @@ concurrency:
 jobs:
   build-sign-release:
     name: Build, sign, notarize, release
-    # macos-14 = Sonoma, currently has Xcode 15.x. We need at least macOS 14
-    # for the SwiftUI / Observation features the source uses. Bump to
-    # macos-latest after GitHub-hosted runners catch up to macOS 26.
-    runs-on: macos-14
+    # macos-15 = Sequoia, ships Xcode 16 with Swift 6. We need Swift 6
+    # specifically because Hummingbird 2.16's transitive dep
+    # swift-async-algorithms 1.1.3 uses typed throws (`throws(Failure)`)
+    # and the `#isolation` macro, both Swift 6 features. Xcode 15.4 /
+    # Swift 5.10 chokes on these — see the v0.1.0 attempt that failed
+    # at AsyncFlatMapLatestSequence.swift:85.
+    runs-on: macos-15
     timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Older `swift build` versions can't fan out --arch arm64 --arch x86_64
-      # without an explicit toolchain selection. We pin Xcode 15.4 so the
-      # Swift version is predictable across runs; bump alongside any
-      # SwiftUI / concurrency feature additions in source.
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
-
+      # macos-15 default Xcode at the time of writing is 16.x (Swift 6).
+      # We deliberately do NOT pin a specific Xcode_X.Y.app path because
+      # GitHub rotates point releases on the runner image and the path
+      # `Xcode_16.4.app` may disappear without notice. The fast-moving
+      # Swift 6 toolchain version isn't load-bearing for us as long as
+      # it's >=6.0; if we ever need an exact pin, drop a `.swift-version`
+      # file at repo root.
       - name: Verify Xcode + Swift
         run: |
           xcodebuild -version

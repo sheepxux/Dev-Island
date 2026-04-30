@@ -202,18 +202,20 @@ jobs:
           # Body links the Cask install command directly so users landing
           # on the Releases page have a copy-paste path to install.
           body: |
-            ## Install via Homebrew Cask
+            ## Install
+
+            Download `Island-${{ steps.version.outputs.version }}.zip` below,
+            unzip, drag `Island.app` to `/Applications`. Notarized by Apple
+            so no Gatekeeper warning on first launch.
+
+            Or, on the landing page: https://devisland.app
+
+            ## Homebrew (optional, when the tap is published)
 
             ```sh
-            brew tap c-island/island
+            brew tap sheepxux/island
             brew install --cask island
             ```
-
-            ## Manual install
-
-            Download `Island-${{ steps.version.outputs.version }}.zip`, unzip,
-            drag `Island.app` to `/Applications`. Notarized by Apple so
-            no Gatekeeper warning.
 
             **SHA-256**: `${{ steps.package.outputs.sha256 }}`
           files: ${{ steps.package.outputs.artifact }}

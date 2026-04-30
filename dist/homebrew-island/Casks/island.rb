@@ -2,7 +2,7 @@
 
 # Island.app — Dynamic-Island-style menubar status for Manus AI tasks.
 #
-# This Cask is meant to live in a separate `homebrew-<your-handle>/island`
+# This Cask is meant to live in a separate `sheepxux/homebrew-island`
 # tap repo, NOT inside the Island monorepo itself. We keep this draft
 # under `dist/homebrew-island/Casks/island.rb` so the source-of-truth
 # stays version-controlled alongside the app, but the actual brew tap
@@ -26,10 +26,10 @@ cask "island" do
   # local build under build/Island-<version>.zip.
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
-  url "https://github.com/c-island/Island/releases/download/v#{version}/Island-#{version}.zip"
+  url "https://github.com/sheepxux/Dev-Island/releases/download/v#{version}/Island-#{version}.zip"
   name "Island"
   desc "Dynamic-Island-style menubar status for Manus AI tasks"
-  homepage "https://github.com/c-island/Island"
+  homepage "https://devisland.app"
 
   # Apple Silicon arm64 + Intel x86_64 universal binary. macOS 14+ for
   # the SwiftUI / Observation features Island uses.

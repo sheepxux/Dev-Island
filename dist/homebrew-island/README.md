@@ -2,8 +2,8 @@
 
 > **This is a draft of the Cask formula tap, kept in the Island monorepo
 > as the source of truth.** The actual public tap lives in a separate
-> repo (`<your-handle>/homebrew-island`) so users can run
-> `brew tap <your-handle>/island && brew install --cask island`.
+> repo (`sheepxux/homebrew-island`) so users can run
+> `brew tap sheepxux/island && brew install --cask island`.
 
 ## Publishing flow
 
@@ -22,7 +22,7 @@
 ## Initial tap-repo setup
 
 ```sh
-# On GitHub, create empty repo: <your-handle>/homebrew-island
+# On GitHub, create empty repo: sheepxux/homebrew-island
 # Then locally:
 mkdir homebrew-island && cd homebrew-island
 git init
@@ -30,14 +30,14 @@ mkdir Casks
 cp /path/to/Island/dist/homebrew-island/Casks/island.rb Casks/
 git add Casks
 git commit -m "Initial cask"
-git remote add origin git@github.com:<your-handle>/homebrew-island.git
+git remote add origin git@github.com:sheepxux/homebrew-island.git
 git push -u origin main
 ```
 
 Users then:
 
 ```sh
-brew tap <your-handle>/island
+brew tap sheepxux/island
 brew install --cask island
 ```
 

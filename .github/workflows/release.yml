@@ -174,7 +174,7 @@ jobs:
           set -euo pipefail
           codesign --force --deep --options runtime \
             --sign "${SIGNING_IDENTITY}" \
-            -i com.island.app \
+            -i app.devisland.Island \
             --timestamp \
             build/Island.app
           codesign --verify --strict --verbose=2 build/Island.app
@@ -273,8 +273,8 @@ jobs:
             ## Homebrew (optional, when the tap is published)
 
             ```sh
-            brew tap sheepxux/island
-            brew install --cask island
+            brew tap sheepxux/dev-island
+            brew install --cask dev-island
             ```
 
             **SHA-256**: `${{ steps.package.outputs.sha256 }}`

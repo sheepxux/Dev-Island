@@ -2,7 +2,12 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    static let service    = "com.island.app"
+    /// Keychain service identifier. Matches the bundle identifier so
+    /// when the app is rebranded (com.island.app → app.devisland.Island)
+    /// the Keychain entry's namespace tracks the change. Existing v0.1.0
+    /// users will need to re-enter their API key after the rename — see
+    /// Info.plist's CFBundleIdentifier comment.
+    static let service    = "app.devisland.Island"
     static let accountKey = "manus_api_key"
 
     enum KeychainError: Error {

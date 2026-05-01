@@ -90,7 +90,7 @@ actor TunnelManager {
         do {
             let webhookId = try await client.registerWebhook(publicURL: webhookURL)
             currentWebhookId = webhookId
-            UserDefaults(suiteName: "com.island.app")?.set(webhookId, forKey: "webhookId")
+            UserDefaults(suiteName: "app.devisland.Island")?.set(webhookId, forKey: "webhookId")
             IslandLogger.tunnel.info("Webhook registered: \(webhookId)")
         } catch {
             IslandLogger.tunnel.error("Webhook registration failed: \(error)")
@@ -100,7 +100,7 @@ actor TunnelManager {
 
     private func cleanupWebhook() async {
         // Clean up stored webhook from a previous session that may have crashed
-        let defaults = UserDefaults(suiteName: "com.island.app")
+        let defaults = UserDefaults(suiteName: "app.devisland.Island")
         let storedId = currentWebhookId ?? defaults?.string(forKey: "webhookId")
         guard let id = storedId else { return }
         do {

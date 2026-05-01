@@ -68,8 +68,8 @@ zero Gatekeeper warnings on first launch.
 *Coming soon.* Once the public tap is published:
 
 ```sh
-brew tap sheepxux/island
-brew install --cask island
+brew tap sheepxux/dev-island
+brew install --cask dev-island
 ```
 
 The Cask will declare `depends_on cask: "cloudflared"` so realtime webhook

@@ -34,7 +34,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${ROOT}/build"
 APP="${BUILD_DIR}/Island.app"
 EXEC_NAME="IslandApp"
-BUNDLE_ID="com.island.app"
+# Bundle identifier in reverse-DNS form. The product domain is
+# devisland.app, so the reverse is `app.devisland.X` where X is the
+# stable product code. We use `Island` for X to match the Swift
+# target / executable name; the user-facing "Dev Island" name lives
+# in CFBundleDisplayName in Info.plist.
+BUNDLE_ID="app.devisland.Island"
 
 # Read version from VERSION file if present, else default. We keep the
 # source-of-truth in a top-level VERSION file so the Cask formula and

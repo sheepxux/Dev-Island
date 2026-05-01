@@ -33,7 +33,7 @@
     <string>en</string>
 
     <key>CFBundleDisplayName</key>
-    <string>Island</string>
+    <string>Dev Island</string>
 
     <key>CFBundleExecutable</key>
     <string>IslandApp</string>
@@ -41,14 +41,25 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
 
+    <!--
+        Bundle identifier in reverse-DNS form. The domain is
+        devisland.app (TLD is .app), so the reverse is app.devisland.X
+        where X is the product code. We use `Island` for X to match
+        the Swift target / executable name; the user-facing "Dev
+        Island" name lives in CFBundleDisplayName.
+
+        Changing this AFTER any user has installed the app will
+        invalidate their Keychain entry (API key) and UserDefaults
+        suite (webhook id). Treat as immutable post-v0.2.0.
+    -->
     <key>CFBundleIdentifier</key>
-    <string>com.island.app</string>
+    <string>app.devisland.Island</string>
 
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
 
     <key>CFBundleName</key>
-    <string>Island</string>
+    <string>Dev Island</string>
 
     <key>CFBundlePackageType</key>
     <string>APPL</string>

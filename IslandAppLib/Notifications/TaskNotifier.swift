@@ -24,7 +24,7 @@ import UserNotifications
 public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
     public static let shared = TaskNotifier()
 
-    private static let log = Logger(subsystem: "com.island.app", category: "notifier")
+    private static let log = Logger(subsystem: "app.devisland.Island", category: "notifier")
 
     /// Last seen task list, keyed by ID. We diff this against each new
     /// snapshot to find status transitions.

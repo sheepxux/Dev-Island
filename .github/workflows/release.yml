@@ -40,6 +40,14 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Since GitHub tightened the default GITHUB_TOKEN scopes in 2023, workflows
+# need to opt into write permissions explicitly. `contents: write` lets the
+# softprops/action-gh-release step POST to /repos/.../releases (the v0.1.0
+# attempt with notarized .app failed with HTTP 403 "Resource not accessible
+# by integration" because we hadn't declared this).
+permissions:
+  contents: write
+
 jobs:
   build-sign-release:
     name: Build, sign, notarize, release

@@ -58,7 +58,7 @@ outside or press <kbd>Esc</kbd> to collapse it back.
 ### From the website ← *recommended*
 
 Go to **[devisland.app](https://devisland.app)** → click **Download for Mac** →
-unzip → drag **Island.app** to **Applications**.
+unzip → drag **Dev Island.app** to **Applications**.
 
 The app is signed with a Developer ID and notarized by Apple, so it opens with
 zero Gatekeeper warnings on first launch.
@@ -83,7 +83,7 @@ Requires macOS 14+ and a Swift 6 toolchain (Xcode 16 ships one):
 git clone https://github.com/sheepxux/Dev-Island.git
 cd Dev-Island
 swift run IslandApp           # dev launch
-./scripts/build-app.sh        # produces build/Island.app (ad-hoc signed)
+./scripts/build-app.sh        # produces build/Dev Island.app (ad-hoc signed)
 ```
 
 ## First-run setup

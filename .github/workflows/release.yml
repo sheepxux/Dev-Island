@@ -1,4 +1,4 @@
-# Release pipeline for Island.app
+# Release pipeline for Dev Island (bundle: "Dev Island.app").
 #
 # Trigger: pushing a tag matching `v*` (e.g. `git tag v0.1.0 && git push origin v0.1.0`).
 # Output: a signed + notarized + stapled `Island.app.zip` attached to a GitHub Release,
@@ -172,17 +172,19 @@ jobs:
       - name: Codesign with Developer ID
         run: |
           set -euo pipefail
+          # The bundle filename is "Dev Island.app" — must quote the
+          # path everywhere downstream because of the space.
           codesign --force --deep --options runtime \
             --sign "${SIGNING_IDENTITY}" \
             -i app.devisland.Island \
             --timestamp \
-            build/Island.app
-          codesign --verify --strict --verbose=2 build/Island.app
+            "build/Dev Island.app"
+          codesign --verify --strict --verbose=2 "build/Dev Island.app"
           # spctl is the Gatekeeper assessment tool — pre-notarization
           # this should output "rejected (Unnotarized Developer ID)",
           # which is the *correct* state. Notarization in the next step
           # is what flips it to "accepted".
-          spctl -a -vv -t exec build/Island.app || true
+          spctl -a -vv -t exec "build/Dev Island.app" || true
 
       - name: Notarize
         env:
@@ -195,7 +197,7 @@ jobs:
           # `ditto -c -k --keepParent` produces the canonical zip layout
           # they expect — `zip` itself produces a zip too but with
           # different metadata that occasionally trips notarytool.
-          ditto -c -k --keepParent build/Island.app build/Island-notarization.zip
+          ditto -c -k --keepParent "build/Dev Island.app" build/Island-notarization.zip
 
           # 45m, not 20m — Apple's queue varies wildly (median 5-10 min,
           # tail can hit 30+ min especially for new Developer IDs that
@@ -214,8 +216,8 @@ jobs:
           # no internet can still verify the notarization. After this,
           # `xcrun stapler validate` should print "The validate action
           # worked!".
-          xcrun stapler staple build/Island.app
-          xcrun stapler validate build/Island.app
+          xcrun stapler staple "build/Dev Island.app"
+          xcrun stapler validate "build/Dev Island.app"
 
       # Final user-facing zip. Use `ditto` again for the same reason:
       # consistent metadata, predictable extraction layout when users
@@ -243,7 +245,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           STABLE="build/Island.zip"
           VERSIONED="build/Island-${VERSION}.zip"
-          ditto -c -k --keepParent build/Island.app "${STABLE}"
+          ditto -c -k --keepParent "build/Dev Island.app" "${STABLE}"
           cp "${STABLE}" "${VERSIONED}"
           SHA256="$(shasum -a 256 "${STABLE}" | awk '{print $1}')"
           ls -lh "${STABLE}" "${VERSIONED}"
@@ -264,7 +266,7 @@ jobs:
           body: |
             ## Install
 
-            Download `Island.zip` below, unzip, drag `Island.app` to
+            Download `Island.zip` below, unzip, drag `Dev Island.app` to
             `/Applications`. Notarized by Apple so no Gatekeeper warning
             on first launch.
 

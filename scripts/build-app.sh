@@ -32,7 +32,12 @@ set -euo pipefail
 CONFIG="${CONFIG:-release}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${ROOT}/build"
-APP="${BUILD_DIR}/Island.app"
+# Bundle filename uses the user-facing display name with a space, so
+# Finder shows "Dev Island" everywhere (Applications, Downloads, Dock,
+# Spotlight) — not just the locations that consult CFBundleDisplayName.
+# The Cask formula's `app "Dev Island.app"` line and the Info.plist
+# CFBundleDisplayName must all agree on this name.
+APP="${BUILD_DIR}/Dev Island.app"
 EXEC_NAME="IslandApp"
 # Bundle identifier in reverse-DNS form. The product domain is
 # devisland.app, so the reverse is `app.devisland.X` where X is the

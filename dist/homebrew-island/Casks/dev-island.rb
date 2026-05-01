@@ -49,7 +49,7 @@ cask "dev-island" do
   # cloudflared ships as a Cask in homebrew-cask, not a formula.
   depends_on cask: "cloudflared"
 
-  app "Island.app"
+  app "Dev Island.app"
 
   # `zap` is what `brew uninstall --zap dev-island` uses to wipe per-user
   # state. Listing every location Dev Island writes to means a clean

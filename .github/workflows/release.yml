@@ -220,18 +220,38 @@ jobs:
       # Final user-facing zip. Use `ditto` again for the same reason:
       # consistent metadata, predictable extraction layout when users
       # double-click the zip from Safari.
+      #
+      # We produce TWO assets on each release:
+      #
+      #   Island.zip            — stable filename. Resolves through
+      #                           https://.../releases/latest/download/Island.zip
+      #                           which is the permanent URL the landing
+      #                           page links to; never needs version-bumping.
+      #   Island-<VERSION>.zip  — version-stamped archive. Useful for
+      #                           pinning a specific build (issue triage,
+      #                           reproducibility) when Island.zip has
+      #                           already moved to a newer release.
+      #
+      # Both contain the exact same notarized .app — they're literal
+      # copies of each other, just with different filenames so the
+      # Releases page and the landing page can each use the convention
+      # that suits them.
       - name: Package release zip
         id: package
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          OUT="build/Island-${VERSION}.zip"
-          ditto -c -k --keepParent build/Island.app "${OUT}"
-          SHA256="$(shasum -a 256 "${OUT}" | awk '{print $1}')"
-          ls -lh "${OUT}"
-          echo "Artifact: ${OUT}"
-          echo "SHA-256:  ${SHA256}"
-          echo "artifact=${OUT}" >> "${GITHUB_OUTPUT}"
+          STABLE="build/Island.zip"
+          VERSIONED="build/Island-${VERSION}.zip"
+          ditto -c -k --keepParent build/Island.app "${STABLE}"
+          cp "${STABLE}" "${VERSIONED}"
+          SHA256="$(shasum -a 256 "${STABLE}" | awk '{print $1}')"
+          ls -lh "${STABLE}" "${VERSIONED}"
+          echo "Stable artifact:    ${STABLE}"
+          echo "Versioned artifact: ${VERSIONED}"
+          echo "SHA-256:            ${SHA256}"
+          echo "stable=${STABLE}" >> "${GITHUB_OUTPUT}"
+          echo "versioned=${VERSIONED}" >> "${GITHUB_OUTPUT}"
           echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
 
       - name: Create GitHub Release
@@ -244,9 +264,9 @@ jobs:
           body: |
             ## Install
 
-            Download `Island-${{ steps.version.outputs.version }}.zip` below,
-            unzip, drag `Island.app` to `/Applications`. Notarized by Apple
-            so no Gatekeeper warning on first launch.
+            Download `Island.zip` below, unzip, drag `Island.app` to
+            `/Applications`. Notarized by Apple so no Gatekeeper warning
+            on first launch.
 
             Or, on the landing page: https://devisland.app
 
@@ -258,7 +278,9 @@ jobs:
             ```
 
             **SHA-256**: `${{ steps.package.outputs.sha256 }}`
-          files: ${{ steps.package.outputs.artifact }}
+          files: |
+            ${{ steps.package.outputs.stable }}
+            ${{ steps.package.outputs.versioned }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

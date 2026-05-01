@@ -197,7 +197,7 @@ jobs:
           # `ditto -c -k --keepParent` produces the canonical zip layout
           # they expect — `zip` itself produces a zip too but with
           # different metadata that occasionally trips notarytool.
-          ditto -c -k --keepParent "build/Dev Island.app" build/Island-notarization.zip
+          ditto -c -k --keepParent "build/Dev Island.app" build/Dev-Island-notarization.zip
 
           # 45m, not 20m — Apple's queue varies wildly (median 5-10 min,
           # tail can hit 30+ min especially for new Developer IDs that
@@ -205,7 +205,7 @@ jobs:
           # timed out at 20 min with submission b3b8e1d3 still "In
           # Progress" on Apple's side. Job-level timeout in the runner
           # config (60m) bounds the overall run if Apple goes catastrophic.
-          xcrun notarytool submit build/Island-notarization.zip \
+          xcrun notarytool submit build/Dev-Island-notarization.zip \
             --apple-id "${APPLE_ID}" \
             --team-id "${APPLE_TEAM_ID}" \
             --password "${APPLE_APP_PASSWORD}" \
@@ -225,14 +225,14 @@ jobs:
       #
       # We produce TWO assets on each release:
       #
-      #   Island.zip            — stable filename. Resolves through
-      #                           https://.../releases/latest/download/Island.zip
-      #                           which is the permanent URL the landing
-      #                           page links to; never needs version-bumping.
-      #   Island-<VERSION>.zip  — version-stamped archive. Useful for
-      #                           pinning a specific build (issue triage,
-      #                           reproducibility) when Island.zip has
-      #                           already moved to a newer release.
+      #   Dev-Island.zip            — stable filename. Resolves through
+      #                               https://.../releases/latest/download/Dev-Island.zip
+      #                               which is the permanent URL the landing
+      #                               page links to; never needs version-bumping.
+      #   Dev-Island-<VERSION>.zip  — version-stamped archive. Useful for
+      #                               pinning a specific build (issue triage,
+      #                               reproducibility) when Dev-Island.zip has
+      #                               already moved to a newer release.
       #
       # Both contain the exact same notarized .app — they're literal
       # copies of each other, just with different filenames so the
@@ -243,8 +243,14 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          STABLE="build/Island.zip"
-          VERSIONED="build/Island-${VERSION}.zip"
+          # Filenames intentionally use a hyphen (Dev-Island.zip) rather
+          # than the bundle's space-separated name (Dev Island.app):
+          # URLs with %20 escaping look untrustworthy to a casual user
+          # hovering the download link, and the hyphenated form matches
+          # the GitHub repo name (Dev-Island), so the URL reads
+          # consistently across the homepage, the repo, and the cask.
+          STABLE="build/Dev-Island.zip"
+          VERSIONED="build/Dev-Island-${VERSION}.zip"
           ditto -c -k --keepParent "build/Dev Island.app" "${STABLE}"
           cp "${STABLE}" "${VERSIONED}"
           SHA256="$(shasum -a 256 "${STABLE}" | awk '{print $1}')"
@@ -266,8 +272,8 @@ jobs:
           body: |
             ## Install
 
-            Download `Island.zip` below, unzip, drag `Dev Island.app` to
-            `/Applications`. Notarized by Apple so no Gatekeeper warning
+            Download `Dev-Island.zip` below, unzip, drag `Dev Island.app`
+            to `/Applications`. Notarized by Apple so no Gatekeeper warning
             on first launch.
 
             Or, on the landing page: https://devisland.app

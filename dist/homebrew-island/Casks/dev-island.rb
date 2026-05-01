@@ -24,13 +24,13 @@ cask "dev-island" do
   version "0.1.1"
   # Replaced by the GitHub Actions release workflow's per-tag SHA-256
   # before publishing. Local test value is the SHA of the most recent
-  # local build under build/Island.zip.
+  # local build under build/Dev-Island.zip.
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
-  # Stable filename — `Island.zip` is also published as a per-version
-  # asset (`Island-#{version}.zip`) but pinning to the stable name lets
-  # the cask formula update with just the SHA, not the URL.
-  url "https://github.com/sheepxux/Dev-Island/releases/download/v#{version}/Island.zip"
+  # Stable filename — `Dev-Island.zip` is also published as a per-version
+  # asset (`Dev-Island-#{version}.zip`) but pinning to the stable name
+  # lets the cask formula update with just the SHA, not the URL.
+  url "https://github.com/sheepxux/Dev-Island/releases/download/v#{version}/Dev-Island.zip"
   name "Dev Island"
   desc "Live status bar for AI agents working in the background"
   homepage "https://devisland.app"

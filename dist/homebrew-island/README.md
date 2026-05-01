@@ -9,16 +9,16 @@
 
 1. **Cut a release tag in the Dev Island monorepo** (`git tag v0.1.1 && git push origin v0.1.1`).
 2. **GitHub Actions** (`.github/workflows/release.yml`) builds, signs,
-   notarizes, staples, and uploads both `Island.zip` (stable filename)
+   notarizes, staples, and uploads both `Dev-Island.zip` (stable filename)
    and `Island-0.1.1.zip` (versioned archive) to a GitHub Release. The
-   job log prints `Island.zip`'s SHA-256.
+   job log prints `Dev-Island.zip`'s SHA-256.
 3. **Update the tap**: in the public `homebrew-dev-island` repo, edit
    `Casks/dev-island.rb`:
    - bump `version`
    - paste the new `sha256` from the release log
    - commit, push
 4. Users `brew update` (automatic on next `brew install` invocation),
-   then `brew install --cask dev-island` pulls the new `Island.zip`.
+   then `brew install --cask dev-island` pulls the new `Dev-Island.zip`.
 
 ## Initial tap-repo setup
 

@@ -1,37 +1,32 @@
 import SwiftUI
 
-/// Outline of the expanded panel.
+/// Outline of the expanded panel — a single solid silhouette, flat top,
+/// continuous-curvature bottom corners. On notched displays we deliberately
+/// do NOT cut out the camera region: the physical hole hides whatever we
+/// draw inside it, and overpainting the small panel wedges at the notch's
+/// bottom-outer corners removes the C-shaped seams that a rectangular
+/// cutout would otherwise leave against the notch's curved edge.
 ///
-/// - Top edge: flat (flush with screen top), continuous with the bar's
-///   flush-top design.
-/// - Bottom corners: continuous-curvature (squircle) rounded.
-/// - Optional notch cutout at top center for notched displays. The S-curve
-///   refinement lands in a follow-up commit; first cut uses a sharp
-///   rectangular cutout that the bar's same dimensions match.
+/// `notchWidth` / `notchHeight` are kept on the type for source compat;
+/// they no longer affect rendering and can be removed in a follow-up.
 struct NotchPanelShape: Shape {
-    /// 0 ⇒ no cutout (synthetic-notch / no-notch mode).
     var notchWidth: CGFloat = 0
     var notchHeight: CGFloat = 0
     var cornerRadius: CGFloat = NotchMetrics.panelCornerRadius
 
-    /// Interpolate all three geometric parameters during `withAnimation` so
-    /// the bar↔panel morph stays consistent with its frame size at every
-    /// step. Without this, `cornerRadius` (and the notch dims) snap to
-    /// their target value on the first frame of the morph — when the shape
-    /// is still bar-sized (~39pt tall), a 22pt bottom radius briefly
+    /// Interpolate `cornerRadius` during `withAnimation` so the bar↔panel
+    /// morph stays consistent with its frame size at every step. Without
+    /// this the radius snaps to its target on the first frame — when the
+    /// shape is still bar-sized (~39pt tall), a 22pt bottom radius briefly
     /// over-rounds the silhouette, leaving a visible seam at the bottom
     /// edge as the spring expands.
-    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> {
-        get { AnimatablePair(cornerRadius, AnimatablePair(notchWidth, notchHeight)) }
-        set {
-            cornerRadius = newValue.first
-            notchWidth = newValue.second.first
-            notchHeight = newValue.second.second
-        }
+    var animatableData: CGFloat {
+        get { cornerRadius }
+        set { cornerRadius = newValue }
     }
 
     func path(in rect: CGRect) -> Path {
-        let outer = UnevenRoundedRectangle(
+        UnevenRoundedRectangle(
             cornerRadii: RectangleCornerRadii(
                 topLeading: 0,
                 bottomLeading: cornerRadius,
@@ -40,17 +35,6 @@ struct NotchPanelShape: Shape {
             ),
             style: .continuous
         ).path(in: rect)
-
-        guard notchWidth > 0, notchHeight > 0 else { return outer }
-
-        let cutoutX = (rect.width - notchWidth) / 2
-        let cutoutRect = CGRect(
-            x: cutoutX,
-            y: 0,
-            width: notchWidth,
-            height: notchHeight
-        )
-        return outer.subtracting(Path(cutoutRect))
     }
 }
 

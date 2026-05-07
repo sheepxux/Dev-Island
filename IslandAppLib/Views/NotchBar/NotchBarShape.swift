@@ -1,20 +1,17 @@
 import SwiftUI
 
-/// Shape of the collapsed Notch Bar — ONE connected outline that protrudes
-/// `bottomOverhang` below the hardware notch, with a rectangular cutout at
-/// top center matching the notch dimensions.
-///
-/// Drawn as `outerShape.subtracting(notchCutout)` so the bottom corners get
-/// continuous-curvature rounding (Apple squircle) while the cutout edges
-/// stay sharp. The S-curve at the cutout's bottom corners is layered in
-/// Task 2 with the panel.
+/// Shape of the collapsed Notch Bar — a single solid silhouette flush with
+/// the screen top, rounded only at the bottom. The hardware notch's
+/// physical hole hides whatever we draw inside its bounds, and the small
+/// panel wedges at its bottom-outer corners get safely overpainted (the
+/// menubar reserves no items in that region), so no cutout is needed.
 struct NotchBarShape: Shape {
     var notchWidth: CGFloat
     var notchHeight: CGFloat
     var cornerRadius: CGFloat = NotchMetrics.cornerRadius
 
     func path(in rect: CGRect) -> Path {
-        let outer = UnevenRoundedRectangle(
+        UnevenRoundedRectangle(
             cornerRadii: RectangleCornerRadii(
                 topLeading: 0,
                 bottomLeading: cornerRadius,
@@ -23,17 +20,6 @@ struct NotchBarShape: Shape {
             ),
             style: .continuous
         ).path(in: rect)
-
-        let cutoutX = (rect.width - notchWidth) / 2
-        let cutoutRect = CGRect(
-            x: cutoutX,
-            y: 0,
-            width: notchWidth,
-            height: notchHeight
-        )
-        let cutout = Path(cutoutRect)
-
-        return outer.subtracting(cutout)
     }
 }
 

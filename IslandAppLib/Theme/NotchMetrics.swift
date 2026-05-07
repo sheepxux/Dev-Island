@@ -23,11 +23,6 @@ public enum NotchMetrics {
     public static let panelWidth: CGFloat = 480
     /// Maximum panel width on notched displays — never exceed this.
     public static let panelMaxWidth: CGFloat = 480
-    /// How far the bar protrudes BELOW the hardware notch on notched
-    /// displays. Keep this tall enough for a visible status cluster below
-    /// the physical notch, since the notch pixels themselves are not
-    /// drawable.
-    public static let bottomOverhang: CGFloat = 24
 
     // Hover affordance — how much the bar grows when the mouse enters,
     // signalling "clickable". Pre-Task-2 polish; the panel expansion that
@@ -62,7 +57,9 @@ public enum NotchMetrics {
     /// tree so the same values drive Window framing + Shape drawing.
     public struct Layout: Equatable {
         public let hasNotch: Bool
-        /// Full bar height. On notched displays this is `notchHeight + bottomOverhang`.
+        /// Full bar height. On notched displays this equals `notchHeight`
+        /// — content lives in the side wings within the menubar zone, so
+        /// no overhang is needed below the notch.
         public let barHeight: CGFloat
         /// Hardware notch height. 0 on no-notch displays. Used to size the
         /// cutout in `NotchBarShape`.
@@ -140,7 +137,7 @@ public enum NotchMetrics {
         if hasNotch {
             return Layout(
                 hasNotch: true,
-                barHeight: safeTop + bottomOverhang,
+                barHeight: safeTop,
                 notchHeight: safeTop,
                 menuBarHeight: safeTop,
                 notchWidth: detectNotchWidth(on: screen),

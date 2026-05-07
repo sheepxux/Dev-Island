@@ -4,9 +4,10 @@ import IslandCore
 /// Collapsed bar.
 ///
 /// Two visual modes driven by `NotchMetrics.Layout`:
-/// - **Notched display**: one connected black shape that protrudes
-///   `bottomOverhang` below the hardware notch, with a notch-shaped cutout
-///   at top center.
+/// - **Notched display**: a solid black silhouette flush with the screen
+///   top, sized to the menubar height. Content lives in side wings
+///   flanking the hardware notch — status dot left, task count right —
+///   so nothing renders behind the camera.
 /// - **No-notch display** (Mac mini, external displays): a single capsule
 ///   sitting `topMargin` below the screen edge.
 struct NotchBarView: View {
@@ -93,23 +94,34 @@ struct NotchBarView: View {
     @ViewBuilder
     private var content: some View {
         if layout.hasNotch {
-            // Keep the normal readout centered in the visible black shelf
-            // below the hardware notch. Splitting it into side wings makes
-            // the center look like a plain black notch, and menu-bar items
-            // can visually compete with the side content.
-            VStack(spacing: 0) {
-                Spacer()
-                    .frame(height: layout.notchHeight)
-                HStack(spacing: 8) {
+            // Dynamic-Island-style side wings: status dot in the left wing,
+            // task count in the right, both hugging the notch so the eye
+            // reads "[●] [📷] [N]" as one cluster. The notch's own width is
+            // left as a transparent gap so nothing renders behind the
+            // camera.
+            let wingWidth = max(0, (layout.totalWidth - layout.notchWidth) / 2)
+            HStack(spacing: 0) {
+                HStack(spacing: 6) {
+                    Spacer(minLength: 0)
                     StatusDot(state: state)
+                }
+                .padding(.horizontal, NotchMetrics.sideInset)
+                .frame(width: wingWidth, height: layout.menuBarHeight)
+
+                Color.clear
+                    .frame(width: layout.notchWidth, height: layout.menuBarHeight)
+
+                HStack(spacing: 6) {
                     Text("\(taskCount)")
                         .font(Typo.barCount)
                         .foregroundStyle(.white.opacity(0.85))
                         .monospacedDigit()
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: max(18, layout.barHeight - layout.notchHeight))
+                .padding(.horizontal, NotchMetrics.sideInset)
+                .frame(width: wingWidth, height: layout.menuBarHeight)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else {
             // Synthetic notch: mirror a Dynamic Island compact layout.
             // Left = state, center = current task label, right = count.
@@ -163,7 +175,7 @@ private let barPreviewCases: [BarPreviewSample] = [
 
 private let notchedLayout = NotchMetrics.Layout(
     hasNotch: true,
-    barHeight: 32 + NotchMetrics.bottomOverhang,
+    barHeight: 32,
     notchHeight: 32,
     menuBarHeight: 32,
     notchWidth: NotchMetrics.defaultNotchWidth,

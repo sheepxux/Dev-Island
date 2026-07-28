@@ -50,8 +50,10 @@ final class ManusAPIClientTests: XCTestCase {
     // MARK: - Tests
 
     func testListTasksSuccess() async throws {
+        // Real Manus shape: top-level "data", metadata nesting, Unix-string timestamps
+        // (see docs/manus-api-field-notes.md)
         let json = """
-        {"tasks":[{"id":"t1","source":"manus","title":"Test Task","status":"running","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z","task_url":"https://manus.im/tasks/t1"}]}
+        {"object":"list","data":[{"id":"t1","object":"task","created_at":"1777072176","updated_at":"1777072212","status":"running","metadata":{"task_title":"Test Task","task_url":"https://manus.im/app/t1"}}]}
         """
         MockURLProtocol.handler = { _ in
             (self.makeResponse(statusCode: 200), Data(json.utf8))

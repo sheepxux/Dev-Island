@@ -19,24 +19,24 @@ public actor LocalHookServer {
         self.port = port
     }
 
-    public func start(onClaudeCodeEvent: @escaping @Sendable (ClaudeCodeEvent) -> Void) {
+    public func start(
+        onClaudeCodeEvent: @escaping @Sendable (ClaudeCodeEvent) -> Void,
+        onCodexEvent: @escaping @Sendable (CodexEvent) -> Void
+    ) {
         serverTask = Task {
             let router = Router()
 
             router.post("/hooks/claude-code") { request, _ -> HTTPResponse.Status in
-                var buffer = try await request.body.collect(upTo: 1_048_576)
-                let data = Data(buffer.readableBytesView)
-
-                let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
-                guard let event = try? decoder.decode(ClaudeCodeEvent.self, from: data) else {
-                    IslandLogger.webhook.debug("Ignoring undecodable Claude Code hook payload")
-                    return .ok
+                if let event: ClaudeCodeEvent = await Self.decodeBody(of: request, cli: "Claude Code") {
+                    onClaudeCodeEvent(event)
                 }
+                return .ok
+            }
 
-                IslandLogger.webhook.info(
-                    "Claude Code event: \(event.hookEventName.rawValue) session=\(event.sessionId)")
-                onClaudeCodeEvent(event)
+            router.post("/hooks/codex") { request, _ -> HTTPResponse.Status in
+                if let event: CodexEvent = await Self.decodeBody(of: request, cli: "Codex") {
+                    onCodexEvent(event)
+                }
                 return .ok
             }
 
@@ -47,6 +47,22 @@ public actor LocalHookServer {
             IslandLogger.webhook.info("LocalHookServer listening on 127.0.0.1:\(self.port)")
             try await app.run()
         }
+    }
+
+    /// Decode a snake_case hook payload; undecodable bodies are dropped
+    /// silently (the endpoint always answers 200 either way).
+    private static func decodeBody<E: Decodable>(of request: Request, cli: String) async -> E? {
+        guard let buffer = try? await request.body.collect(upTo: 1_048_576) else { return nil }
+        let data = Data(buffer.readableBytesView)
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let event = try? decoder.decode(E.self, from: data) else {
+            IslandLogger.webhook.debug("Ignoring undecodable \(cli) hook payload")
+            return nil
+        }
+        IslandLogger.webhook.info("\(cli) hook event received")
+        return event
     }
 
     public func stop() {

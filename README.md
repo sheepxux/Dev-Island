@@ -114,15 +114,15 @@ mode you're in.
 | --- | --- |
 | Manus | ✅ Available |
 | Claude Code | ✅ Available (local hooks, no tunnel needed) |
-| Codex CLI | 🚧 Next up (local notify hook) |
+| Codex CLI | ✅ Available (local hooks, no tunnel needed) |
 | Cursor | 📋 Planned |
 
-**Claude Code** needs no API key: flip the toggle in *Settings → Connected
-Services → Claude Code*. Dev Island installs a fire-and-forget hook into
-`~/.claude/settings.json` that reports session lifecycle events
-(start / needs-input / done / failed) to a localhost-only endpoint. New
-sessions appear in the island within milliseconds; clicking one opens the
-project folder.
+**Claude Code** and **Codex** need no API key: flip the toggle in
+*Settings → Connected Services*. Dev Island installs a fire-and-forget hook
+(into `~/.claude/settings.json` / `~/.codex/hooks.json`) that reports session
+lifecycle events (start / needs-input / approval-request / done / failed) to
+a localhost-only endpoint. New sessions appear in the island within
+milliseconds; clicking one opens the project folder.
 
 The connector layer is intentionally pluggable — `IslandCore` exposes an
 `AgentConnector` protocol, and adding a new source is a matter of writing
@@ -166,7 +166,8 @@ changes go through [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
 | Signed + notarized public release | ✅ v0.1.1 on [Releases](https://github.com/sheepxux/Dev-Island/releases) |
 | Homebrew Cask tap | 🚧 Draft in `dist/homebrew-island/` |
 | Claude Code connector (local hooks) | ✅ Shipping |
-| Codex connector | 📋 Next up |
+| Codex connector (local hooks) | ✅ Shipping |
+| Cursor connector | 📋 Next up |
 
 ## Contributing
 

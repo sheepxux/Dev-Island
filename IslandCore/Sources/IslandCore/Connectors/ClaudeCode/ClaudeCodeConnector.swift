@@ -26,20 +26,17 @@ public actor ClaudeCodeConnector: AgentConnector {
         "auth_success", "elicitation_complete", "elicitation_response",
     ]
 
-    /// Finished sessions linger briefly so the user sees the green state,
-    /// then get pruned. Sessions that stop emitting events entirely (e.g.
-    /// Claude Code crashed before SessionEnd) are dropped after a day.
-    static let finishedTTL: TimeInterval = 2 * 60 * 60
-    static let staleTTL: TimeInterval = 24 * 60 * 60
+    public static let finishedTTL = LocalSessionTable.finishedTTL
+    public static let staleTTL = LocalSessionTable.staleTTL
 
-    private var sessions: [String: AgentTask] = [:]
+    private var table = LocalSessionTable(source: "claude-code", displayName: "Claude Code")
 
     public init() {}
 
     // MARK: - AgentConnector
 
     public func fetchTasks() async throws -> [AgentTask] {
-        snapshot()
+        table.snapshot()
     }
 
     nonisolated public func openInBrowser(taskId: String) {
@@ -54,11 +51,11 @@ public actor ClaudeCodeConnector: AgentConnector {
 
     /// Apply one hook event and return the updated task snapshot.
     public func apply(_ event: ClaudeCodeEvent, now: Date = .now) -> [AgentTask] {
-        prune(now: now)
+        table.prune(now: now)
 
         switch event.hookEventName {
         case .sessionStart, .userPromptSubmit:
-            upsert(event, now: now) { task in
+            table.upsert(id: event.sessionId, cwd: event.cwd, now: now) { task in
                 task.status = .running
                 task.currentPhase = nil
                 task.waitingMessage = nil
@@ -68,24 +65,24 @@ public actor ClaudeCodeConnector: AgentConnector {
             applyNotification(event, now: now)
 
         case .stop:
-            upsert(event, now: now) { task in
+            table.upsert(id: event.sessionId, cwd: event.cwd, now: now) { task in
                 task.status = .completed
                 task.currentPhase = nil
                 task.waitingMessage = nil
             }
 
         case .stopFailure:
-            upsert(event, now: now) { task in
+            table.upsert(id: event.sessionId, cwd: event.cwd, now: now) { task in
                 task.status = .failed
                 task.currentPhase = "Turn ended with an API error"
                 task.waitingMessage = nil
             }
 
         case .sessionEnd:
-            sessions.removeValue(forKey: event.sessionId)
+            table.remove(id: event.sessionId)
         }
 
-        return snapshot()
+        return table.snapshot()
     }
 
     // MARK: - Private
@@ -97,7 +94,7 @@ public actor ClaudeCodeConnector: AgentConnector {
             return
         }
         if type == "agent_completed" {
-            upsert(event, now: now) { task in
+            table.upsert(id: event.sessionId, cwd: event.cwd, now: now) { task in
                 task.status = .completed
                 task.currentPhase = nil
                 task.waitingMessage = nil
@@ -106,44 +103,10 @@ public actor ClaudeCodeConnector: AgentConnector {
         }
         // Known waiting subtypes — and, defensively, any unknown/missing
         // subtype: a notification generally means Claude wants attention.
-        upsert(event, now: now) { task in
+        table.upsert(id: event.sessionId, cwd: event.cwd, now: now) { task in
             task.status = .waiting
             task.currentPhase = "Needs input"
             task.waitingMessage = event.message
         }
-    }
-
-    private func upsert(_ event: ClaudeCodeEvent, now: Date, mutate: (inout AgentTask) -> Void) {
-        var task = sessions[event.sessionId] ?? Self.newTask(for: event, now: now)
-        mutate(&task)
-        task.updatedAt = now
-        sessions[event.sessionId] = task
-    }
-
-    private static func newTask(for event: ClaudeCodeEvent, now: Date) -> AgentTask {
-        let projectURL = event.cwd.map { URL(fileURLWithPath: $0, isDirectory: true) }
-        return AgentTask(
-            id: event.sessionId,
-            source: "claude-code",
-            title: projectURL?.lastPathComponent ?? "Claude Code session",
-            status: .running,
-            createdAt: now,
-            updatedAt: now,
-            taskURL: projectURL?.absoluteString ?? ""
-        )
-    }
-
-    private func prune(now: Date) {
-        sessions = sessions.filter { _, task in
-            let age = now.timeIntervalSince(task.updatedAt)
-            switch task.status {
-            case .completed, .failed: return age < Self.finishedTTL
-            case .running, .waiting:  return age < Self.staleTTL
-            }
-        }
-    }
-
-    private func snapshot() -> [AgentTask] {
-        sessions.values.sorted { $0.createdAt < $1.createdAt }
     }
 }

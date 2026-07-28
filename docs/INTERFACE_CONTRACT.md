@@ -81,8 +81,32 @@ public enum APIKeyStatus: Equatable, Sendable {
 
 ---
 
+## Claude Code 本地连接器(v1.1.0 新增)
+
+`TaskStore` 公开 API 不变。新增 C 侧可用的 IslandCore 公开类型:
+
+```swift
+/// hooks 安装器 — SettingsView 的 Claude Code 行直接调用
+public enum ClaudeHooksInstaller {
+    public static func isInstalled(settingsURL: URL? = nil) -> Bool
+    public static func install(settingsURL: URL? = nil, port: Int = defaultPort) throws
+    public static func uninstall(settingsURL: URL? = nil) throws
+}
+```
+
+行为约定:
+
+- `tasks` 里现在会出现 `source == "claude-code"` 的任务(TaskCard 已有 "C" logo 分支)
+- claude-code 任务的 `taskURL` 是项目目录的 `file://` URL,`openTaskInBrowser` 会打开 Finder
+- `stopTask` 对 claude-code 任务是 no-op(本地会话无法远程停止)
+- `clearAPIKey` 只清 Manus 任务,不影响本地会话
+- 本地管线(`LocalHookServer`,127.0.0.1:7824)随 app 启动,与 Manus key 无关
+
+---
+
 ## 变更记录
 
 | 日期 | 版本 | 描述 | Commit |
 |---|---|---|---|
 | 2026-04-24 | v1.0.0 | 初始版本 | `[S][contract] feat(store): initial TaskStore API` |
+| 2026-07-28 | v1.1.0 | Claude Code 本地连接器(TaskStore API 不变) | `[S] feat(claude-code): local hooks connector` |

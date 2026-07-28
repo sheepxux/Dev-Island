@@ -22,3 +22,11 @@ xcuserdata/
 
 # Claude Code local settings (per-machine)
 .claude/
+
+# Release build output (scripts/build-app.sh writes the .app and the
+# zip here; the canonical release artifact lives on GitHub Releases,
+# never in git).
+build/
+
+# Machine-local symlink to the T7 external-drive worktree
+WORKTREE_ON_T7

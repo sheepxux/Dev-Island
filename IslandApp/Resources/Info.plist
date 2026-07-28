@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Info.plist template for Island.app.
+
+    {{VERSION}} and {{BUILD}} are substituted by scripts/build-app.sh
+    from the top-level VERSION file before being written into the
+    final bundle. Don't manually replace them here.
+
+    Two settings worth calling out:
+
+    - LSUIElement = true
+        Makes the app an "agent" — no Dock icon, doesn't appear in the
+        ⌘-Tab switcher. This is what `NSApp.setActivationPolicy(.accessory)`
+        is doing programmatically in IslandApp.swift; declaring it in the
+        plist additionally hides the Dock icon during the brief launch
+        window before the policy is applied.
+
+    - LSMinimumSystemVersion = 14.0
+        Matches the SwiftUI / Observation features we use (@Observable,
+        new Animation API). Bumping later is fine; lowering needs source
+        changes.
+
+    Notification permission:
+        macOS shows the system notification authorization dialog the
+        first time `UNUserNotificationCenter.requestAuthorization` runs.
+        No usage-description string is required for notifications
+        specifically (unlike camera / microphone / location).
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>Dev Island</string>
+
+    <key>CFBundleExecutable</key>
+    <string>IslandApp</string>
+
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+
+    <!--
+        Bundle identifier in reverse-DNS form. The domain is
+        devisland.app (TLD is .app), so the reverse is app.devisland.X
+        where X is the product code. We use `Island` for X to match
+        the Swift target / executable name; the user-facing "Dev
+        Island" name lives in CFBundleDisplayName.
+
+        Changing this AFTER any user has installed the app will
+        invalidate their Keychain entry (API key) and UserDefaults
+        suite (webhook id). Treat as immutable post-v0.2.0.
+    -->
+    <key>CFBundleIdentifier</key>
+    <string>app.devisland.Island</string>
+
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+
+    <key>CFBundleName</key>
+    <string>Dev Island</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>{{VERSION}}</string>
+
+    <key>CFBundleVersion</key>
+    <string>{{BUILD}}</string>
+
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+
+    <!-- Menubar / agent app: no Dock icon, no ⌘-Tab presence. -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026. All rights reserved.</string>
+
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <!--
+        High-resolution rendering. Without this the bar / panel render
+        bitmap-scaled on Retina displays and the rounded corners look
+        fuzzy.
+    -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!--
+        Don't restore windows on relaunch — we manage all windows
+        programmatically (IslandWindow, SettingsWindow, debug sandbox)
+        and a state-restoration attempt would race against
+        applicationDidFinishLaunching.
+    -->
+    <key>NSQuitAlwaysKeepsWindows</key>
+    <false/>
+</dict>
+</plist>

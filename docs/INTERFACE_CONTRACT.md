@@ -1,72 +1,48 @@
-# Interface Contract
+# IslandCore Interface Contract
 
-> Owners: shared (C + S). Changes require PR review from both.
-> Contract version: **v1**
-> Last updated: 2026-04-24
-
-This document is the only coupling between the two Claude Code instances:
-
-- **C** owns `IslandApp/` (UI layer)
-- **S** owns `IslandCore/` (data layer) except the public surface defined below
-
-C imports `IslandCore` and consumes only what is declared here. S implements
-this surface. Anything else in `IslandCore/` is free to evolve without notice.
+> 最后更新: 2026-04-24 | 版本: v1.0.0
+> 变更流程: 改 TaskStore 公开 API 前更新此文档,commit 用 `[S][contract]` tag。
 
 ---
 
-## 1. Module boundary
-
-| Layer        | Path                                        | Owner |
-| ------------ | ------------------------------------------- | ----- |
-| UI           | `IslandApp/`                                | C     |
-| Data / IO    | `IslandCore/Sources/IslandCore/` (private)  | S     |
-| **Contract** | `IslandCore/Sources/IslandCore/TaskStore.swift` (public symbols) + `Models/*.swift` | shared |
-
-C MUST NOT import any IslandCore symbol outside the contract.
-S MUST NOT widen or break the contract without a CR.
-
----
-
-## 2. Change request (CR)
-
-To modify any public symbol below:
-
-1. Open a PR that updates **this doc + the Swift source together**.
-2. Tag both owners as reviewers.
-3. Merge only after both approve.
-4. Bump the contract version at the top of this file.
-
-In-place additions (new public methods, new optional fields with defaults) are
-non-breaking and can land via the same CR flow but without a version bump.
-
----
-
-## 3. Public surface
-
-### 3.1 `TaskStore`
+## TaskStore 公开 API
 
 ```swift
+@MainActor
 @Observable
 public final class TaskStore {
-    public static let shared: TaskStore
+
+    // MARK: - Observed state (C 的 View 只读)
 
     public private(set) var tasks: [AgentTask]
     public private(set) var connectionStatus: ConnectionStatus
     public private(set) var apiKeyStatus: APIKeyStatus
 
+    // MARK: - Actions
+
+    /// 验证并保存 API key,启动所有服务。
+    /// 抛出 ManusError.unauthorized 若 key 无效。
     public func configureAPIKey(_ key: String) async throws
+
+    /// 清除 API key,停止所有服务,清空 tasks。
     public func clearAPIKey()
+
+    /// 在浏览器中打开指定任务。
     public func openTaskInBrowser(id: String)
+
+    /// 通过 Manus API 停止任务。
     public func stopTask(id: String) async throws
 }
 ```
 
-### 3.2 Models
+---
+
+## 数据模型
 
 ```swift
 public struct AgentTask: Identifiable, Hashable, Codable, Sendable {
     public let id: String
-    public let source: String          // "manus" (future: "claude-code", "cursor")
+    public let source: String          // "manus"
     public var title: String
     public var status: TaskStatus
     public var currentPhase: String?
@@ -96,43 +72,17 @@ public enum APIKeyStatus: Equatable, Sendable {
 
 ---
 
-## 4. Behavior guarantees
+## v1 限制
 
-- **Threading**: All `@Observable` mutations happen on `MainActor`. SwiftUI
-  views consuming `TaskStore.shared` re-render automatically.
-- **`openTaskInBrowser`**: fire-and-forget. Must not block or throw. If the
-  task or URL is invalid, fail silently (log internally).
-- **`configureAPIKey`**: validates the key against Manus before persisting.
-  - On success: `apiKeyStatus = .valid`, key written to Keychain.
-  - On invalid key: `apiKeyStatus = .invalid`, throws.
-  - On network failure: state unchanged, throws.
-- **`stopTask`**: throws if the task is unknown or cannot be cancelled.
-  Must update `tasks` to reflect the new status on success.
-- **`connectionStatus`**: reflects long-poll / webhook health. C uses it to
-  show a degraded state on the bar (gray) when not `.connected`.
+- `TaskStore` 没有 `reply` 方法 — v2 再加
+- 没有附件下载
+- 只支持单 Manus 账户
+- `openTaskInBrowser` 由 C 调用 `TaskStore.openTaskInBrowser(id:)`,不是通过 AgentConnector
 
 ---
 
-## 5. Status priority (UI)
+## 变更记录
 
-When multiple tasks coexist, the Notch Bar color is driven by the highest
-priority status present:
-
-```
-Waiting > Failed > Running > Completed > Idle (tasks empty)
-```
-
-This rule is owned by C and may evolve without a CR — S does not need to
-expose anything new.
-
----
-
-## 6. Stub policy
-
-Until S replaces the stubs in `TaskStore.swift`:
-
-- All async/throwing methods throw a `StubError.notImplemented`.
-- `tasks` stays empty unless populated via `TaskStore.mock(...)` (DEBUG only).
-- The `#if DEBUG extension TaskStore { static func mock(...) }` block is
-  C-owned for Previews + Debug Sandbox. **S, please preserve it** when
-  swapping the production implementation in.
+| 日期 | 版本 | 描述 | Commit |
+|---|---|---|---|
+| 2026-04-24 | v1.0.0 | 初始版本 | `[S][contract] feat(store): initial TaskStore API` |

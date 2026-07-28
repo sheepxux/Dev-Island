@@ -1,0 +1,302 @@
+# Release pipeline for Dev Island (bundle: "Dev Island.app").
+#
+# Trigger: pushing a tag matching `v*` (e.g. `git tag v0.1.0 && git push origin v0.1.0`).
+# Output: a signed + notarized + stapled `Island.app.zip` attached to a GitHub Release,
+# plus a one-line summary of the artifact's `sha256` so the Cask formula can be
+# updated by hand (or by a follow-up automation step in the homebrew-island tap).
+#
+# Why a single job:
+# - codesign + notarytool + stapler all need a signed-in keychain on the SAME
+#   runner. Splitting these into separate jobs would force re-importing the
+#   .p12 into a fresh keychain per job, which is fragile and slower than just
+#   doing the whole pipeline on one mac runner.
+#
+# Required GitHub Secrets (configure under Settings → Secrets and variables → Actions):
+#
+#   APPLE_ID                       — your Apple ID email (used for notarytool auth)
+#   APPLE_TEAM_ID                  — 10-char Team ID from developer.apple.com
+#   APPLE_APP_PASSWORD             — app-specific password from appleid.apple.com,
+#                                    NOT your Apple ID login password. Generate
+#                                    a new one labeled "Island Notarization".
+#   SIGNING_CERTIFICATE_P12_BASE64 — your "Developer ID Application" cert
+#                                    exported as .p12 from Keychain Access,
+#                                    then base64-encoded:
+#                                       base64 -i cert.p12 | pbcopy
+#   SIGNING_CERTIFICATE_P12_PASSWORD — the password set when exporting the .p12
+#   KEYCHAIN_PASSWORD              — anything; just used to lock the temporary
+#                                    keychain we create on the runner. e.g. a
+#                                    20-char random string.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Only one release run at a time per tag — protects against double-publish if
+# you push the same tag twice (which can happen if a hook nudges it).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Since GitHub tightened the default GITHUB_TOKEN scopes in 2023, workflows
+# need to opt into write permissions explicitly. `contents: write` lets the
+# softprops/action-gh-release step POST to /repos/.../releases (the v0.1.0
+# attempt with notarized .app failed with HTTP 403 "Resource not accessible
+# by integration" because we hadn't declared this).
+permissions:
+  contents: write
+
+jobs:
+  build-sign-release:
+    name: Build, sign, notarize, release
+    # macos-15 = Sequoia, ships Xcode 16 with Swift 6. We need Swift 6
+    # specifically because Hummingbird 2.16's transitive dep
+    # swift-async-algorithms 1.1.3 uses typed throws (`throws(Failure)`)
+    # and the `#isolation` macro, both Swift 6 features. Xcode 15.4 /
+    # Swift 5.10 chokes on these — see the v0.1.0 attempt that failed
+    # at AsyncFlatMapLatestSequence.swift:85.
+    runs-on: macos-15
+    # 60 not 30 because notarytool's wait can take 20-40 minutes when
+    # Apple's queue is busy (we hit a 20m timeout on the first valid
+    # v0.1.0 attempt with submission still "In Progress"). Build itself
+    # completes in 5-10 min on a cold runner, codesign and stapler are
+    # near-instant, so the rest of the budget is all notarization slack.
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # macos-15 default Xcode at the time of writing is 16.x (Swift 6).
+      # We deliberately do NOT pin a specific Xcode_X.Y.app path because
+      # GitHub rotates point releases on the runner image and the path
+      # `Xcode_16.4.app` may disappear without notice. The fast-moving
+      # Swift 6 toolchain version isn't load-bearing for us as long as
+      # it's >=6.0; if we ever need an exact pin, drop a `.swift-version`
+      # file at repo root.
+      - name: Verify Xcode + Swift
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # Read the version once so subsequent steps can reference it. The
+      # tag (refs/tags/v0.1.0) and the VERSION file should match — we
+      # assert they do as a guardrail against a tag/file mismatch shipping
+      # the wrong version string into Info.plist.
+      - name: Resolve version
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          FILE_VERSION="$(cat VERSION)"
+          if [[ "${TAG_VERSION}" != "${FILE_VERSION}" ]]; then
+            echo "::error::Tag (${TAG_VERSION}) does not match VERSION file (${FILE_VERSION})"
+            exit 1
+          fi
+          echo "version=${TAG_VERSION}" >> "${GITHUB_OUTPUT}"
+
+      # Import the signing certificate into a temporary keychain.
+      # Why a temporary keychain (not the default one):
+      #   - Default login.keychain on the runner image is unlocked at boot
+      #     with a password that may rotate; if we add the cert there it
+      #     won't unlock after suspend/resume of background steps.
+      #   - A scoped keychain we create + delete in the same run is also
+      #     better hygiene: secrets don't leak into other concurrent jobs
+      #     on the same runner pool.
+      - name: Setup signing keychain
+        env:
+          P12_BASE64: ${{ secrets.SIGNING_CERTIFICATE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="${RUNNER_TEMP}/signing.keychain-db"
+          CERT_PATH="${RUNNER_TEMP}/signing.p12"
+
+          echo "${P12_BASE64}" | base64 --decode -o "${CERT_PATH}"
+
+          # Sanity-check the decoded file before handing it to security(1):
+          # if the base64 secret was somehow truncated or whitespace-mangled
+          # in transit, the decoded file is junk and `security import` fails
+          # with "Unknown format in import" — which looks like a credential
+          # problem but is really an upstream encoding problem. Print
+          # `file` output so the failure mode is obvious in the log.
+          file "${CERT_PATH}" || true
+          ls -la "${CERT_PATH}"
+
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          # `-t agg` is the right type for a PKCS#12 file (it contains
+          # *both* a cert and a private key — `-t cert` told security to
+          # treat the input as a certificate-only blob, which fails with
+          # "Unknown format in import" for real .p12 files).
+          # `-T /usr/bin/codesign` whitelists codesign to use the imported
+          # private key without an interactive password prompt, which the
+          # CI runner can't satisfy.
+          security import "${CERT_PATH}" \
+            -P "${P12_PASSWORD}" \
+            -A -t agg -f pkcs12 \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security \
+            -k "${KEYCHAIN_PATH}"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security list-keychains -d user -s "${KEYCHAIN_PATH}" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "${KEYCHAIN_PATH}"
+
+          rm -f "${CERT_PATH}"
+
+          # Surface the discovered identity name so subsequent codesign
+          # invocations can reference it. Should look like
+          # "Developer ID Application: <Your Name> (TEAM_ID)".
+          IDENTITY="$(security find-identity -v -p codesigning "${KEYCHAIN_PATH}" \
+            | grep "Developer ID Application" \
+            | head -1 | awk -F'"' '{print $2}')"
+          if [[ -z "${IDENTITY}" ]]; then
+            echo "::error::No 'Developer ID Application' identity found after import"
+            exit 1
+          fi
+          echo "SIGNING_IDENTITY=${IDENTITY}" >> "${GITHUB_ENV}"
+
+      - name: Build .app (universal)
+        run: ./scripts/build-app.sh
+
+      # Override the ad-hoc signature from build-app.sh with the real
+      # Developer ID one. We re-sign rather than passing the identity into
+      # build-app.sh because the script is designed to be runnable locally
+      # (where developers don't have the prod cert) — keeping signing
+      # outside the script preserves that property.
+      - name: Codesign with Developer ID
+        run: |
+          set -euo pipefail
+          # The bundle filename is "Dev Island.app" — must quote the
+          # path everywhere downstream because of the space.
+          codesign --force --deep --options runtime \
+            --sign "${SIGNING_IDENTITY}" \
+            -i app.devisland.Island \
+            --timestamp \
+            "build/Dev Island.app"
+          codesign --verify --strict --verbose=2 "build/Dev Island.app"
+          # spctl is the Gatekeeper assessment tool — pre-notarization
+          # this should output "rejected (Unnotarized Developer ID)",
+          # which is the *correct* state. Notarization in the next step
+          # is what flips it to "accepted".
+          spctl -a -vv -t exec "build/Dev Island.app" || true
+
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # notarytool requires a zip (or .pkg / .dmg). Apple's docs say
+          # `ditto -c -k --keepParent` produces the canonical zip layout
+          # they expect — `zip` itself produces a zip too but with
+          # different metadata that occasionally trips notarytool.
+          ditto -c -k --keepParent "build/Dev Island.app" build/Dev-Island-notarization.zip
+
+          # 45m, not 20m — Apple's queue varies wildly (median 5-10 min,
+          # tail can hit 30+ min especially for new Developer IDs that
+          # haven't built reputation yet). The v0.1.0 first attempt
+          # timed out at 20 min with submission b3b8e1d3 still "In
+          # Progress" on Apple's side. Job-level timeout in the runner
+          # config (60m) bounds the overall run if Apple goes catastrophic.
+          xcrun notarytool submit build/Dev-Island-notarization.zip \
+            --apple-id "${APPLE_ID}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --password "${APPLE_APP_PASSWORD}" \
+            --wait \
+            --timeout 45m
+
+          # Staple the notarization ticket onto the .app so users with
+          # no internet can still verify the notarization. After this,
+          # `xcrun stapler validate` should print "The validate action
+          # worked!".
+          xcrun stapler staple "build/Dev Island.app"
+          xcrun stapler validate "build/Dev Island.app"
+
+      # Final user-facing zip. Use `ditto` again for the same reason:
+      # consistent metadata, predictable extraction layout when users
+      # double-click the zip from Safari.
+      #
+      # We produce TWO assets on each release:
+      #
+      #   Dev-Island.zip            — stable filename. Resolves through
+      #                               https://.../releases/latest/download/Dev-Island.zip
+      #                               which is the permanent URL the landing
+      #                               page links to; never needs version-bumping.
+      #   Dev-Island-<VERSION>.zip  — version-stamped archive. Useful for
+      #                               pinning a specific build (issue triage,
+      #                               reproducibility) when Dev-Island.zip has
+      #                               already moved to a newer release.
+      #
+      # Both contain the exact same notarized .app — they're literal
+      # copies of each other, just with different filenames so the
+      # Releases page and the landing page can each use the convention
+      # that suits them.
+      - name: Package release zip
+        id: package
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          # Filenames intentionally use a hyphen (Dev-Island.zip) rather
+          # than the bundle's space-separated name (Dev Island.app):
+          # URLs with %20 escaping look untrustworthy to a casual user
+          # hovering the download link, and the hyphenated form matches
+          # the GitHub repo name (Dev-Island), so the URL reads
+          # consistently across the homepage, the repo, and the cask.
+          STABLE="build/Dev-Island.zip"
+          VERSIONED="build/Dev-Island-${VERSION}.zip"
+          ditto -c -k --keepParent "build/Dev Island.app" "${STABLE}"
+          cp "${STABLE}" "${VERSIONED}"
+          SHA256="$(shasum -a 256 "${STABLE}" | awk '{print $1}')"
+          ls -lh "${STABLE}" "${VERSIONED}"
+          echo "Stable artifact:    ${STABLE}"
+          echo "Versioned artifact: ${VERSIONED}"
+          echo "SHA-256:            ${SHA256}"
+          echo "stable=${STABLE}" >> "${GITHUB_OUTPUT}"
+          echo "versioned=${VERSIONED}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Island ${{ steps.version.outputs.version }}
+          # Body links the Cask install command directly so users landing
+          # on the Releases page have a copy-paste path to install.
+          body: |
+            ## Install
+
+            Download `Dev-Island.zip` below, unzip, drag `Dev Island.app`
+            to `/Applications`. Notarized by Apple so no Gatekeeper warning
+            on first launch.
+
+            Or, on the landing page: https://devisland.app
+
+            ## Homebrew (optional, when the tap is published)
+
+            ```sh
+            brew tap sheepxux/dev-island
+            brew install --cask dev-island
+            ```
+
+            **SHA-256**: `${{ steps.package.outputs.sha256 }}`
+          files: |
+            ${{ steps.package.outputs.stable }}
+            ${{ steps.package.outputs.versioned }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Always clean up the keychain, even if a previous step failed —
+      # otherwise consecutive runs on the same self-hosted runner would
+      # hit "duplicate keychain" errors.
+      - name: Tear down signing keychain
+        if: always()
+        run: |
+          security delete-keychain "${RUNNER_TEMP}/signing.keychain-db" || true

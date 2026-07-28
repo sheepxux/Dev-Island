@@ -33,3 +33,7 @@ public struct AgentTask: Identifiable, Hashable, Codable, Sendable {
         self.waitingMessage = waitingMessage
     }
 }
+
+// TaskStatus, ConnectionStatus, APIKeyStatus 定义在各自的独立文件中：
+// Models/TaskStatus.swift、Models/ConnectionStatus.swift、Models/APIKeyStatus.swift
+// （与前端 C 的文件结构保持一致）

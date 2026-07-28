@@ -92,6 +92,7 @@ struct TaskCard: View {
         switch task.source {
         case "manus":       return "M"
         case "claude-code": return "C"
+        case "codex":       return "Cx"
         case "cursor":      return "Cu"
         default:            return String(task.source.prefix(1)).uppercased()
         }

@@ -71,7 +71,23 @@ private struct ConnectedServicesSection: View {
             VStack(spacing: 0) {
                 ManusServiceRow(store: store)
                 rowDivider
-                ClaudeCodeServiceRow()
+                LocalAgentServiceRow(
+                    name: "Claude Code",
+                    idleSubtitle: "Track local Claude Code sessions in the island",
+                    configPath: "~/.claude/settings.json",
+                    isInstalled: { ClaudeHooksInstaller.isInstalled() },
+                    install: { try ClaudeHooksInstaller.install() },
+                    uninstall: { try ClaudeHooksInstaller.uninstall() }
+                )
+                rowDivider
+                LocalAgentServiceRow(
+                    name: "Codex",
+                    idleSubtitle: "Track local Codex CLI sessions in the island",
+                    configPath: "~/.codex/hooks.json",
+                    isInstalled: { CodexHooksInstaller.isInstalled() },
+                    install: { try CodexHooksInstaller.install() },
+                    uninstall: { try CodexHooksInstaller.uninstall() }
+                )
                 rowDivider
                 ComingSoonRow(name: "Cursor", subtitle: "Editor-side task ingestion")
             }
@@ -219,40 +235,46 @@ private struct ManusServiceRow: View {
     }
 }
 
-// MARK: - Claude Code row
+// MARK: - Local agent row (Claude Code, Codex)
 
-/// Enables/disables the Claude Code integration by installing hook entries
-/// into `~/.claude/settings.json` (via `ClaudeHooksInstaller`). Sessions
-/// report their lifecycle to the always-running `LocalHookServer` — no API
-/// key, no tunnel.
-private struct ClaudeCodeServiceRow: View {
-    @State private var isInstalled = ClaudeHooksInstaller.isInstalled()
+/// Enables/disables a local CLI integration by installing hook entries into
+/// the CLI's config file (via the matching installer). Sessions report their
+/// lifecycle to the always-running `LocalHookServer` — no API key, no tunnel.
+private struct LocalAgentServiceRow: View {
+    let name: String
+    let idleSubtitle: String
+    let configPath: String
+    let isInstalled: () -> Bool
+    let install: () throws -> Void
+    let uninstall: () throws -> Void
+
+    @State private var installed = false
     @State private var lastError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Circle()
-                    .fill(isInstalled ? Color.green : Color.secondary.opacity(0.5))
+                    .fill(installed ? Color.green : Color.secondary.opacity(0.5))
                     .frame(width: 8, height: 8)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Claude Code").font(.system(size: 13, weight: .semibold))
-                    Text(isInstalled
+                    Text(name).font(.system(size: 13, weight: .semibold))
+                    Text(installed
                          ? "Hooks installed — sessions report status live"
-                         : "Track local Claude Code sessions in the island")
+                         : idleSubtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if isInstalled {
-                    Button("Disable", role: .destructive) { uninstall() }
+                if installed {
+                    Button("Disable", role: .destructive) { toggle(uninstall, to: false) }
                 } else {
-                    Button("Enable") { install() }
+                    Button("Enable") { toggle(install, to: true) }
                 }
             }
 
-            if isInstalled {
-                Text("Applies to Claude Code sessions started after enabling.")
+            if installed {
+                Text("Applies to \(name) sessions started after enabling.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -264,25 +286,16 @@ private struct ClaudeCodeServiceRow: View {
             }
         }
         .padding(16)
+        .onAppear { installed = isInstalled() }
     }
 
-    private func install() {
+    private func toggle(_ action: () throws -> Void, to newState: Bool) {
         do {
-            try ClaudeHooksInstaller.install()
-            isInstalled = true
+            try action()
+            installed = newState
             lastError = nil
         } catch {
-            lastError = "Couldn't update ~/.claude/settings.json: \(error.localizedDescription)"
-        }
-    }
-
-    private func uninstall() {
-        do {
-            try ClaudeHooksInstaller.uninstall()
-            isInstalled = false
-            lastError = nil
-        } catch {
-            lastError = "Couldn't update ~/.claude/settings.json: \(error.localizedDescription)"
+            lastError = "Couldn't update \(configPath): \(error.localizedDescription)"
         }
     }
 }

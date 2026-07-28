@@ -21,10 +21,12 @@ public final class TaskStore {
     private var sqliteStore: SQLiteStore?
     private var pollingOnlyMode = false
 
-    // Local agent pipeline (Claude Code) — independent of the Manus API key
-    // and of the tunnel/polling lifecycle: it runs for the app's lifetime.
+    // Local agent pipeline (Claude Code, Codex) — independent of the Manus
+    // API key and of the tunnel/polling lifecycle: it runs for the app's
+    // lifetime.
     private var localHookServer: LocalHookServer?
     private var claudeConnector: ClaudeCodeConnector?
+    private var codexConnector: CodexConnector?
 
     private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
@@ -171,21 +173,32 @@ public final class TaskStore {
     // MARK: - Local agent pipeline (Claude Code)
 
     private func startLocalHookPipeline() {
-        let connector = ClaudeCodeConnector()
-        claudeConnector = connector
+        let claude = ClaudeCodeConnector()
+        claudeConnector = claude
+        let codex = CodexConnector()
+        codexConnector = codex
         let server = LocalHookServer()
         localHookServer = server
 
         Task {
-            await server.start { [weak self] event in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    let snapshot = await connector.apply(event)
-                    self.applyLocalSnapshot(source: connector.source, snapshot)
+            await server.start(
+                onClaudeCodeEvent: { [weak self] event in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        let snapshot = await claude.apply(event)
+                        self.applyLocalSnapshot(source: claude.source, snapshot)
+                    }
+                },
+                onCodexEvent: { [weak self] event in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        let snapshot = await codex.apply(event)
+                        self.applyLocalSnapshot(source: codex.source, snapshot)
+                    }
                 }
-            }
+            )
         }
-        IslandLogger.store.info("Local hook pipeline started (claude-code)")
+        IslandLogger.store.info("Local hook pipeline started (claude-code, codex)")
     }
 
     // MARK: - Service lifecycle

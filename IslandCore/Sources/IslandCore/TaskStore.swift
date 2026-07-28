@@ -21,6 +21,11 @@ public final class TaskStore {
     private var sqliteStore: SQLiteStore?
     private var pollingOnlyMode = false
 
+    // Local agent pipeline (Claude Code) — independent of the Manus API key
+    // and of the tunnel/polling lifecycle: it runs for the app's lifetime.
+    private var localHookServer: LocalHookServer?
+    private var claudeConnector: ClaudeCodeConnector?
+
     private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
 
@@ -52,7 +57,9 @@ public final class TaskStore {
     public func clearAPIKey() {
         stopServices()
         try? KeychainStore.delete()
-        tasks = []
+        // Only Manus tasks belong to the API key — local agent sessions
+        // (Claude Code) are unaffected by a disconnect.
+        tasks = tasks.filter { $0.source != "manus" }
         apiKeyStatus = .notConfigured
         connectionStatus = .disconnected
         IslandLogger.store.info("API key cleared")
@@ -65,7 +72,10 @@ public final class TaskStore {
     }
 
     public func stopTask(id: String) async throws {
-        guard let connector = connectors.first else { return }
+        guard let task = tasks.first(where: { $0.id == id }) else { return }
+        // Only Manus tasks can be stopped remotely; local sessions
+        // (Claude Code) are driven by their own CLI.
+        guard task.source == "manus", let connector = connectors.first else { return }
         try await connector.stop(taskId: id)
         // Optimistically update status
         tasks = tasks.map { t in
@@ -96,15 +106,23 @@ public final class TaskStore {
     }
 
     internal func applyPollingSnapshot(_ incoming: [AgentTask]) {
-        tasks = StateReconciler.reconcile(local: tasks, incoming: incoming)
+        // Polling only covers Manus — scope the reconcile so local agent
+        // sessions (claude-code) survive the snapshot merge.
+        tasks = StateReconciler.reconcile(local: tasks, incoming: incoming, source: "manus")
         let store = sqliteStore
-        let snapshot = tasks
+        let snapshot = tasks.filter { $0.source == "manus" }
         Task.detached {
             guard let store else { return }
             for task in snapshot {
                 try? await store.insertOrReplace(task: task)
             }
         }
+    }
+
+    /// Replace all tasks of one local source with a fresh snapshot from its
+    /// connector (event-sourced, so the connector state is authoritative).
+    internal func applyLocalSnapshot(source: String, _ snapshot: [AgentTask]) {
+        tasks = tasks.filter { $0.source != source } + snapshot
     }
 
     // MARK: - Bootstrap
@@ -114,6 +132,9 @@ public final class TaskStore {
         let store = SQLiteStore()
         try? await store.open()
         sqliteStore = store
+
+        // Local agent pipeline runs regardless of Manus configuration.
+        startLocalHookPipeline()
 
         // Load API key from Keychain
         guard let apiKey = try? KeychainStore.load() else {
@@ -127,7 +148,7 @@ public final class TaskStore {
         do {
             let initialTasks = try await client.listTasks()
             apiKeyStatus = .valid
-            tasks = initialTasks
+            applyPollingSnapshot(initialTasks)
         } catch ManusError.unauthorized {
             apiKeyStatus = .invalid
             IslandLogger.store.warning("Stored API key is invalid")
@@ -145,6 +166,26 @@ public final class TaskStore {
         }
 
         registerSleepWakeObservers()
+    }
+
+    // MARK: - Local agent pipeline (Claude Code)
+
+    private func startLocalHookPipeline() {
+        let connector = ClaudeCodeConnector()
+        claudeConnector = connector
+        let server = LocalHookServer()
+        localHookServer = server
+
+        Task {
+            await server.start { [weak self] event in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let snapshot = await connector.apply(event)
+                    self.applyLocalSnapshot(source: connector.source, snapshot)
+                }
+            }
+        }
+        IslandLogger.store.info("Local hook pipeline started (claude-code)")
     }
 
     // MARK: - Service lifecycle

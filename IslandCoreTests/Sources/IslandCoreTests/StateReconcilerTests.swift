@@ -5,10 +5,10 @@ final class StateReconcilerTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeTask(id: String, title: String = "Task", status: TaskStatus = .running, updatedAt: Date = .now) -> AgentTask {
+    private func makeTask(id: String, source: String = "manus", title: String = "Task", status: TaskStatus = .running, updatedAt: Date = .now) -> AgentTask {
         AgentTask(
             id: id,
-            source: "manus",
+            source: source,
             title: title,
             status: status,
             createdAt: Date(timeIntervalSinceReferenceDate: 0),
@@ -61,6 +61,33 @@ final class StateReconcilerTests: XCTestCase {
         let local = [makeTask(id: "t1"), makeTask(id: "t2")]
         let result = StateReconciler.reconcile(local: local, incoming: [])
         XCTAssertTrue(result.isEmpty)
+    }
+
+    // MARK: - Source-scoped reconcile (Manus poll must not touch local sessions)
+
+    func testScopedReconcilePreservesOtherSources() {
+        let local = [
+            makeTask(id: "m1"),
+            makeTask(id: "c1", source: "claude-code"),
+        ]
+        // Manus snapshot no longer contains m1 — but c1 must survive.
+        let result = StateReconciler.reconcile(local: local, incoming: [], source: "manus")
+        XCTAssertEqual(result.map(\.id), ["c1"])
+    }
+
+    func testScopedReconcileMergesOwnSourceNormally() {
+        let old = Date(timeIntervalSinceReferenceDate: 100)
+        let new = Date(timeIntervalSinceReferenceDate: 200)
+        let local = [
+            makeTask(id: "m1", title: "Old", updatedAt: old),
+            makeTask(id: "c1", source: "claude-code"),
+        ]
+        let incoming = [makeTask(id: "m1", title: "New", updatedAt: new)]
+
+        let result = StateReconciler.reconcile(local: local, incoming: incoming, source: "manus")
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result.first { $0.id == "m1" }?.title, "New")
+        XCTAssertNotNil(result.first { $0.id == "c1" })
     }
 
     // MARK: - apply event tests

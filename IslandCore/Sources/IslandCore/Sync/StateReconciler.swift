@@ -2,6 +2,16 @@ import Foundation
 
 enum StateReconciler {
 
+    /// Merge a remote polling snapshot into local state, touching only tasks
+    /// of the given source. Tasks from other sources (e.g. local "claude-code"
+    /// sessions during a Manus poll) pass through untouched — a remote
+    /// snapshot is only authoritative for its own source.
+    static func reconcile(local: [AgentTask], incoming: [AgentTask], source: String) -> [AgentTask] {
+        let scoped = local.filter { $0.source == source }
+        let others = local.filter { $0.source != source }
+        return reconcile(local: scoped, incoming: incoming) + others
+    }
+
     /// Merge a remote polling snapshot into local state.
     /// Remote is authoritative: tasks present only locally are dropped.
     /// For tasks present in both, take the version with the later updatedAt.

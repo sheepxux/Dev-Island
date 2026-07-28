@@ -42,7 +42,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Settings")
                 .font(.system(size: 22, weight: .semibold))
-            Text("Configure your Manus connection and app preferences.")
+            Text("Configure your agent connections and app preferences.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
@@ -71,7 +71,7 @@ private struct ConnectedServicesSection: View {
             VStack(spacing: 0) {
                 ManusServiceRow(store: store)
                 rowDivider
-                ComingSoonRow(name: "Claude Code", subtitle: "Local agent integration")
+                ClaudeCodeServiceRow()
                 rowDivider
                 ComingSoonRow(name: "Cursor", subtitle: "Editor-side task ingestion")
             }
@@ -216,6 +216,74 @@ private struct ManusServiceRow: View {
             return "Network unavailable. Check your connection and retry."
         }
         return "Couldn't connect: \(raw)"
+    }
+}
+
+// MARK: - Claude Code row
+
+/// Enables/disables the Claude Code integration by installing hook entries
+/// into `~/.claude/settings.json` (via `ClaudeHooksInstaller`). Sessions
+/// report their lifecycle to the always-running `LocalHookServer` — no API
+/// key, no tunnel.
+private struct ClaudeCodeServiceRow: View {
+    @State private var isInstalled = ClaudeHooksInstaller.isInstalled()
+    @State private var lastError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(isInstalled ? Color.green : Color.secondary.opacity(0.5))
+                    .frame(width: 8, height: 8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Claude Code").font(.system(size: 13, weight: .semibold))
+                    Text(isInstalled
+                         ? "Hooks installed — sessions report status live"
+                         : "Track local Claude Code sessions in the island")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if isInstalled {
+                    Button("Disable", role: .destructive) { uninstall() }
+                } else {
+                    Button("Enable") { install() }
+                }
+            }
+
+            if isInstalled {
+                Text("Applies to Claude Code sessions started after enabling.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastError {
+                Text(lastError)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.red)
+            }
+        }
+        .padding(16)
+    }
+
+    private func install() {
+        do {
+            try ClaudeHooksInstaller.install()
+            isInstalled = true
+            lastError = nil
+        } catch {
+            lastError = "Couldn't update ~/.claude/settings.json: \(error.localizedDescription)"
+        }
+    }
+
+    private func uninstall() {
+        do {
+            try ClaudeHooksInstaller.uninstall()
+            isInstalled = false
+            lastError = nil
+        } catch {
+            lastError = "Couldn't update ~/.claude/settings.json: \(error.localizedDescription)"
+        }
     }
 }
 

@@ -27,3 +27,6 @@ xcuserdata/
 # zip here; the canonical release artifact lives on GitHub Releases,
 # never in git).
 build/
+
+# Machine-local symlink to the T7 external-drive worktree
+WORKTREE_ON_T7

@@ -113,8 +113,9 @@ mode you're in.
 | Source | Status |
 | --- | --- |
 | Manus | ✅ Available |
-| Claude Code | 🚧 Planned |
-| Cursor | 🚧 Planned |
+| Claude Code | 🚧 Next up (local hooks, no tunnel needed) |
+| Codex CLI | 🚧 Next up (local notify hook) |
+| Cursor | 📋 Planned |
 
 The connector layer is intentionally pluggable — `IslandCore` exposes an
 `AgentConnector` protocol, and adding a new source is a matter of writing
@@ -153,11 +154,11 @@ changes go through [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
 | Area | State |
 | --- | --- |
 | macOS island UI (notched + non-notched) | ✅ Shipping |
-| Manus task sync (webhook + polling) | ✅ Shipping |
+| Manus task sync (polling, webhook fallback path) | ✅ Shipping |
 | Settings + Launch at Login + banner notifications | ✅ Shipping |
-| Signed + notarized public release | 🚧 First v0.1.0 in flight |
+| Signed + notarized public release | ✅ v0.1.1 on [Releases](https://github.com/sheepxux/Dev-Island/releases) |
 | Homebrew Cask tap | 🚧 Draft in `dist/homebrew-island/` |
-| Claude Code / Cursor connectors | 📋 Planned |
+| Claude Code / Codex connectors | 📋 Next up |
 
 ## Contributing
 

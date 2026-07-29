@@ -13,6 +13,13 @@ public final class TaskStore {
     public private(set) var connectionStatus: ConnectionStatus = .disconnected
     public private(set) var apiKeyStatus: APIKeyStatus = .notConfigured
 
+    /// Task status-transition callback (contract v1.4.0, J1). B side assigns
+    /// once at app startup and maps transitions to notifications.
+    /// Fires on the main actor after `tasks` is already updated; one call per
+    /// changed task; newly appeared tasks fire with `oldStatus == nil`;
+    /// removals don't fire. Debug mutators fire too (Debug Sandbox testing).
+    public var onTaskTransition: ((TaskTransition) -> Void)?
+
     // MARK: - Private internals
 
     private var connectors: [any AgentConnector] = []
@@ -34,8 +41,25 @@ public final class TaskStore {
 
     // MARK: - Init
 
-    private init() {
-        Task { await bootstrap() }
+    /// `bootstrap: false` builds an inert store (previews / unit tests) that
+    /// never touches SQLite, Keychain, or the local hook server.
+    private init(bootstrap: Bool = true) {
+        if bootstrap {
+            Task { await self.bootstrap() }
+        }
+    }
+
+    // MARK: - Task mutation funnel
+
+    /// Every `tasks` write goes through here so status transitions are
+    /// detected exactly once, in one place (contract v1.4.0).
+    private func setTasks(_ newTasks: [AgentTask]) {
+        let transitions = TaskTransition.diff(old: tasks, new: newTasks)
+        tasks = newTasks
+        guard let onTaskTransition else { return }
+        for transition in transitions {
+            onTaskTransition(transition)
+        }
     }
 
     // MARK: - Public API
@@ -62,7 +86,7 @@ public final class TaskStore {
         try? KeychainStore.delete()
         // Only Manus tasks belong to the API key — local agent sessions
         // (Claude Code) are unaffected by a disconnect.
-        tasks = tasks.filter { $0.source != "manus" }
+        setTasks(tasks.filter { $0.source != "manus" })
         apiKeyStatus = .notConfigured
         connectionStatus = .disconnected
         IslandLogger.store.info("API key cleared")
@@ -74,6 +98,20 @@ public final class TaskStore {
         NSWorkspace.shared.open(url)
     }
 
+    /// Jump back to the session behind a task (contract v1.4.0, J2).
+    /// App-level activation of the source app (cursor → Cursor.app,
+    /// codex → Codex Desktop or a running terminal, claude-code → a running
+    /// terminal); falls back to `openTaskInBrowser` behavior when no
+    /// suitable app is running (local tasks → Finder, Manus → browser).
+    public func jumpToTask(id: String) {
+        guard let task = tasks.first(where: { $0.id == id }) else { return }
+        if SourceAppResolver.activateApp(for: task.source) {
+            IslandLogger.store.debug("jumpToTask(\(id)): activated \(task.source) host app")
+            return
+        }
+        openTaskInBrowser(id: id)
+    }
+
     public func stopTask(id: String) async throws {
         guard let task = tasks.first(where: { $0.id == id }) else { return }
         // Only Manus tasks can be stopped remotely; local sessions
@@ -81,19 +119,19 @@ public final class TaskStore {
         guard task.source == "manus", let connector = connectors.first else { return }
         try await connector.stop(taskId: id)
         // Optimistically update status
-        tasks = tasks.map { t in
+        setTasks(tasks.map { t in
             guard t.id == id else { return t }
             var updated = t
             updated.status = .completed
             updated.updatedAt = Date.now
             return updated
-        }
+        })
     }
 
     // MARK: - Internal (called by TunnelManager / PollingFallback)
 
     internal func ingestWebhookEvent(_ event: WebhookPayload) {
-        tasks = StateReconciler.apply(event: event, to: tasks)
+        setTasks(StateReconciler.apply(event: event, to: tasks))
         // Write to SQLite in background (best-effort)
         let store = sqliteStore
         Task.detached {
@@ -111,7 +149,7 @@ public final class TaskStore {
     internal func applyPollingSnapshot(_ incoming: [AgentTask]) {
         // Polling only covers Manus — scope the reconcile so local agent
         // sessions (claude-code) survive the snapshot merge.
-        tasks = StateReconciler.reconcile(local: tasks, incoming: incoming, source: "manus")
+        setTasks(StateReconciler.reconcile(local: tasks, incoming: incoming, source: "manus"))
         let store = sqliteStore
         let snapshot = tasks.filter { $0.source == "manus" }
         Task.detached {
@@ -125,7 +163,7 @@ public final class TaskStore {
     /// Replace all tasks of one local source with a fresh snapshot from its
     /// connector (event-sourced, so the connector state is authoritative).
     internal func applyLocalSnapshot(source: String, _ snapshot: [AgentTask]) {
-        tasks = tasks.filter { $0.source != source } + snapshot
+        setTasks(tasks.filter { $0.source != source } + snapshot)
     }
 
     // MARK: - Bootstrap
@@ -138,6 +176,11 @@ public final class TaskStore {
 
         // Local agent pipeline runs regardless of Manus configuration.
         startLocalHookPipeline()
+
+        // Sleep/wake observers guard the local pipeline too, so they must
+        // register even when no Manus key is configured (previously they
+        // were only registered at the end of the happy path).
+        registerSleepWakeObservers()
 
         // Load API key from Keychain
         guard let apiKey = try? KeychainStore.load() else {
@@ -167,8 +210,6 @@ public final class TaskStore {
             IslandLogger.store.error("Failed to start services: \(error)")
             connectionStatus = .degraded(reason: error.localizedDescription)
         }
-
-        registerSleepWakeObservers()
     }
 
     // MARK: - Local agent pipeline (Claude Code, Codex, Cursor)
@@ -307,8 +348,13 @@ public final class TaskStore {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                IslandLogger.store.info("System woke — health-checking services")
+                // Local pipeline first: relaunch the hook server if its
+                // serve loop died while we slept (e.g. transient bind error).
+                await self.localHookServer?.ensureRunning()
+                // Manus side only applies when services are configured.
+                guard self.tunnelManager != nil || !self.connectors.isEmpty else { return }
                 self.connectionStatus = .reconnecting
-                IslandLogger.store.info("System woke — reconnecting")
                 // Restart tunnel
                 await self.tunnelManager?.handleSleepWake()
                 // Immediate poll to sync state
@@ -336,7 +382,9 @@ extension TaskStore {
         connection: ConnectionStatus = .connected,
         apiKey: APIKeyStatus = .valid
     ) -> TaskStore {
-        let store = TaskStore()
+        // bootstrap: false — previews and unit tests must never bind the
+        // hook server port or touch SQLite/Keychain.
+        let store = TaskStore(bootstrap: false)
         store.tasks = tasks
         store.connectionStatus = connection
         store.apiKeyStatus = apiKey
@@ -357,18 +405,20 @@ extension TaskStore {
 
     /// Replace the entire task list. Triggers an Observation update so
     /// every view bound to `tasks` re-renders (bar count, panel list).
+    /// Routed through the transition funnel so `onTaskTransition` fires —
+    /// the Debug Sandbox is how B tests notifications (contract v1.4.0).
     public func debugSetTasks(_ tasks: [AgentTask]) {
-        self.tasks = tasks
+        setTasks(tasks)
     }
 
     /// Append a single task. Used by the "+ Running / + Waiting / …" row.
     public func debugAppend(_ task: AgentTask) {
-        self.tasks.append(task)
+        setTasks(tasks + [task])
     }
 
     /// Drop every task — also exercises the empty-state rendering path.
     public func debugClearTasks() {
-        self.tasks.removeAll()
+        setTasks([])
     }
 
     /// Override the connection-status indicator (header dot + any future

@@ -15,10 +15,23 @@ import Foundation
 ///
 /// Cursor has no permission-request hook (its gating hooks answer inline),
 /// so unlike Claude/Codex there is no `.waiting` mapping.
+///
+/// Generation guard: Cursor dispatches hook processes asynchronously, so a
+/// `stop` from an aborted generation can arrive *after* the
+/// `beforeSubmitPrompt` of the next one and would wrongly paint a running
+/// session as "Aborted". We track generations that were explicitly
+/// *superseded* by a newer prompt and drop their late `stop`s. Unknown
+/// generations always apply — generation IDs aren't ordered, so "not yet
+/// superseded" is the only safe staleness signal (a legit `stop` may even
+/// outrace its own `beforeSubmitPrompt`).
 public actor CursorConnector: AgentConnector {
     public let source = "cursor"
 
     private var table = LocalSessionTable(source: "cursor", displayName: "Cursor")
+    /// Latest generation seen per session (from beforeSubmitPrompt).
+    private var currentGeneration: [String: String] = [:]
+    /// Generations replaced by a newer prompt; their stops are stale.
+    private var supersededGenerations: [String: Set<String>] = [:]
 
     public init() {}
 
@@ -46,6 +59,12 @@ public actor CursorConnector: AgentConnector {
 
         switch event.hookEventName {
         case .sessionStart, .beforeSubmitPrompt:
+            if event.hookEventName == .beforeSubmitPrompt, let generation = event.generationId {
+                if let previous = currentGeneration[id], previous != generation {
+                    supersededGenerations[id, default: []].insert(previous)
+                }
+                currentGeneration[id] = generation
+            }
             table.upsert(id: id, cwd: event.cwd, now: now) { task in
                 task.status = .running
                 task.currentPhase = nil
@@ -53,6 +72,12 @@ public actor CursorConnector: AgentConnector {
             }
 
         case .stop:
+            // Drop stale stops from a superseded generation (see actor doc).
+            if let generation = event.generationId,
+               supersededGenerations[id]?.contains(generation) == true {
+                IslandLogger.webhook.debug("Cursor: dropping stale stop (superseded generation)")
+                break
+            }
             table.upsert(id: id, cwd: event.cwd, now: now) { task in
                 switch event.status {
                 case "error":
@@ -70,6 +95,8 @@ public actor CursorConnector: AgentConnector {
 
         case .sessionEnd:
             table.remove(id: id)
+            currentGeneration.removeValue(forKey: id)
+            supersededGenerations.removeValue(forKey: id)
         }
 
         return table.snapshot()

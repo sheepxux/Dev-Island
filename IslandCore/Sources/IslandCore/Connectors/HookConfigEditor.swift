@@ -1,9 +1,14 @@
 import Foundation
 
-/// Merge-based editing of hook config files that share the
-/// `{"hooks": {"Event": [{matcher?, hooks: [{type, command}]}]}}` nesting —
-/// Claude Code's `~/.claude/settings.json` and Codex's `~/.codex/hooks.json`
-/// use the identical structure.
+/// Merge-based editing of hook config files that share a
+/// `{"hooks": {"Event": [entry, …]}}` layout. Two entry shapes exist:
+///
+/// - nested (Claude Code `~/.claude/settings.json`, Codex
+///   `~/.codex/hooks.json`): `{matcher?, hooks: [{type, command}]}`
+/// - flat (Cursor `~/.cursor/hooks.json`): `{command}` directly
+///
+/// Both shapes are recognized transparently — an entry is "ours" when its
+/// command string(s) contain the endpoint marker.
 ///
 /// Guarantees:
 /// - unknown top-level keys and user-authored hook groups survive untouched
@@ -21,8 +26,20 @@ enum HookConfigEditor {
         }
     }
 
-    static func install(at url: URL, events: [String], group: [String: Any], marker: String) throws {
+    /// `rootDefaults` are top-level keys written only when absent — e.g.
+    /// Cursor's hooks file requires `"version": 1`, but a user-set value
+    /// must never be overwritten.
+    static func install(
+        at url: URL,
+        events: [String],
+        group: [String: Any],
+        marker: String,
+        rootDefaults: [String: Any] = [:]
+    ) throws {
         var root = readRoot(at: url) ?? [:]
+        for (key, value) in rootDefaults where root[key] == nil {
+            root[key] = value
+        }
         var hooks = root["hooks"] as? [String: Any] ?? [:]
 
         for event in events {
@@ -60,15 +77,16 @@ enum HookConfigEditor {
 
     // MARK: - Private
 
-    /// A matcher group is "ours" when every command in it targets our
-    /// endpoint (user-authored groups are never all-ours).
+    /// An entry is "ours" when every command in it targets our endpoint
+    /// (user-authored entries are never all-ours). Nested entries carry an
+    /// inner `hooks` array; flat entries carry `command` directly.
     private static func isOurGroup(_ group: [String: Any], marker: String) -> Bool {
-        guard let handlers = group["hooks"] as? [[String: Any]], !handlers.isEmpty else {
-            return false
+        if let handlers = group["hooks"] as? [[String: Any]], !handlers.isEmpty {
+            return handlers.allSatisfy { handler in
+                (handler["command"] as? String)?.contains(marker) == true
+            }
         }
-        return handlers.allSatisfy { handler in
-            (handler["command"] as? String)?.contains(marker) == true
-        }
+        return (group["command"] as? String)?.contains(marker) == true
     }
 
     private static func readRoot(at url: URL) -> [String: Any]? {

@@ -12,24 +12,27 @@ import IslandCore
 //   5. Print all received events
 //   6. Cleanup (delete webhook, stop tunnel)
 //
-// Local hooks mode (Claude Code + Codex):
+// Local hooks mode (Claude Code + Codex + Cursor):
 //   swift run IslandCoreCLI local-hooks
-//   Starts LocalHookServer + both local connectors, prints the task snapshot
+//   Starts LocalHookServer + all local connectors, prints the task snapshot
 //   after every event. Exercise it from another terminal, e.g.:
 //     echo '{"session_id":"s1","cwd":"'$PWD'","hook_event_name":"SessionStart"}' \
 //       | curl -sf -m 2 -X POST http://127.0.0.1:7824/hooks/claude-code \
 //              -H 'Content-Type: application/json' --data-binary @-
-//   (same for /hooks/codex)
+//   (same for /hooks/codex; /hooks/cursor uses camelCase event names,
+//    "conversation_id" and "workspace_roots")
 
 if CommandLine.arguments.contains("local-hooks") || CommandLine.arguments.contains("claude-hooks") {
     setvbuf(stdout, nil, _IONBF, 0)  // unbuffered so piped output appears live
     print("[CLI] Local hooks mode — LocalHookServer on 127.0.0.1:\(ClaudeHooksInstaller.defaultPort)")
     print("[CLI] Claude Code hook command: \(ClaudeHooksInstaller.hookCommand())")
     print("[CLI] Codex hook command:       \(CodexHooksInstaller.hookCommand())")
+    print("[CLI] Cursor hook command:      \(CursorHooksInstaller.hookCommand())")
     print("[CLI] Waiting for events (Ctrl+C to stop)...")
 
     let claude = ClaudeCodeConnector()
     let codex = CodexConnector()
+    let cursor = CursorConnector()
     let server = LocalHookServer()
 
     @Sendable func report(_ label: String, _ snapshot: [AgentTask]) {
@@ -52,6 +55,12 @@ if CommandLine.arguments.contains("local-hooks") || CommandLine.arguments.contai
                 Task {
                     let snapshot = await codex.apply(event)
                     report("codex \(event.hookEventName.rawValue) session=\(event.sessionId)", snapshot)
+                }
+            },
+            onCursorEvent: { event in
+                Task {
+                    let snapshot = await cursor.apply(event)
+                    report("cursor \(event.hookEventName.rawValue) session=\(event.id ?? "?")", snapshot)
                 }
             }
         )

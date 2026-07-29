@@ -115,11 +115,12 @@ mode you're in.
 | Manus | ✅ Available |
 | Claude Code | ✅ Available (local hooks, no tunnel needed) |
 | Codex CLI | ✅ Available (local hooks, no tunnel needed) |
-| Cursor | 📋 Planned |
+| Cursor | ✅ Available (local hooks, no tunnel needed) |
 
-**Claude Code** and **Codex** need no API key: flip the toggle in
+**Claude Code**, **Codex** and **Cursor** need no API key: flip the toggle in
 *Settings → Connected Services*. Dev Island installs a fire-and-forget hook
-(into `~/.claude/settings.json` / `~/.codex/hooks.json`) that reports session
+(into `~/.claude/settings.json` / `~/.codex/hooks.json` /
+`~/.cursor/hooks.json`) that reports session
 lifecycle events (start / needs-input / approval-request / done / failed) to
 a localhost-only endpoint. New sessions appear in the island within
 milliseconds; clicking one opens the project folder.
@@ -167,7 +168,7 @@ changes go through [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
 | Homebrew Cask tap | 🚧 Draft in `dist/homebrew-island/` |
 | Claude Code connector (local hooks) | ✅ Shipping |
 | Codex connector (local hooks) | ✅ Shipping |
-| Cursor connector | 📋 Next up |
+| Cursor connector (local hooks) | ✅ Shipping |
 
 ## Contributing
 

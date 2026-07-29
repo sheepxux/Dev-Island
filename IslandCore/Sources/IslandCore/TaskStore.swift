@@ -21,12 +21,13 @@ public final class TaskStore {
     private var sqliteStore: SQLiteStore?
     private var pollingOnlyMode = false
 
-    // Local agent pipeline (Claude Code, Codex) — independent of the Manus
-    // API key and of the tunnel/polling lifecycle: it runs for the app's
-    // lifetime.
+    // Local agent pipeline (Claude Code, Codex, Cursor) — independent of the
+    // Manus API key and of the tunnel/polling lifecycle: it runs for the
+    // app's lifetime.
     private var localHookServer: LocalHookServer?
     private var claudeConnector: ClaudeCodeConnector?
     private var codexConnector: CodexConnector?
+    private var cursorConnector: CursorConnector?
 
     private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
@@ -170,13 +171,15 @@ public final class TaskStore {
         registerSleepWakeObservers()
     }
 
-    // MARK: - Local agent pipeline (Claude Code)
+    // MARK: - Local agent pipeline (Claude Code, Codex, Cursor)
 
     private func startLocalHookPipeline() {
         let claude = ClaudeCodeConnector()
         claudeConnector = claude
         let codex = CodexConnector()
         codexConnector = codex
+        let cursor = CursorConnector()
+        cursorConnector = cursor
         let server = LocalHookServer()
         localHookServer = server
 
@@ -195,10 +198,17 @@ public final class TaskStore {
                         let snapshot = await codex.apply(event)
                         self.applyLocalSnapshot(source: codex.source, snapshot)
                     }
+                },
+                onCursorEvent: { [weak self] event in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        let snapshot = await cursor.apply(event)
+                        self.applyLocalSnapshot(source: cursor.source, snapshot)
+                    }
                 }
             )
         }
-        IslandLogger.store.info("Local hook pipeline started (claude-code, codex)")
+        IslandLogger.store.info("Local hook pipeline started (claude-code, codex, cursor)")
     }
 
     // MARK: - Service lifecycle

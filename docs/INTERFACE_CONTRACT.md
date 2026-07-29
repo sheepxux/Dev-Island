@@ -104,6 +104,32 @@ public enum ClaudeHooksInstaller {
 
 ---
 
+## Codex / Cursor 本地连接器(v1.2.0 / v1.3.0 新增)
+
+API 形态与 Claude Code 完全一致,仅安装器与 source 不同:
+
+```swift
+public enum CodexHooksInstaller {   // 写 ~/.codex/hooks.json
+    public static func isInstalled(hooksURL: URL? = nil) -> Bool
+    public static func install(hooksURL: URL? = nil, port: Int = ClaudeHooksInstaller.defaultPort) throws
+    public static func uninstall(hooksURL: URL? = nil) throws
+}
+
+public enum CursorHooksInstaller {  // 写 ~/.cursor/hooks.json(扁平 entry + 顶层 version: 1)
+    public static func isInstalled(hooksURL: URL? = nil) -> Bool
+    public static func install(hooksURL: URL? = nil, port: Int = ClaudeHooksInstaller.defaultPort) throws
+    public static func uninstall(hooksURL: URL? = nil) throws
+}
+```
+
+行为约定(在 claude-code 约定基础上):
+
+- `source == "codex"`(TaskCard "Cx" logo)/ `source == "cursor"`(TaskCard "Cu" logo)
+- Cursor 只订阅 fire-and-forget 事件,没有 waiting 态;`stop.status == "error"` → failed,`"aborted"` → completed(phase "Aborted")
+- Cursor 的会话键是 `conversation_id`(sessionStart/sessionEnd 上的 `session_id` 值相同)
+
+---
+
 ## 变更记录
 
 | 日期 | 版本 | 描述 | Commit |
@@ -111,3 +137,4 @@ public enum ClaudeHooksInstaller {
 | 2026-04-24 | v1.0.0 | 初始版本 | `[S][contract] feat(store): initial TaskStore API` |
 | 2026-07-28 | v1.1.0 | Claude Code 本地连接器(TaskStore API 不变) | `[S] feat(claude-code): local hooks connector` |
 | 2026-07-28 | v1.2.0 | Codex 本地连接器:`CodexHooksInstaller`(API 形态同 `ClaudeHooksInstaller`,写 `~/.codex/hooks.json`),tasks 新增 `source == "codex"`,其余约定同 claude-code | `[S] feat(codex): local hooks connector` |
+| 2026-07-29 | v1.3.0 | Cursor 本地连接器:`CursorHooksInstaller`(写 `~/.cursor/hooks.json`,扁平 entry + 顶层 `version: 1`),tasks 新增 `source == "cursor"`;仅订阅 fire-and-forget 事件(sessionStart / beforeSubmitPrompt / stop / sessionEnd),无 waiting 态;`stop.status == "error"` 映射为 failed | `[S] feat(cursor): local hooks connector` |

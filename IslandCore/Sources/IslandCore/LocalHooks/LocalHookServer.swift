@@ -2,7 +2,7 @@ import Foundation
 import Hummingbird
 
 /// Localhost-only HTTP server that receives lifecycle events from local
-/// agent CLIs (Claude Code today; Codex is expected to reuse this).
+/// agent CLIs and editors (Claude Code, Codex, Cursor).
 ///
 /// Deliberately separate from `WebhookServer`: that one is exposed to the
 /// public internet through the cloudflared tunnel for Manus, while this one
@@ -21,7 +21,8 @@ public actor LocalHookServer {
 
     public func start(
         onClaudeCodeEvent: @escaping @Sendable (ClaudeCodeEvent) -> Void,
-        onCodexEvent: @escaping @Sendable (CodexEvent) -> Void
+        onCodexEvent: @escaping @Sendable (CodexEvent) -> Void,
+        onCursorEvent: @escaping @Sendable (CursorEvent) -> Void
     ) {
         serverTask = Task {
             let router = Router()
@@ -36,6 +37,13 @@ public actor LocalHookServer {
             router.post("/hooks/codex") { request, _ -> HTTPResponse.Status in
                 if let event: CodexEvent = await Self.decodeBody(of: request, cli: "Codex") {
                     onCodexEvent(event)
+                }
+                return .ok
+            }
+
+            router.post("/hooks/cursor") { request, _ -> HTTPResponse.Status in
+                if let event: CursorEvent = await Self.decodeBody(of: request, cli: "Cursor") {
+                    onCursorEvent(event)
                 }
                 return .ok
             }

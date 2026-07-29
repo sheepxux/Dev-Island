@@ -5,8 +5,8 @@ import ServiceManagement
 /// Top-level Settings UI (CLAUDE_CLIENT.md §6 task 6). Three sections:
 ///
 /// - **Connected Services** — Manus row with API key entry + connect/
-///   disconnect controls; Claude Code and Cursor rows show a grayed-out
-///   "Coming Soon" badge per spec.
+///   disconnect controls; Claude Code, Codex and Cursor rows toggle local
+///   hook installation (no API key needed).
 /// - **General** — Launch at Login toggle wired through `SMAppService`.
 /// - **Footer** — Quit button (NSApp.terminate). Closing the window
 ///   alone won't quit, since we're an `.accessory` activation app.
@@ -89,7 +89,14 @@ private struct ConnectedServicesSection: View {
                     uninstall: { try CodexHooksInstaller.uninstall() }
                 )
                 rowDivider
-                ComingSoonRow(name: "Cursor", subtitle: "Editor-side task ingestion")
+                LocalAgentServiceRow(
+                    name: "Cursor",
+                    idleSubtitle: "Track Cursor agent sessions in the island",
+                    configPath: "~/.cursor/hooks.json",
+                    isInstalled: { CursorHooksInstaller.isInstalled() },
+                    install: { try CursorHooksInstaller.install() },
+                    uninstall: { try CursorHooksInstaller.uninstall() }
+                )
             }
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -235,7 +242,7 @@ private struct ManusServiceRow: View {
     }
 }
 
-// MARK: - Local agent row (Claude Code, Codex)
+// MARK: - Local agent row (Claude Code, Codex, Cursor)
 
 /// Enables/disables a local CLI integration by installing hook entries into
 /// the CLI's config file (via the matching installer). Sessions report their
@@ -297,38 +304,6 @@ private struct LocalAgentServiceRow: View {
         } catch {
             lastError = "Couldn't update \(configPath): \(error.localizedDescription)"
         }
-    }
-}
-
-// MARK: - Coming Soon row
-
-private struct ComingSoonRow: View {
-    let name: String
-    let subtitle: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(Color.secondary.opacity(0.3))
-                .frame(width: 8, height: 8)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.system(size: 13, weight: .semibold))
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            Text("Coming Soon")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule().fill(Color.secondary.opacity(0.12))
-                )
-        }
-        .padding(16)
-        .opacity(0.7)
     }
 }
 

@@ -140,6 +140,16 @@ final class CursorConnectorTests: XCTestCase {
         XCTAssertEqual(tasks[0].status, .completed)
     }
 
+    func testLatePromptAfterItsOwnStopDoesNotResurrect() async {
+        // Follow-up to the outracing case: when the delayed prompt of an
+        // already-stopped generation finally lands, it must not flip the
+        // task back to .running (the generation is finished).
+        let connector = CursorConnector()
+        _ = await connector.apply(event(.stop, generation: "g1", status: "completed"))
+        let tasks = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
+        XCTAssertEqual(tasks[0].status, .completed, "a finished generation must stay finished")
+    }
+
     func testStopWithoutGenerationAlwaysApplies() async {
         let connector = CursorConnector()
         _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))

@@ -61,6 +61,17 @@ final class TaskTransitionTests: XCTestCase {
         XCTAssertNil(bySource["cursor"]?[0].oldStatus)
     }
 
+    func testKeyingIsNotFooledByDelimiterCharacters() {
+        // (source "a", id "b#c") must not collide with (source "a#b", id "c").
+        let transitions = TaskTransition.diff(
+            old: [task("b#c", source: "a", status: .running)],
+            new: [task("c", source: "a#b", status: .running)]
+        )
+        // The new task is genuinely new (oldStatus nil), not "unchanged".
+        XCTAssertEqual(transitions.count, 1)
+        XCTAssertNil(transitions[0].oldStatus)
+    }
+
     func testBatchWithMultipleChanges() {
         let transitions = TaskTransition.diff(
             old: [task("a", status: .running), task("b", status: .running)],

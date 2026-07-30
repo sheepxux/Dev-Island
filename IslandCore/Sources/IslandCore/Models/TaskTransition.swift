@@ -10,12 +10,13 @@ public struct TaskTransition: Sendable {
     /// would spam).
     public let oldStatus: TaskStatus?
     /// Same as `task.status`, duplicated for ergonomic `switch`ing.
+    /// Derived in the initializer so the two can never disagree.
     public let newStatus: TaskStatus
 
-    public init(task: AgentTask, oldStatus: TaskStatus?, newStatus: TaskStatus) {
+    public init(task: AgentTask, oldStatus: TaskStatus?) {
         self.task = task
         self.oldStatus = oldStatus
-        self.newStatus = newStatus
+        self.newStatus = task.status
     }
 }
 
@@ -28,14 +29,18 @@ extension TaskTransition {
     /// source (the same CLI session-id string can legally exist on two
     /// different connectors).
     static func diff(old: [AgentTask], new: [AgentTask]) -> [TaskTransition] {
-        var oldStatuses: [String: TaskStatus] = [:]
+        struct Key: Hashable {
+            let source: String
+            let id: String
+        }
+        var oldStatuses: [Key: TaskStatus] = [:]
         for task in old {
-            oldStatuses["\(task.source)#\(task.id)"] = task.status
+            oldStatuses[Key(source: task.source, id: task.id)] = task.status
         }
         return new.compactMap { task in
-            let oldStatus = oldStatuses["\(task.source)#\(task.id)"]
+            let oldStatus = oldStatuses[Key(source: task.source, id: task.id)]
             guard oldStatus != task.status else { return nil }
-            return TaskTransition(task: task, oldStatus: oldStatus, newStatus: task.status)
+            return TaskTransition(task: task, oldStatus: oldStatus)
         }
     }
 }

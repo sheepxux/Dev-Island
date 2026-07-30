@@ -74,7 +74,7 @@
 | ⑥ 长期挂机稳健性:并发压测、TTL 复核、48h 内存观察 | ⑥ Homebrew tap 发布(独立) |
 | ⑦ 卸载时 hooks 一键全清 | ⑦ 会话历史视图(SQLite 已有落库基础) |
 
-**汇合点:J3(框架×列表)、J4(每 Wave 一次)。出口 = M3,发 v0.4.0 / v0.5.0。**
+**汇合点:J3(框架×列表,达成即发 v0.4.0 = M2)、J4(每 Wave 一次,全部 Wave 验收完发 v0.5.0 = M3)。出口 = M3。**
 
 ### 阶段 3:公开发布
 
@@ -95,13 +95,13 @@ A:LicenseManager + webhook 签发;B:激活 UI + 购买跳转 + 定价文案。
 
 ## 四、双人甘特图
 
-> 单位为工作日(D1、D2…),只表达**相对排期、并行关系与汇合点**,不承诺日历日期。GitHub 上自动渲染。
+> 起始日期为占位符,只表达**相对排期、并行关系与汇合点**,不承诺日历日期。GitHub 上自动渲染。
 
 ```mermaid
 gantt
     title Dev Island 双轨开发甘特图(A=核心 / B=产品)
     dateFormat  YYYY-MM-DD
-    axisFormat  D%j
+    axisFormat  %m-%d
     excludes    weekends
 
     section 阶段0 · 两人

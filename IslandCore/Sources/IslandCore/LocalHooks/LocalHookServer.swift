@@ -25,6 +25,7 @@ public actor LocalHookServer {
         let onCursor: @Sendable (CursorEvent) -> Void
     }
 
+    /// Total serve attempts per arming (1 initial + 4 retries).
     private static let maxConsecutiveFailures = 5
 
     private var handlers: Handlers?
@@ -32,6 +33,9 @@ public actor LocalHookServer {
     private var consecutiveFailures = 0
     /// True while a serve loop (or its retry backoff) is in flight.
     private var isServing = false
+    /// Lifecycle token: bumped on every start/stop/re-arm so callbacks from
+    /// a cancelled serve loop can never mutate the state of its successor.
+    private var epoch = 0
 
     public init(port: Int = ClaudeHooksInstaller.defaultPort) {
         self.port = port
@@ -42,13 +46,15 @@ public actor LocalHookServer {
         onCodexEvent: @escaping @Sendable (CodexEvent) -> Void,
         onCursorEvent: @escaping @Sendable (CursorEvent) -> Void
     ) {
+        epoch += 1
+        serverTask?.cancel()
         handlers = Handlers(
             onClaudeCode: onClaudeCodeEvent,
             onCodex: onCodexEvent,
             onCursor: onCursorEvent
         )
         consecutiveFailures = 0
-        launchServeLoop()
+        launchServeLoop(epoch: epoch)
     }
 
     /// Health check for the wake path: relaunch if the serve loop died
@@ -57,11 +63,13 @@ public actor LocalHookServer {
     public func ensureRunning() {
         guard handlers != nil, !isServing else { return }
         IslandLogger.webhook.info("LocalHookServer health check: serve loop dead — relaunching")
+        epoch += 1
         consecutiveFailures = 0
-        launchServeLoop()
+        launchServeLoop(epoch: epoch)
     }
 
     public func stop() {
+        epoch += 1
         serverTask?.cancel()
         serverTask = nil
         handlers = nil
@@ -71,32 +79,34 @@ public actor LocalHookServer {
 
     // MARK: - Serve loop
 
-    private func launchServeLoop() {
-        guard let handlers else { return }
+    private func launchServeLoop(epoch: Int) {
+        guard epoch == self.epoch, let handlers else { return }
         isServing = true
         serverTask = Task {
             do {
                 try await Self.serve(port: port, handlers: handlers)
                 // app.run() only returns on graceful shutdown.
-                self.markStopped()
+                self.markStopped(epoch: epoch)
             } catch is CancellationError {
-                self.markStopped()
+                self.markStopped(epoch: epoch)
             } catch {
-                await self.handleServeFailure(error)
+                await self.handleServeFailure(error, epoch: epoch)
             }
         }
     }
 
-    private func markStopped() {
+    private func markStopped(epoch: Int) {
+        guard epoch == self.epoch else { return }
         isServing = false
     }
 
-    private func handleServeFailure(_ error: Error) async {
+    private func handleServeFailure(_ error: Error, epoch: Int) async {
+        guard epoch == self.epoch else { return }
         consecutiveFailures += 1
-        guard consecutiveFailures <= Self.maxConsecutiveFailures else {
+        guard consecutiveFailures < Self.maxConsecutiveFailures else {
             isServing = false
             IslandLogger.webhook.error("""
-                LocalHookServer gave up after \(Self.maxConsecutiveFailures) failures \
+                LocalHookServer gave up after \(self.consecutiveFailures) failed attempts \
                 (last: \(error)). Port \(self.port) likely held by another process. \
                 Will retry on next wake.
                 """)
@@ -104,14 +114,14 @@ public actor LocalHookServer {
         }
         let delay = min(30, consecutiveFailures * 5)
         IslandLogger.webhook.error(
-            "LocalHookServer serve loop failed (\(error)) — retry \(self.consecutiveFailures)/\(Self.maxConsecutiveFailures) in \(delay)s"
+            "LocalHookServer serve loop failed (\(error)) — attempt \(self.consecutiveFailures)/\(Self.maxConsecutiveFailures), retrying in \(delay)s"
         )
         try? await Task.sleep(for: .seconds(delay))
-        guard !Task.isCancelled, handlers != nil else {
-            isServing = false
+        guard epoch == self.epoch, !Task.isCancelled, handlers != nil else {
+            markStopped(epoch: epoch)
             return
         }
-        launchServeLoop()
+        launchServeLoop(epoch: epoch)
     }
 
     private static func serve(port: Int, handlers: Handlers) async throws {

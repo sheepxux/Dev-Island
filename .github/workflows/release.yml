@@ -250,16 +250,18 @@ jobs:
 
           brew install create-dmg
 
-          # No custom background art yet (tracked on the B/product track);
-          # explicit icon coordinates still give the canonical two-icon
-          # "drag left onto right" layout on a plain background.
+          # Background: 1320×800 PNG with 144 DPI metadata → Finder renders
+          # it at 660×400 logical points, crisp on retina. Icon coordinates
+          # center each icon inside the two rounded squares of the artwork
+          # (app left, Applications right, arrow between).
           create-dmg \
             --volname "Dev Island" \
+            --background "scripts/assets/dmg-background@2x.png" \
             --window-pos 200 160 \
-            --window-size 540 380 \
+            --window-size 660 400 \
             --icon-size 128 \
-            --icon "Dev Island.app" 140 180 \
-            --app-drop-link 400 180 \
+            --icon "Dev Island.app" 157 205 \
+            --app-drop-link 500 205 \
             --hide-extension "Dev Island.app" \
             "${STABLE_DMG}" \
             "build/Dev Island.app" \

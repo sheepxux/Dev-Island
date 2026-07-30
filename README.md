@@ -58,7 +58,11 @@ outside or press <kbd>Esc</kbd> to collapse it back.
 ### From the website ← *recommended*
 
 Go to **[devisland.app](https://devisland.app)** → click **Download for Mac** →
-unzip → drag **Dev Island.app** to **Applications**.
+open **Dev-Island.dmg** → drag **Dev Island.app** onto **Applications**.
+
+(A zip with the identical app ships on every
+[release](https://github.com/sheepxux/Dev-Island/releases) for scripted
+installs and stable direct-download URLs.)
 
 The app is signed with a Developer ID and notarized by Apple, so it opens with
 zero Gatekeeper warnings on first launch.

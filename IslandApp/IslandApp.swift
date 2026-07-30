@@ -26,6 +26,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// stacking a new one.
     private var settingsWindow: SettingsWindow?
 
+    /// Conventional menu-bar icon (`NSStatusItem`): visible whenever the
+    /// app — and therefore the local hook backend — is running. Menu
+    /// carries live status lines plus panel/settings/quit shortcuts.
+    private var statusItemController: StatusItemController?
+
     /// NSEvent monitors that are alive only while the panel is expanded.
     /// Global monitors fire for events going to OTHER apps (so clicks on
     /// the desktop / Finder / another app trigger collapse), and the
@@ -98,6 +103,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // UNUserNotificationCenter delegate + observation re-arming
         // loop; we just kick it off once.
         TaskNotifier.shared.start()
+
+        // Conventional status-bar presence: icon visible = backend running.
+        statusItemController = StatusItemController()
+
+        // Open with the panel expanded so a fresh launch lands the user
+        // somewhere actionable (see the task list, reach the gear) instead
+        // of a bare capsule they may not notice. Delayed one runloop-ish
+        // beat so IslandWindow has finished pinning to the notch before
+        // the morph animation runs.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            IslandCoordinator.shared.expand()
+        }
+
+        // True first launch (no settings ever saved): also open Settings —
+        // the panel is empty until at least one agent is connected, and
+        // Settings is where connectors get set up.
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: "island.didCompleteFirstLaunch") {
+            defaults.set(true, forKey: "island.didCompleteFirstLaunch")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.openSettings()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

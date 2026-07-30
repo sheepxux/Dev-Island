@@ -79,12 +79,21 @@ public actor LocalHookServer {
 
     // MARK: - Serve loop
 
+    private func currentEpoch() -> Int { epoch }
+
     private func launchServeLoop(epoch: Int) {
         guard epoch == self.epoch, let handlers else { return }
         isServing = true
+        // Route closures re-check this before delivering: a superseded serve
+        // loop may still be draining in-flight requests after cancellation
+        // (cancel is non-awaiting), and those must not reach the handlers.
+        let isLive: @Sendable () async -> Bool = { [weak self] in
+            guard let self else { return false }
+            return await self.currentEpoch() == epoch
+        }
         serverTask = Task {
             do {
-                try await Self.serve(port: port, handlers: handlers)
+                try await Self.serve(port: port, handlers: handlers, isLive: isLive)
                 // app.run() only returns on graceful shutdown.
                 self.markStopped(epoch: epoch)
             } catch is CancellationError {
@@ -124,25 +133,32 @@ public actor LocalHookServer {
         launchServeLoop(epoch: epoch)
     }
 
-    private static func serve(port: Int, handlers: Handlers) async throws {
+    private static func serve(
+        port: Int,
+        handlers: Handlers,
+        isLive: @escaping @Sendable () async -> Bool
+    ) async throws {
         let router = Router()
 
         router.post("/hooks/claude-code") { request, _ -> HTTPResponse.Status in
-            if let event: ClaudeCodeEvent = await Self.decodeBody(of: request, cli: "Claude Code") {
+            if let event: ClaudeCodeEvent = await Self.decodeBody(of: request, cli: "Claude Code"),
+               await isLive() {
                 handlers.onClaudeCode(event)
             }
             return .ok
         }
 
         router.post("/hooks/codex") { request, _ -> HTTPResponse.Status in
-            if let event: CodexEvent = await Self.decodeBody(of: request, cli: "Codex") {
+            if let event: CodexEvent = await Self.decodeBody(of: request, cli: "Codex"),
+               await isLive() {
                 handlers.onCodex(event)
             }
             return .ok
         }
 
         router.post("/hooks/cursor") { request, _ -> HTTPResponse.Status in
-            if let event: CursorEvent = await Self.decodeBody(of: request, cli: "Cursor") {
+            if let event: CursorEvent = await Self.decodeBody(of: request, cli: "Cursor"),
+               await isLive() {
                 handlers.onCursor(event)
             }
             return .ok

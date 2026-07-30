@@ -1,9 +1,11 @@
 # Release pipeline for Dev Island (bundle: "Dev Island.app").
 #
 # Trigger: pushing a tag matching `v*` (e.g. `git tag v0.1.0 && git push origin v0.1.0`).
-# Output: a signed + notarized + stapled `Island.app.zip` attached to a GitHub Release,
-# plus a one-line summary of the artifact's `sha256` so the Cask formula can be
-# updated by hand (or by a follow-up automation step in the homebrew-island tap).
+# Output: a signed + notarized + stapled DMG (primary, drag-to-Applications
+# install UX) and zip (stable direct-download URL + future Sparkle feed)
+# attached to a GitHub Release, plus each artifact's `sha256` so the Cask
+# formula can be updated by hand (or by a follow-up automation step in the
+# homebrew-island tap).
 #
 # Why a single job:
 # - codesign + notarytool + stapler all need a signed-in keychain on the SAME
@@ -58,12 +60,13 @@ jobs:
     # Swift 5.10 chokes on these — see the v0.1.0 attempt that failed
     # at AsyncFlatMapLatestSequence.swift:85.
     runs-on: macos-15
-    # 60 not 30 because notarytool's wait can take 20-40 minutes when
+    # 90 not 30 because notarytool's wait can take 20-40 minutes when
     # Apple's queue is busy (we hit a 20m timeout on the first valid
-    # v0.1.0 attempt with submission still "In Progress"). Build itself
+    # v0.1.0 attempt with submission still "In Progress") — and we now
+    # notarize TWICE (the .app, then the DMG wrapping it). Build itself
     # completes in 5-10 min on a cold runner, codesign and stapler are
     # near-instant, so the rest of the budget is all notarization slack.
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -219,7 +222,70 @@ jobs:
           xcrun stapler staple "build/Dev Island.app"
           xcrun stapler validate "build/Dev Island.app"
 
-      # Final user-facing zip. Use `ditto` again for the same reason:
+      # Primary user-facing artifact: a DMG with the customary macOS
+      # install experience — open it and you get the app icon next to an
+      # Applications shortcut, drag once, done.
+      #
+      # Three details that are easy to get wrong:
+      #   - The DMG must be built AFTER the .app is stapled, so offline
+      #     Gatekeeper verification works for the copy users drag out.
+      #   - The DMG file itself must be codesigned AND notarized AND
+      #     stapled separately from the .app — otherwise Gatekeeper warns
+      #     on the DMG even though its contents are clean.
+      #   - create-dmg (shell tool, via Homebrew) occasionally exits 2
+      #     when AppleScript window-dressing flakes on a headless runner
+      #     even though the DMG was written correctly, so we verify the
+      #     output file exists instead of trusting the exit code.
+      - name: Package + notarize DMG
+        id: dmg
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          STABLE_DMG="build/Dev-Island.dmg"
+          VERSIONED_DMG="build/Dev-Island-${VERSION}.dmg"
+
+          brew install create-dmg
+
+          # No custom background art yet (tracked on the B/product track);
+          # explicit icon coordinates still give the canonical two-icon
+          # "drag left onto right" layout on a plain background.
+          create-dmg \
+            --volname "Dev Island" \
+            --window-pos 200 160 \
+            --window-size 540 380 \
+            --icon-size 128 \
+            --icon "Dev Island.app" 140 180 \
+            --app-drop-link 400 180 \
+            --hide-extension "Dev Island.app" \
+            "${STABLE_DMG}" \
+            "build/Dev Island.app" \
+            || true
+          [[ -f "${STABLE_DMG}" ]] || { echo "::error::create-dmg produced no output"; exit 1; }
+
+          codesign --force --sign "${SIGNING_IDENTITY}" --timestamp "${STABLE_DMG}"
+          codesign --verify --strict --verbose=2 "${STABLE_DMG}"
+
+          xcrun notarytool submit "${STABLE_DMG}" \
+            --apple-id "${APPLE_ID}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --password "${APPLE_APP_PASSWORD}" \
+            --wait \
+            --timeout 45m
+          xcrun stapler staple "${STABLE_DMG}"
+          xcrun stapler validate "${STABLE_DMG}"
+
+          cp "${STABLE_DMG}" "${VERSIONED_DMG}"
+          SHA256="$(shasum -a 256 "${STABLE_DMG}" | awk '{print $1}')"
+          ls -lh "${STABLE_DMG}" "${VERSIONED_DMG}"
+          echo "stable=${STABLE_DMG}" >> "${GITHUB_OUTPUT}"
+          echo "versioned=${VERSIONED_DMG}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
+
+      # Secondary artifact: zip. Use `ditto` again for the same reason:
       # consistent metadata, predictable extraction layout when users
       # double-click the zip from Safari.
       #
@@ -272,9 +338,13 @@ jobs:
           body: |
             ## Install
 
-            Download `Dev-Island.zip` below, unzip, drag `Dev Island.app`
-            to `/Applications`. Notarized by Apple so no Gatekeeper warning
-            on first launch.
+            Download `Dev-Island.dmg` below, open it, drag `Dev Island.app`
+            onto the `Applications` shortcut. Signed and notarized by Apple,
+            so no Gatekeeper warning on first launch.
+
+            (`Dev-Island.zip` contains the identical app — it exists for
+            scripted downloads and the stable
+            `releases/latest/download/Dev-Island.zip` URL.)
 
             Or, on the landing page: https://devisland.app
 
@@ -285,8 +355,12 @@ jobs:
             brew install --cask dev-island
             ```
 
-            **SHA-256**: `${{ steps.package.outputs.sha256 }}`
+            **SHA-256**
+            - `Dev-Island.dmg`: `${{ steps.dmg.outputs.sha256 }}`
+            - `Dev-Island.zip`: `${{ steps.package.outputs.sha256 }}`
           files: |
+            ${{ steps.dmg.outputs.stable }}
+            ${{ steps.dmg.outputs.versioned }}
             ${{ steps.package.outputs.stable }}
             ${{ steps.package.outputs.versioned }}
           fail_on_unmatched_files: true

@@ -22,15 +22,7 @@ public final class StatusItemController: NSObject, NSMenuDelegate {
         statusItem = item
 
         if let button = item.button {
-            // The brand shape is the island capsule itself. `capsule.fill`
-            // as a template image adopts menu-bar tinting (dark/light,
-            // reduced transparency) for free.
-            let image = NSImage(
-                systemSymbolName: "capsule.fill",
-                accessibilityDescription: "Dev Island"
-            )
-            image?.isTemplate = true
-            button.image = image
+            button.image = Self.menuBarImage()
             button.toolTip = "Dev Island — 后台运行中"
         }
 
@@ -81,6 +73,30 @@ public final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    // MARK: - Icon
+
+    /// Designer-supplied icon first, SF Symbol fallback second.
+    ///
+    /// Drop `MenuBarIcon.png` (18×18) + `MenuBarIcon@2x.png` (36×36) into
+    /// `IslandApp/Resources/` and they're picked up with no code change —
+    /// black shapes on transparent background; `isTemplate` lets macOS
+    /// tint them for dark/light menu bars automatically.
+    private static func menuBarImage() -> NSImage? {
+        let image: NSImage?
+        if let custom = NSImage(named: "MenuBarIcon") {
+            custom.size = NSSize(width: 18, height: 18)
+            image = custom
+        } else {
+            // Interim brand mark: the island capsule shape.
+            image = NSImage(
+                systemSymbolName: "capsule.fill",
+                accessibilityDescription: "Dev Island"
+            )
+        }
+        image?.isTemplate = true
+        return image
     }
 
     // MARK: - Helpers

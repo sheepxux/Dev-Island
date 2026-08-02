@@ -95,6 +95,10 @@ public final class IslandWindow: NSWindow {
         layout = initialLayout
         reposition()
 
+        // Must precede any cursor writes from the poll below — without it
+        // macOS discards NSCursor.set() from non-active apps entirely
+        // (the hand only flashed during clicks, never on hover).
+        BackgroundCursor.enable()
         startMouseTracking()
     }
 

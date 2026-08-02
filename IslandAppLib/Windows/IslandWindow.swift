@@ -43,6 +43,11 @@ public final class IslandWindow: NSWindow {
 
     private var mouseTrackingTimer: Timer?
 
+    /// Whether the poll below last set the pointing-hand cursor. Cursor
+    /// writes happen only on transitions, so panel sub-elements (task
+    /// cards, buttons) remain free to set their own cursor while expanded.
+    private var cursorShowsPointingHand = false
+
     public init() {
         let initialLayout = NotchMetrics.current()
 
@@ -142,6 +147,27 @@ public final class IslandWindow: NSWindow {
         let shouldIgnore = !inside
         if ignoresMouseEvents != shouldIgnore {
             ignoresMouseEvents = shouldIgnore
+        }
+
+        // Pointing-hand affordance for the collapsed bar (the whole bar is
+        // one big "open the panel" button). Driven from this poll — the
+        // SwiftUI-side NSCursor push/pop was unreliable in this borderless,
+        // non-key window (AppKit cursorUpdate kept resetting to arrow, and
+        // the pop leg never ran after click-to-expand). Writes fire on
+        // transitions only: while expanded, panel sub-elements own the
+        // cursor via `.pointingHandCursor()`.
+        let wantsHand = inside && IslandCoordinator.shared.mode == .collapsed
+        if wantsHand {
+            // Re-assert EVERY tick, not just on the transition: as a
+            // non-active app our set() can be clobbered whenever the
+            // system or the active app touches the cursor, and there's no
+            // notification for that. set() is idempotent and cheap at
+            // 25Hz, so continuous re-assert is the reliable option.
+            NSCursor.pointingHand.set()
+            cursorShowsPointingHand = true
+        } else if cursorShowsPointingHand {
+            cursorShowsPointingHand = false
+            NSCursor.arrow.set()
         }
     }
 

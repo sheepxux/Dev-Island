@@ -59,6 +59,9 @@ struct TaskCard: View {
             .background {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(isHovering ? Palette.cardHover : Palette.cardBg)
+                    // Ease the highlight in/out — the hard cut read as
+                    // flicker when skimming the cursor down the list.
+                    .animation(.easeOut(duration: 0.12), value: isHovering)
             }
             .overlay(alignment: .bottom) {
                 if task.status == .running {
@@ -69,8 +72,9 @@ struct TaskCard: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
         .onHover { isHovering = $0 }
+        .pointingHandCursor()
         .onReceive(timer) { tick = $0 }
     }
 

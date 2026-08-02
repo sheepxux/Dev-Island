@@ -97,7 +97,8 @@ struct NotchPanelView: View {
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.9))
+            .pointingHandCursor()
         }
     }
 
@@ -189,7 +190,8 @@ struct NotchPanelView: View {
             .padding(.vertical, 11)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
+        .pointingHandCursor()
     }
 
     // MARK: - Geometry

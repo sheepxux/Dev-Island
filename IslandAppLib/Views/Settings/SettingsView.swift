@@ -73,6 +73,7 @@ private struct ConnectedServicesSection: View {
                 rowDivider
                 LocalAgentServiceRow(
                     name: "Claude Code",
+                    source: "claude-code",
                     idleSubtitle: "Track local Claude Code sessions in the island",
                     configPath: "~/.claude/settings.json",
                     isInstalled: { ClaudeHooksInstaller.isInstalled() },
@@ -82,6 +83,7 @@ private struct ConnectedServicesSection: View {
                 rowDivider
                 LocalAgentServiceRow(
                     name: "Codex",
+                    source: "codex",
                     idleSubtitle: "Track local Codex CLI sessions in the island",
                     configPath: "~/.codex/hooks.json",
                     isInstalled: { CodexHooksInstaller.isInstalled() },
@@ -91,6 +93,7 @@ private struct ConnectedServicesSection: View {
                 rowDivider
                 LocalAgentServiceRow(
                     name: "Cursor",
+                    source: "cursor",
                     idleSubtitle: "Track Cursor agent sessions in the island",
                     configPath: "~/.cursor/hooks.json",
                     isInstalled: { CursorHooksInstaller.isInstalled() },
@@ -123,6 +126,12 @@ private struct ManusServiceRow: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 statusDot
+                AgentLogoBadge(
+                    source: "manus",
+                    size: 24,
+                    ink: .primary,
+                    badge: Color.primary.opacity(0.06)
+                )
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Manus").font(.system(size: 13, weight: .semibold))
                     Text(statusLine)
@@ -249,6 +258,7 @@ private struct ManusServiceRow: View {
 /// lifecycle to the always-running `LocalHookServer` — no API key, no tunnel.
 private struct LocalAgentServiceRow: View {
     let name: String
+    let source: String
     let idleSubtitle: String
     let configPath: String
     let isInstalled: () -> Bool
@@ -264,6 +274,12 @@ private struct LocalAgentServiceRow: View {
                 Circle()
                     .fill(installed ? Color.green : Color.secondary.opacity(0.5))
                     .frame(width: 8, height: 8)
+                AgentLogoBadge(
+                    source: source,
+                    size: 24,
+                    ink: .primary,
+                    badge: Color.primary.opacity(0.06)
+                )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.system(size: 13, weight: .semibold))
                     Text(installed

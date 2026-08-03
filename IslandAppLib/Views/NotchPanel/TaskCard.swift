@@ -80,26 +80,10 @@ struct TaskCard: View {
 
     // MARK: - Pieces
 
-    @ViewBuilder
     private var toolLogo: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.white.opacity(0.08))
-                .frame(width: 26, height: 26)
-            Text(logoLetter)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.85))
-        }
-    }
-
-    private var logoLetter: String {
-        switch task.source {
-        case "manus":       return "M"
-        case "claude-code": return "C"
-        case "codex":       return "Cx"
-        case "cursor":      return "Cu"
-        default:            return String(task.source.prefix(1)).uppercased()
-        }
+        // Real brand logo (template PNG) with monogram fallback —
+        // see AgentBrand.
+        AgentLogoBadge(source: task.source)
     }
 
     private var durationString: String {

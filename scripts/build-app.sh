@@ -102,6 +102,15 @@ for MB_ICON in "MenuBarIcon.png" "MenuBarIcon@2x.png"; do
     fi
 done
 
+# Per-agent brand logos (template PNGs from scripts/make-agent-logos.swift).
+# Glob-copied so adding an agent is: drop SVG, re-run the script — no build
+# script edit. AgentBrand falls back to a monogram when an asset is absent.
+for LOGO in "${ROOT}/IslandApp/Resources/"AgentLogo-*.png; do
+    [[ -f "${LOGO}" ]] || continue
+    cp "${LOGO}" "${APP}/Contents/Resources/$(basename "${LOGO}")"
+    echo "==> Bundled $(basename "${LOGO}")"
+done
+
 ICON_SRC="${ROOT}/IslandApp/Resources/AppIcon.icns"
 if [[ -f "${ICON_SRC}" ]]; then
     cp "${ICON_SRC}" "${APP}/Contents/Resources/AppIcon.icns"

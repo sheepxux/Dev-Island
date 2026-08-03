@@ -92,6 +92,16 @@ sed \
 # Icon — optional. We don't fail the build if it's missing so the
 # script is usable before the icon is finalized; a missing icon just
 # means macOS shows the generic "?"-in-document silhouette.
+# Optional designer-supplied menu-bar icon (see StatusItemController).
+# Both densities are copied when present; absence falls back to the
+# built-in SF Symbol at runtime, so this is never an error.
+for MB_ICON in "MenuBarIcon.png" "MenuBarIcon@2x.png"; do
+    if [[ -f "${ROOT}/IslandApp/Resources/${MB_ICON}" ]]; then
+        cp "${ROOT}/IslandApp/Resources/${MB_ICON}" "${APP}/Contents/Resources/${MB_ICON}"
+        echo "==> Bundled ${MB_ICON}"
+    fi
+done
+
 ICON_SRC="${ROOT}/IslandApp/Resources/AppIcon.icns"
 if [[ -f "${ICON_SRC}" ]]; then
     cp "${ICON_SRC}" "${APP}/Contents/Resources/AppIcon.icns"

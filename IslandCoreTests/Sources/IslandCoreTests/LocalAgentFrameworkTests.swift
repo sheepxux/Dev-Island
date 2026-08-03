@@ -16,10 +16,11 @@ final class LocalAgentFrameworkTests: XCTestCase {
     }
 
     func testRegistryContainsTheShippedAgents() {
-        XCTAssertEqual(
-            LocalAgentRegistry.all.map(\.source),
-            ["claude-code", "codex", "cursor"]
-        )
+        // Superset, not equality: registry expansion is the intended
+        // onboarding path and must not break this suite — only accidental
+        // *removal* of a shipped agent should.
+        let sources = Set(LocalAgentRegistry.all.map(\.source))
+        XCTAssertTrue(sources.isSuperset(of: ["claude-code", "codex", "cursor"]))
     }
 
     func testDescriptorLookup() {
@@ -63,6 +64,23 @@ final class LocalAgentFrameworkTests: XCTestCase {
         XCTAssertNil(LocalAgentDescriptor.cursor.decodeEvent(Data("""
         {"hook_event_name":"sessionStart"}
         """.utf8)))
+    }
+
+    func testEmptySessionIdDropsAtDecodeForEveryAgent() {
+        // A malformed local request must not be keyed as one shared ""
+        // task. Whitespace-only ids are equally unusable.
+        let payloads: [(LocalAgentDescriptor, String)] = [
+            (.claudeCode, #"{"session_id":"","hook_event_name":"SessionStart"}"#),
+            (.claudeCode, #"{"session_id":"  ","hook_event_name":"Stop"}"#),
+            (.codex, #"{"session_id":"","hook_event_name":"SessionStart"}"#),
+            (.cursor, #"{"conversation_id":" ","hook_event_name":"stop"}"#),
+        ]
+        for (descriptor, json) in payloads {
+            XCTAssertNil(
+                descriptor.decodeEvent(Data(json.utf8)),
+                "\(descriptor.source) accepted an unusable session id"
+            )
+        }
     }
 
     // MARK: - Generic installer renders per-style entry shapes
@@ -131,6 +149,20 @@ final class LocalAgentFrameworkTests: XCTestCase {
         ))
         XCTAssertEqual(tasks[0].status, .waiting)
         XCTAssertEqual(tasks[0].currentPhase, "Needs input")
+    }
+
+    func testStaleWaitingEventFromFinishedGenerationIsDropped() async {
+        // Future descriptors may emit versioned waiting events; the guard
+        // must cover them the same way it covers prompts and stops.
+        let connector = LocalAgentConnector(descriptor: .cursor)
+        _ = await connector.apply(LocalAgentEvent(
+            sessionId: "s1", generationId: "g1", action: .running))
+        _ = await connector.apply(LocalAgentEvent(
+            sessionId: "s1", generationId: "g1", action: .completed(phase: nil)))
+        let tasks = await connector.apply(LocalAgentEvent(
+            sessionId: "s1", generationId: "g1",
+            action: .waiting(phase: "Needs input", message: nil)))
+        XCTAssertEqual(tasks[0].status, .completed, "a finished generation's waiting event is stale")
     }
 
     func testIgnoredActionMutatesNothingButStillPrunes() async {

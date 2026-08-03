@@ -51,4 +51,13 @@ public struct LocalAgentEvent: Sendable, Equatable {
         self.generationId = generationId
         self.action = action
     }
+
+    /// Session-id hygiene for payload mappings: a malformed local request
+    /// with an empty/whitespace id must be dropped, not keyed as one
+    /// shared "" task. Returns the trimmed id, or `nil` when unusable.
+    public static func validSessionId(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }

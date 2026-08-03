@@ -41,7 +41,7 @@ extension CursorEvent {
     /// Translate to the connector's normalized vocabulary. `nil` when the
     /// payload carries no usable session identifier.
     public var normalized: LocalAgentEvent? {
-        guard let id else { return nil }
+        guard let id = LocalAgentEvent.validSessionId(id) else { return nil }
         return LocalAgentEvent(
             sessionId: id,
             cwd: cwd,

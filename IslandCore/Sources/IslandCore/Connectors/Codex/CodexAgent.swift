@@ -28,9 +28,11 @@ extension LocalAgentDescriptor {
 
 extension CodexEvent {
 
-    /// Translate to the connector's normalized vocabulary.
+    /// Translate to the connector's normalized vocabulary. `nil` when the
+    /// payload carries no usable session identifier.
     public var normalized: LocalAgentEvent? {
-        LocalAgentEvent(sessionId: sessionId, cwd: cwd, action: action)
+        guard let id = LocalAgentEvent.validSessionId(sessionId) else { return nil }
+        return LocalAgentEvent(sessionId: id, cwd: cwd, action: action)
     }
 
     private var action: LocalAgentEvent.Action {

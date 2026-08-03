@@ -49,6 +49,17 @@ public struct LocalAgentDescriptor: Sendable {
         usesTerminalFallback: Bool,
         decodeEvent: @escaping @Sendable (Data) -> LocalAgentEvent?
     ) {
+        // The source key travels into shell command strings (hook curl
+        // one-liner), URL routes, and asset names. Constrain it to a safe
+        // charset at construction so no downstream consumer ever needs to
+        // escape it. Registry rows are code, so a violation is a
+        // programmer error — crash loudly in development.
+        precondition(
+            !source.isEmpty && source.allSatisfy {
+                ("a"..."z").contains($0) || $0.isNumber || $0 == "-"
+            },
+            "LocalAgentDescriptor.source must be lowercase alphanumerics/hyphens, got: \(source)"
+        )
         self.source = source
         self.displayName = displayName
         self.settingsSubtitle = settingsSubtitle

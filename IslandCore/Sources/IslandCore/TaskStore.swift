@@ -225,7 +225,10 @@ public final class TaskStore {
         Task {
             await server.start(agents: LocalAgentRegistry.all) { [weak self] source, event in
                 Task { @MainActor [weak self] in
-                    guard let self, let connector = connectors[source] else { return }
+                    // Look up through the stored map (not a closure capture)
+                    // so the store's property is the single owner and a
+                    // future pipeline restart can swap connectors safely.
+                    guard let self, let connector = self.localConnectors[source] else { return }
                     let snapshot = await connector.apply(event)
                     self.applyLocalSnapshot(source: source, snapshot)
                 }

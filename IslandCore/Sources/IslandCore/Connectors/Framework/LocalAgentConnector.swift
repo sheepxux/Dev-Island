@@ -102,6 +102,16 @@ public actor LocalAgentConnector: AgentConnector {
             }
 
         case .waiting(let phase, let message):
+            // No shipped agent emits versioned waiting events today
+            // (Claude/Codex carry no generationId, Cursor has no waiting),
+            // but the generic guarantee must hold for future descriptors:
+            // a waiting event from a known-stale generation is dropped.
+            if let generation = event.generationId,
+               supersededGenerations[id]?.contains(generation) == true
+                || stoppedGenerations[id]?.contains(generation) == true {
+                IslandLogger.webhook.debug("\(self.displayName): dropping stale waiting event (finished generation)")
+                break
+            }
             table.upsert(id: id, cwd: event.cwd, now: now) { task in
                 task.status = .waiting
                 task.currentPhase = phase

@@ -318,14 +318,13 @@ struct IslandRootView: View {
         switch mode {
         case .collapsed:
             // Hover only widens the bar (clickable affordance). The panel
-            // opens on click, not hover-dwell.
+            // opens on click, not hover-dwell. The pointing-hand cursor is
+            // owned by IslandWindow's mouse poll — NSCursor push/pop from
+            // here never worked (AppKit cursorUpdate resets non-key
+            // borderless windows to arrow) and leaked stack pushes when a
+            // click expanded the panel before the un-hover pop could fire.
             withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                 isHovering = hovering
-            }
-            if hovering {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
             }
 
         case .expanded:

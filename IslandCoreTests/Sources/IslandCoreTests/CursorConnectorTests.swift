@@ -49,12 +49,14 @@ final class CursorConnectorTests: XCTestCase {
     private func event(
         _ kind: CursorEvent.Kind,
         id: String = "conv-1",
+        generation: String? = nil,
         roots: [String]? = ["/Users/dev/Proj"],
         status: String? = nil
     ) -> CursorEvent {
         CursorEvent(
             hookEventName: kind,
             conversationId: id,
+            generationId: generation,
             workspaceRoots: roots,
             status: status
         )
@@ -109,6 +111,62 @@ final class CursorConnectorTests: XCTestCase {
         let connector = CursorConnector()
         let tasks = await connector.apply(event(.sessionStart, roots: nil))
         XCTAssertEqual(tasks[0].title, "Cursor session")
+    }
+
+    // MARK: - Generation guard (async hook dispatch races)
+
+    func testStaleStopFromSupersededGenerationIsDropped() async {
+        // abort g1 → user resubmits (g2) → g1's stop arrives late.
+        let connector = CursorConnector()
+        _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
+        _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g2"))
+        let tasks = await connector.apply(event(.stop, generation: "g1", status: "aborted"))
+        XCTAssertEqual(tasks[0].status, .running, "stale aborted stop must not override the new generation")
+    }
+
+    func testStopForCurrentGenerationApplies() async {
+        let connector = CursorConnector()
+        _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
+        let tasks = await connector.apply(event(.stop, generation: "g1", status: "completed"))
+        XCTAssertEqual(tasks[0].status, .completed)
+    }
+
+    func testStopOutracingItsOwnPromptApplies() async {
+        // Generation IDs aren't ordered: a stop we've never seen a prompt
+        // for must apply (it may have outraced its own beforeSubmitPrompt).
+        let connector = CursorConnector()
+        _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
+        let tasks = await connector.apply(event(.stop, generation: "g2", status: "completed"))
+        XCTAssertEqual(tasks[0].status, .completed)
+    }
+
+    func testLatePromptAfterItsOwnStopDoesNotResurrect() async {
+        // Follow-up to the outracing case: when the delayed prompt of an
+        // already-stopped generation finally lands, it must not flip the
+        // task back to .running (the generation is finished).
+        let connector = CursorConnector()
+        _ = await connector.apply(event(.stop, generation: "g1", status: "completed"))
+        let tasks = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
+        XCTAssertEqual(tasks[0].status, .completed, "a finished generation must stay finished")
+    }
+
+    func testStopWithoutGenerationAlwaysApplies() async {
+        let connector = CursorConnector()
+        _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
+        _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g2"))
+        let tasks = await connector.apply(event(.stop, status: "completed"))
+        XCTAssertEqual(tasks[0].status, .completed)
+    }
+
+    func testSessionEndClearsGenerationBookkeeping() async {
+        let connector = CursorConnector()
+        _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
+        _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g2"))
+        _ = await connector.apply(event(.sessionEnd))
+        // Same conversation id reappears: old superseded set must be gone.
+        _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g3"))
+        let tasks = await connector.apply(event(.stop, generation: "g1", status: "completed"))
+        XCTAssertEqual(tasks[0].status, .completed, "pre-sessionEnd bookkeeping must not leak")
     }
 
     func testLocalSourcesAreIndependent() async {

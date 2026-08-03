@@ -30,6 +30,10 @@ public struct CursorEvent: Decodable, Sendable {
     public let conversationId: String?
     /// Only on sessionStart / sessionEnd — same value as `conversationId`.
     public let sessionId: String?
+    /// Changes with every user message. Used to drop stale, out-of-order
+    /// `stop` events (hook processes are dispatched async, delivery order
+    /// is not guaranteed).
+    public let generationId: String?
     /// Workspace root folders (normally exactly one).
     public let workspaceRoots: [String]?
     /// `stop` only: "completed" | "aborted" | "error".
@@ -44,12 +48,14 @@ public struct CursorEvent: Decodable, Sendable {
         hookEventName: Kind,
         conversationId: String? = nil,
         sessionId: String? = nil,
+        generationId: String? = nil,
         workspaceRoots: [String]? = nil,
         status: String? = nil
     ) {
         self.hookEventName = hookEventName
         self.conversationId = conversationId
         self.sessionId = sessionId
+        self.generationId = generationId
         self.workspaceRoots = workspaceRoots
         self.status = status
     }

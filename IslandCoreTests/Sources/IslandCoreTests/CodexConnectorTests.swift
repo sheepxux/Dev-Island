@@ -47,7 +47,7 @@ final class CodexConnectorTests: XCTestCase {
     }
 
     func testSessionLifecycle() async {
-        let connector = CodexConnector()
+        let connector = LocalAgentConnector(descriptor: .codex)
 
         var tasks = await connector.apply(event(.sessionStart))
         XCTAssertEqual(tasks.count, 1)
@@ -72,14 +72,14 @@ final class CodexConnectorTests: XCTestCase {
     }
 
     func testPermissionRequestWithoutToolName() async {
-        let connector = CodexConnector()
+        let connector = LocalAgentConnector(descriptor: .codex)
         let tasks = await connector.apply(event(.permissionRequest))
         XCTAssertEqual(tasks[0].status, .waiting)
         XCTAssertEqual(tasks[0].waitingMessage, "Approval needed")
     }
 
     func testStopOnUnseenSessionCreatesCompletedTask() async {
-        let connector = CodexConnector()
+        let connector = LocalAgentConnector(descriptor: .codex)
         let tasks = await connector.apply(event(.stop))
         XCTAssertEqual(tasks.count, 1)
         XCTAssertEqual(tasks[0].status, .completed)
@@ -88,8 +88,8 @@ final class CodexConnectorTests: XCTestCase {
     func testClaudeAndCodexSessionsAreIndependent() async {
         // Same session-id string on both connectors must not collide at the
         // TaskStore level: sources differ, snapshots are per-source.
-        let claude = ClaudeCodeConnector()
-        let codex = CodexConnector()
+        let claude = LocalAgentConnector(descriptor: .claudeCode)
+        let codex = LocalAgentConnector(descriptor: .codex)
         let c1 = await claude.apply(ClaudeCodeEvent(
             hookEventName: .sessionStart, sessionId: "s1", cwd: "/a"))
         let x1 = await codex.apply(event(.sessionStart, session: "s1", cwd: "/b"))

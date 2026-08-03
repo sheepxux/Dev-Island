@@ -32,9 +32,7 @@ public final class TaskStore {
     // Manus API key and of the tunnel/polling lifecycle: it runs for the
     // app's lifetime.
     private var localHookServer: LocalHookServer?
-    private var claudeConnector: ClaudeCodeConnector?
-    private var codexConnector: CodexConnector?
-    private var cursorConnector: CursorConnector?
+    private var localConnectors: [String: LocalAgentConnector] = [:]
 
     private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
@@ -212,44 +210,29 @@ public final class TaskStore {
         }
     }
 
-    // MARK: - Local agent pipeline (Claude Code, Codex, Cursor)
+    // MARK: - Local agent pipeline (registry-driven)
 
     private func startLocalHookPipeline() {
-        let claude = ClaudeCodeConnector()
-        claudeConnector = claude
-        let codex = CodexConnector()
-        codexConnector = codex
-        let cursor = CursorConnector()
-        cursorConnector = cursor
+        // One generic connector per registered agent — the registry is the
+        // single source of truth for which agents exist.
+        let connectors = Dictionary(uniqueKeysWithValues: LocalAgentRegistry.all.map {
+            ($0.source, LocalAgentConnector(descriptor: $0))
+        })
+        localConnectors = connectors
         let server = LocalHookServer()
         localHookServer = server
 
         Task {
-            await server.start(
-                onClaudeCodeEvent: { [weak self] event in
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        let snapshot = await claude.apply(event)
-                        self.applyLocalSnapshot(source: claude.source, snapshot)
-                    }
-                },
-                onCodexEvent: { [weak self] event in
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        let snapshot = await codex.apply(event)
-                        self.applyLocalSnapshot(source: codex.source, snapshot)
-                    }
-                },
-                onCursorEvent: { [weak self] event in
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        let snapshot = await cursor.apply(event)
-                        self.applyLocalSnapshot(source: cursor.source, snapshot)
-                    }
+            await server.start(agents: LocalAgentRegistry.all) { [weak self] source, event in
+                Task { @MainActor [weak self] in
+                    guard let self, let connector = connectors[source] else { return }
+                    let snapshot = await connector.apply(event)
+                    self.applyLocalSnapshot(source: source, snapshot)
                 }
-            )
+            }
         }
-        IslandLogger.store.info("Local hook pipeline started (claude-code, codex, cursor)")
+        let sources = LocalAgentRegistry.all.map(\.source).joined(separator: ", ")
+        IslandLogger.store.info("Local hook pipeline started (\(sources))")
     }
 
     // MARK: - Service lifecycle

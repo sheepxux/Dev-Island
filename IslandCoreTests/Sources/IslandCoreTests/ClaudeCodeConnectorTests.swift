@@ -51,7 +51,7 @@ final class ClaudeCodeConnectorTests: XCTestCase {
     }
 
     func testSessionLifecycle() async {
-        let connector = ClaudeCodeConnector()
+        let connector = LocalAgentConnector(descriptor: .claudeCode)
 
         var tasks = await connector.apply(event(.sessionStart))
         XCTAssertEqual(tasks.count, 1)
@@ -78,20 +78,20 @@ final class ClaudeCodeConnectorTests: XCTestCase {
     }
 
     func testStopFailureMarksFailed() async {
-        let connector = ClaudeCodeConnector()
+        let connector = LocalAgentConnector(descriptor: .claudeCode)
         _ = await connector.apply(event(.sessionStart))
         let tasks = await connector.apply(event(.stopFailure))
         XCTAssertEqual(tasks[0].status, .failed)
     }
 
     func testIgnorableNotificationDoesNotCreateSession() async {
-        let connector = ClaudeCodeConnector()
+        let connector = LocalAgentConnector(descriptor: .claudeCode)
         let tasks = await connector.apply(event(.notification, type: "auth_success"))
         XCTAssertTrue(tasks.isEmpty)
     }
 
     func testNotificationWithoutTypeTreatedAsWaiting() async {
-        let connector = ClaudeCodeConnector()
+        let connector = LocalAgentConnector(descriptor: .claudeCode)
         _ = await connector.apply(event(.sessionStart))
         let tasks = await connector.apply(event(.notification, message: "Attention"))
         XCTAssertEqual(tasks[0].status, .waiting)
@@ -100,14 +100,14 @@ final class ClaudeCodeConnectorTests: XCTestCase {
     func testStopOnUnseenSessionCreatesCompletedTask() async {
         // Dev Island may launch mid-session — a lone Stop should still
         // surface the session instead of being dropped.
-        let connector = ClaudeCodeConnector()
+        let connector = LocalAgentConnector(descriptor: .claudeCode)
         let tasks = await connector.apply(event(.stop))
         XCTAssertEqual(tasks.count, 1)
         XCTAssertEqual(tasks[0].status, .completed)
     }
 
     func testMultipleSessionsSortedByCreation() async {
-        let connector = ClaudeCodeConnector()
+        let connector = LocalAgentConnector(descriptor: .claudeCode)
         let t0 = Date(timeIntervalSince1970: 1_000)
         _ = await connector.apply(event(.sessionStart, session: "a"), now: t0)
         let tasks = await connector.apply(
@@ -117,7 +117,7 @@ final class ClaudeCodeConnectorTests: XCTestCase {
     }
 
     func testFinishedSessionsPrunedAfterTTL() async {
-        let connector = ClaudeCodeConnector()
+        let connector = LocalAgentConnector(descriptor: .claudeCode)
         let t0 = Date(timeIntervalSince1970: 1_000)
         _ = await connector.apply(event(.sessionStart, session: "old"), now: t0)
         _ = await connector.apply(event(.stop, session: "old"), now: t0)
@@ -125,13 +125,13 @@ final class ClaudeCodeConnectorTests: XCTestCase {
         // Just under the TTL: still visible.
         var tasks = await connector.apply(
             event(.sessionStart, session: "new"),
-            now: t0.addingTimeInterval(ClaudeCodeConnector.finishedTTL - 1))
+            now: t0.addingTimeInterval(LocalAgentConnector.finishedTTL - 1))
         XCTAssertEqual(tasks.count, 2)
 
         // Past the TTL: pruned.
         tasks = await connector.apply(
             event(.userPromptSubmit, session: "new"),
-            now: t0.addingTimeInterval(ClaudeCodeConnector.finishedTTL + 1))
+            now: t0.addingTimeInterval(LocalAgentConnector.finishedTTL + 1))
         XCTAssertEqual(tasks.map(\.id), ["new"])
     }
 }

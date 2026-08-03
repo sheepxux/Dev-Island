@@ -2,7 +2,7 @@ import Foundation
 import Hummingbird
 
 /// Localhost-only HTTP server that receives lifecycle events from local
-/// agent CLIs and editors (Claude Code, Codex, Cursor).
+/// agent CLIs and editors — one route per `LocalAgentDescriptor`.
 ///
 /// Deliberately separate from `WebhookServer`: that one is exposed to the
 /// public internet through the cloudflared tunnel for Manus, while this one
@@ -10,7 +10,7 @@ import Hummingbird
 /// bind address is the trust boundary.
 ///
 /// Always returns 200 (even for undecodable bodies) so a hook misfire can
-/// never surface as an error inside the user's Claude Code session.
+/// never surface as an error inside the user's agent session.
 ///
 /// Resilience: a failed serve loop (typically "address already in use" from
 /// a lingering process) no longer dies silently — it retries with backoff a
@@ -19,16 +19,11 @@ import Hummingbird
 public actor LocalHookServer {
     public let port: Int
 
-    private struct Handlers {
-        let onClaudeCode: @Sendable (ClaudeCodeEvent) -> Void
-        let onCodex: @Sendable (CodexEvent) -> Void
-        let onCursor: @Sendable (CursorEvent) -> Void
-    }
-
     /// Total serve attempts per arming (1 initial + 4 retries).
     private static let maxConsecutiveFailures = 5
 
-    private var handlers: Handlers?
+    private var agents: [LocalAgentDescriptor] = []
+    private var onEvent: (@Sendable (String, LocalAgentEvent) -> Void)?
     private var serverTask: Task<Void, Never>?
     private var consecutiveFailures = 0
     /// True while a serve loop (or its retry backoff) is in flight.
@@ -37,22 +32,20 @@ public actor LocalHookServer {
     /// a cancelled serve loop can never mutate the state of its successor.
     private var epoch = 0
 
-    public init(port: Int = ClaudeHooksInstaller.defaultPort) {
+    public init(port: Int = LocalHooksInstaller.defaultPort) {
         self.port = port
     }
 
+    /// Start serving the given agents' endpoints. `onEvent` receives the
+    /// agent's `source` plus the normalized event.
     public func start(
-        onClaudeCodeEvent: @escaping @Sendable (ClaudeCodeEvent) -> Void,
-        onCodexEvent: @escaping @Sendable (CodexEvent) -> Void,
-        onCursorEvent: @escaping @Sendable (CursorEvent) -> Void
+        agents: [LocalAgentDescriptor],
+        onEvent: @escaping @Sendable (String, LocalAgentEvent) -> Void
     ) {
         epoch += 1
         serverTask?.cancel()
-        handlers = Handlers(
-            onClaudeCode: onClaudeCodeEvent,
-            onCodex: onCodexEvent,
-            onCursor: onCursorEvent
-        )
+        self.agents = agents
+        self.onEvent = onEvent
         consecutiveFailures = 0
         launchServeLoop(epoch: epoch)
     }
@@ -61,7 +54,7 @@ public actor LocalHookServer {
     /// (e.g. port was busy at boot and retries ran out; the offender is
     /// often gone by the time the machine wakes again).
     public func ensureRunning() {
-        guard handlers != nil, !isServing else { return }
+        guard onEvent != nil, !isServing else { return }
         IslandLogger.webhook.info("LocalHookServer health check: serve loop dead — relaunching")
         epoch += 1
         consecutiveFailures = 0
@@ -72,7 +65,8 @@ public actor LocalHookServer {
         epoch += 1
         serverTask?.cancel()
         serverTask = nil
-        handlers = nil
+        agents = []
+        onEvent = nil
         isServing = false
         IslandLogger.webhook.info("LocalHookServer stopped")
     }
@@ -82,7 +76,8 @@ public actor LocalHookServer {
     private func currentEpoch() -> Int { epoch }
 
     private func launchServeLoop(epoch: Int) {
-        guard epoch == self.epoch, let handlers else { return }
+        guard epoch == self.epoch, let onEvent else { return }
+        let agents = self.agents
         isServing = true
         // Route closures re-check this before delivering: a superseded serve
         // loop may still be draining in-flight requests after cancellation
@@ -93,7 +88,7 @@ public actor LocalHookServer {
         }
         serverTask = Task {
             do {
-                try await Self.serve(port: port, handlers: handlers, isLive: isLive)
+                try await Self.serve(port: port, agents: agents, onEvent: onEvent, isLive: isLive)
                 // app.run() only returns on graceful shutdown.
                 self.markStopped(epoch: epoch)
             } catch is CancellationError {
@@ -126,7 +121,7 @@ public actor LocalHookServer {
             "LocalHookServer serve loop failed (\(error)) — attempt \(self.consecutiveFailures)/\(Self.maxConsecutiveFailures), retrying in \(delay)s"
         )
         try? await Task.sleep(for: .seconds(delay))
-        guard epoch == self.epoch, !Task.isCancelled, handlers != nil else {
+        guard epoch == self.epoch, !Task.isCancelled, onEvent != nil else {
             markStopped(epoch: epoch)
             return
         }
@@ -135,56 +130,43 @@ public actor LocalHookServer {
 
     private static func serve(
         port: Int,
-        handlers: Handlers,
+        agents: [LocalAgentDescriptor],
+        onEvent: @escaping @Sendable (String, LocalAgentEvent) -> Void,
         isLive: @escaping @Sendable () async -> Bool
     ) async throws {
         let router = Router()
 
-        router.post("/hooks/claude-code") { request, _ -> HTTPResponse.Status in
-            if let event: ClaudeCodeEvent = await Self.decodeBody(of: request, cli: "Claude Code"),
-               await isLive() {
-                handlers.onClaudeCode(event)
+        for descriptor in agents {
+            router.post(RouterPath(descriptor.endpointPath)) { request, _ -> HTTPResponse.Status in
+                if let event = await Self.decodeBody(of: request, descriptor: descriptor),
+                   await isLive() {
+                    onEvent(descriptor.source, event)
+                }
+                return .ok
             }
-            return .ok
-        }
-
-        router.post("/hooks/codex") { request, _ -> HTTPResponse.Status in
-            if let event: CodexEvent = await Self.decodeBody(of: request, cli: "Codex"),
-               await isLive() {
-                handlers.onCodex(event)
-            }
-            return .ok
-        }
-
-        router.post("/hooks/cursor") { request, _ -> HTTPResponse.Status in
-            if let event: CursorEvent = await Self.decodeBody(of: request, cli: "Cursor"),
-               await isLive() {
-                handlers.onCursor(event)
-            }
-            return .ok
         }
 
         let app = Application(
             router: router,
             configuration: .init(address: .hostname("127.0.0.1", port: port))
         )
-        IslandLogger.webhook.info("LocalHookServer listening on 127.0.0.1:\(port)")
+        let sources = agents.map(\.source).joined(separator: ", ")
+        IslandLogger.webhook.info("LocalHookServer listening on 127.0.0.1:\(port) (\(sources))")
         try await app.run()
     }
 
-    /// Decode a snake_case hook payload; undecodable bodies are dropped
-    /// silently (the endpoint always answers 200 either way).
-    private static func decodeBody<E: Decodable>(of request: Request, cli: String) async -> E? {
+    /// Decode a hook payload via the descriptor's mapping; undecodable
+    /// bodies are dropped silently (the endpoint answers 200 either way).
+    private static func decodeBody(
+        of request: Request,
+        descriptor: LocalAgentDescriptor
+    ) async -> LocalAgentEvent? {
         guard let buffer = try? await request.body.collect(upTo: 1_048_576) else { return nil }
-        let data = Data(buffer.readableBytesView)
-
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        guard let event = try? decoder.decode(E.self, from: data) else {
-            IslandLogger.webhook.debug("Ignoring undecodable \(cli) hook payload")
+        guard let event = descriptor.decodeEvent(Data(buffer.readableBytesView)) else {
+            IslandLogger.webhook.debug("Ignoring undecodable \(descriptor.displayName) hook payload")
             return nil
         }
-        IslandLogger.webhook.info("\(cli) hook event received")
+        IslandLogger.webhook.info("\(descriptor.displayName) hook event received")
         return event
     }
 }

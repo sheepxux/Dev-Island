@@ -35,6 +35,20 @@ final class LocalAgentFrameworkTests: XCTestCase {
         }
     }
 
+    func testSourceKeyRejectsNonASCIIDigits() {
+        // Character.isNumber accepts Unicode numerals; we must not.
+        // Registry rows are code so a bad key traps at init — verify the
+        // shipped rows themselves all satisfy the ASCII contract.
+        for descriptor in LocalAgentRegistry.all {
+            XCTAssertTrue(
+                descriptor.source.utf8.allSatisfy {
+                    ($0 >= 0x61 && $0 <= 0x7A) || ($0 >= 0x30 && $0 <= 0x39) || $0 == 0x2D
+                },
+                "source \(descriptor.source) must be ASCII [a-z0-9-]"
+            )
+        }
+    }
+
     func testConfigURLExpandsTilde() {
         let url = LocalAgentDescriptor.claudeCode.configURL
         XCTAssertFalse(url.path.contains("~"))

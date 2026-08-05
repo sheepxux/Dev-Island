@@ -54,11 +54,13 @@ public struct LocalAgentDescriptor: Sendable {
         // charset at construction so no downstream consumer ever needs to
         // escape it. Registry rows are code, so a violation is a
         // programmer error — crash loudly in development.
+        // ASCII-only: Character.isNumber accepts Unicode numerals (①, ٢…),
+        // which would leak into shell commands / routes / asset names.
         precondition(
-            !source.isEmpty && source.allSatisfy {
-                ("a"..."z").contains($0) || $0.isNumber || $0 == "-"
+            !source.isEmpty && source.utf8.allSatisfy {
+                ($0 >= 0x61 && $0 <= 0x7A) || ($0 >= 0x30 && $0 <= 0x39) || $0 == 0x2D
             },
-            "LocalAgentDescriptor.source must be lowercase alphanumerics/hyphens, got: \(source)"
+            "LocalAgentDescriptor.source must be lowercase ASCII alphanumerics/hyphens, got: \(source)"
         )
         self.source = source
         self.displayName = displayName

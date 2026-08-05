@@ -1,6 +1,6 @@
 # IslandCore Interface Contract
 
-> 最后更新: 2026-07-29 | 版本: v1.4.0
+> 最后更新: 2026-08-03 | 版本: v1.5.0
 > 变更流程: 改 TaskStore 公开 API 前更新此文档,commit 用 `[S][contract]` tag。
 
 ---
@@ -162,6 +162,51 @@ public enum CursorHooksInstaller {  // 写 ~/.cursor/hooks.json(扁平 entry + �
 
 ---
 
+## 声明式连接器框架(v1.5.0 新增,J3 冻结)
+
+> 本地 agent 的唯一事实来源是注册表。B 侧(设置页列表改版)对接以下 API,
+> 不再逐家 import 安装器;三个旧安装器 enum 保留为兼容壳,行为不变。
+
+```swift
+/// 所有本地 agent 的注册表 — 设置页按此渲染行(顺序即显示顺序)。
+public enum LocalAgentRegistry {
+    public static let all: [LocalAgentDescriptor]          // 当前: claudeCode, codex, cursor
+    public static func descriptor(for source: String) -> LocalAgentDescriptor?
+}
+
+/// 一个本地 agent 的全部元数据(一行表数据)。
+public struct LocalAgentDescriptor: Sendable {
+    public let source: String            // task.source / logo 资产键(AgentLogo-<source>)
+    public let displayName: String       // "Claude Code"
+    public let settingsSubtitle: String  // 设置行未启用时的副标题
+    public let configPath: String        // "~/.claude/settings.json"(展示用,~ 未展开)
+    public var configURL: URL            // configPath 展开 ~ 后的实际路径
+    // 其余字段(hookEvents / hookEntryStyle / appCandidates / decodeEvent)
+    // 为核心侧内部驱动用,B 侧无需触碰
+}
+
+/// 通用 hooks 安装器 — 设置页行的 Enable/Disable 直接调用。
+public struct LocalHooksInstaller: Sendable {
+    public static let defaultPort: Int   // 7824(原 ClaudeHooksInstaller.defaultPort 仍可用)
+    public init(_ descriptor: LocalAgentDescriptor)
+    public func isInstalled(configURL: URL? = nil) -> Bool
+    public func install(configURL: URL? = nil, port: Int = Self.defaultPort) throws
+    public func uninstall(configURL: URL? = nil) throws
+}
+```
+
+行为约定:
+
+- **B 侧设置页渲染循环**:`ForEach(LocalAgentRegistry.all, id: \.source)` → 每行用
+  `LocalHooksInstaller(descriptor)` 做开关;当前 `SettingsView` 已按此实现,可直接参考
+- 核心侧新增 agent 只改注册表,不会破坏 B 侧代码;设置页自动多一行
+- 三个旧安装器(`ClaudeHooksInstaller` / `CodexHooksInstaller` / `CursorHooksInstaller`)
+  是注册表的薄兼容壳,API 与行为不变,新代码不要再用
+- `LocalAgentConnector` 是唯一的本地连接器实现(表驱动);`ClaudeCodeConnector` /
+  `CodexConnector` / `CursorConnector` 三个类型已删除(它们从未进入契约)
+
+---
+
 ## 变更记录
 
 | 日期 | 版本 | 描述 | Commit |
@@ -171,3 +216,4 @@ public enum CursorHooksInstaller {  // 写 ~/.cursor/hooks.json(扁平 entry + �
 | 2026-07-28 | v1.2.0 | Codex 本地连接器:`CodexHooksInstaller`(API 形态同 `ClaudeHooksInstaller`,写 `~/.codex/hooks.json`),tasks 新增 `source == "codex"`,其余约定同 claude-code | `[S] feat(codex): local hooks connector` |
 | 2026-07-29 | v1.3.0 | Cursor 本地连接器:`CursorHooksInstaller`(写 `~/.cursor/hooks.json`,扁平 entry + 顶层 `version: 1`),tasks 新增 `source == "cursor"`;仅订阅 fire-and-forget 事件(sessionStart / beforeSubmitPrompt / stop / sessionEnd),无 waiting 态;`stop.status == "error"` 映射为 failed | `[S] feat(cursor): local hooks connector` |
 | 2026-07-29 | v1.4.0 | **契约冻结(J1/J2)**:新增 `TaskTransition` 结构与 `TaskStore.onTaskTransition` 回调(状态跃迁事件,通知投递用);新增 `TaskStore.jumpToTask(id:)`(app 级激活,失败回退 openTaskInBrowser 行为)。`openTaskInBrowser` 保持不变 | `[S][contract] feat: task transitions + jump-to-task` |
+| 2026-08-03 | v1.5.0 | **契约冻结(J3)**:声明式连接器框架 — 新增 `LocalAgentRegistry` / `LocalAgentDescriptor` / `LocalHooksInstaller`(表驱动:设置行、hook 安装、服务器路由、跳回目标全部由注册表生成);三个旧安装器 enum 降级为兼容壳;三个旧连接器 actor 删除,统一为 `LocalAgentConnector`。`TaskStore` 公开 API 不变 | `[S][contract] feat: declarative local-agent framework` |

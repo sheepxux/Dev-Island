@@ -70,36 +70,12 @@ private struct ConnectedServicesSection: View {
 
             VStack(spacing: 0) {
                 ManusServiceRow(store: store)
-                rowDivider
-                LocalAgentServiceRow(
-                    name: "Claude Code",
-                    source: "claude-code",
-                    idleSubtitle: "Track local Claude Code sessions in the island",
-                    configPath: "~/.claude/settings.json",
-                    isInstalled: { ClaudeHooksInstaller.isInstalled() },
-                    install: { try ClaudeHooksInstaller.install() },
-                    uninstall: { try ClaudeHooksInstaller.uninstall() }
-                )
-                rowDivider
-                LocalAgentServiceRow(
-                    name: "Codex",
-                    source: "codex",
-                    idleSubtitle: "Track local Codex CLI sessions in the island",
-                    configPath: "~/.codex/hooks.json",
-                    isInstalled: { CodexHooksInstaller.isInstalled() },
-                    install: { try CodexHooksInstaller.install() },
-                    uninstall: { try CodexHooksInstaller.uninstall() }
-                )
-                rowDivider
-                LocalAgentServiceRow(
-                    name: "Cursor",
-                    source: "cursor",
-                    idleSubtitle: "Track Cursor agent sessions in the island",
-                    configPath: "~/.cursor/hooks.json",
-                    isInstalled: { CursorHooksInstaller.isInstalled() },
-                    install: { try CursorHooksInstaller.install() },
-                    uninstall: { try CursorHooksInstaller.uninstall() }
-                )
+                // Local agents come straight from the registry: adding an
+                // agent to LocalAgentRegistry adds its Settings row.
+                ForEach(LocalAgentRegistry.all, id: \.source) { descriptor in
+                    rowDivider
+                    LocalAgentServiceRow(descriptor: descriptor)
+                }
             }
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -251,22 +227,20 @@ private struct ManusServiceRow: View {
     }
 }
 
-// MARK: - Local agent row (Claude Code, Codex, Cursor)
+// MARK: - Local agent row (registry-driven)
 
-/// Enables/disables a local CLI integration by installing hook entries into
-/// the CLI's config file (via the matching installer). Sessions report their
-/// lifecycle to the always-running `LocalHookServer` — no API key, no tunnel.
+/// Enables/disables a local agent integration by installing hook entries
+/// into its config file (via the generic `LocalHooksInstaller`). Sessions
+/// report their lifecycle to the always-running `LocalHookServer` — no API
+/// key, no tunnel. Row identity (name, subtitle, config path, logo) comes
+/// entirely from the agent's `LocalAgentDescriptor`.
 private struct LocalAgentServiceRow: View {
-    let name: String
-    let source: String
-    let idleSubtitle: String
-    let configPath: String
-    let isInstalled: () -> Bool
-    let install: () throws -> Void
-    let uninstall: () throws -> Void
+    let descriptor: LocalAgentDescriptor
 
     @State private var installed = false
     @State private var lastError: String?
+
+    private var installer: LocalHooksInstaller { .init(descriptor) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -275,29 +249,33 @@ private struct LocalAgentServiceRow: View {
                     .fill(installed ? Color.green : Color.secondary.opacity(0.5))
                     .frame(width: 8, height: 8)
                 AgentLogoBadge(
-                    source: source,
+                    source: descriptor.source,
                     size: 24,
                     ink: .primary,
                     badge: Color.primary.opacity(0.06)
                 )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(.system(size: 13, weight: .semibold))
+                    Text(descriptor.displayName).font(.system(size: 13, weight: .semibold))
                     Text(installed
                          ? "Hooks installed — sessions report status live"
-                         : idleSubtitle)
+                         : descriptor.settingsSubtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if installed {
-                    Button("Disable", role: .destructive) { toggle(uninstall, to: false) }
+                    Button("Disable", role: .destructive) {
+                        toggle({ try installer.uninstall() }, to: false)
+                    }
                 } else {
-                    Button("Enable") { toggle(install, to: true) }
+                    Button("Enable") {
+                        toggle({ try installer.install() }, to: true)
+                    }
                 }
             }
 
             if installed {
-                Text("Applies to \(name) sessions started after enabling.")
+                Text("Applies to \(descriptor.displayName) sessions started after enabling.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -309,7 +287,7 @@ private struct LocalAgentServiceRow: View {
             }
         }
         .padding(16)
-        .onAppear { installed = isInstalled() }
+        .onAppear { installed = installer.isInstalled() }
     }
 
     private func toggle(_ action: () throws -> Void, to newState: Bool) {
@@ -318,7 +296,7 @@ private struct LocalAgentServiceRow: View {
             installed = newState
             lastError = nil
         } catch {
-            lastError = "Couldn't update \(configPath): \(error.localizedDescription)"
+            lastError = "Couldn't update \(descriptor.configPath): \(error.localizedDescription)"
         }
     }
 }

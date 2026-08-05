@@ -63,7 +63,7 @@ final class CursorConnectorTests: XCTestCase {
     }
 
     func testSessionLifecycle() async {
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
 
         var tasks = await connector.apply(event(.sessionStart))
         XCTAssertEqual(tasks.count, 1)
@@ -84,7 +84,7 @@ final class CursorConnectorTests: XCTestCase {
     }
 
     func testStopErrorMapsToFailed() async {
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         _ = await connector.apply(event(.sessionStart))
         let tasks = await connector.apply(event(.stop, status: "error"))
         XCTAssertEqual(tasks[0].status, .failed)
@@ -92,7 +92,7 @@ final class CursorConnectorTests: XCTestCase {
     }
 
     func testStopAbortedMapsToCompletedWithPhase() async {
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         _ = await connector.apply(event(.sessionStart))
         let tasks = await connector.apply(event(.stop, status: "aborted"))
         XCTAssertEqual(tasks[0].status, .completed)
@@ -100,7 +100,7 @@ final class CursorConnectorTests: XCTestCase {
     }
 
     func testEventWithoutAnyIdIsIgnored() async {
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         let tasks = await connector.apply(
             CursorEvent(hookEventName: .sessionStart)
         )
@@ -108,7 +108,7 @@ final class CursorConnectorTests: XCTestCase {
     }
 
     func testMissingWorkspaceRootsFallsBackToDisplayName() async {
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         let tasks = await connector.apply(event(.sessionStart, roots: nil))
         XCTAssertEqual(tasks[0].title, "Cursor session")
     }
@@ -117,7 +117,7 @@ final class CursorConnectorTests: XCTestCase {
 
     func testStaleStopFromSupersededGenerationIsDropped() async {
         // abort g1 → user resubmits (g2) → g1's stop arrives late.
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
         _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g2"))
         let tasks = await connector.apply(event(.stop, generation: "g1", status: "aborted"))
@@ -125,7 +125,7 @@ final class CursorConnectorTests: XCTestCase {
     }
 
     func testStopForCurrentGenerationApplies() async {
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
         let tasks = await connector.apply(event(.stop, generation: "g1", status: "completed"))
         XCTAssertEqual(tasks[0].status, .completed)
@@ -134,7 +134,7 @@ final class CursorConnectorTests: XCTestCase {
     func testStopOutracingItsOwnPromptApplies() async {
         // Generation IDs aren't ordered: a stop we've never seen a prompt
         // for must apply (it may have outraced its own beforeSubmitPrompt).
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
         let tasks = await connector.apply(event(.stop, generation: "g2", status: "completed"))
         XCTAssertEqual(tasks[0].status, .completed)
@@ -144,14 +144,14 @@ final class CursorConnectorTests: XCTestCase {
         // Follow-up to the outracing case: when the delayed prompt of an
         // already-stopped generation finally lands, it must not flip the
         // task back to .running (the generation is finished).
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         _ = await connector.apply(event(.stop, generation: "g1", status: "completed"))
         let tasks = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
         XCTAssertEqual(tasks[0].status, .completed, "a finished generation must stay finished")
     }
 
     func testStopWithoutGenerationAlwaysApplies() async {
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
         _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g2"))
         let tasks = await connector.apply(event(.stop, status: "completed"))
@@ -159,7 +159,7 @@ final class CursorConnectorTests: XCTestCase {
     }
 
     func testSessionEndClearsGenerationBookkeeping() async {
-        let connector = CursorConnector()
+        let connector = LocalAgentConnector(descriptor: .cursor)
         _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g1"))
         _ = await connector.apply(event(.beforeSubmitPrompt, generation: "g2"))
         _ = await connector.apply(event(.sessionEnd))
@@ -172,8 +172,8 @@ final class CursorConnectorTests: XCTestCase {
     func testLocalSourcesAreIndependent() async {
         // Same session-id string on all three connectors must not collide
         // at the TaskStore level: sources differ, snapshots are per-source.
-        let codex = CodexConnector()
-        let cursor = CursorConnector()
+        let codex = LocalAgentConnector(descriptor: .codex)
+        let cursor = LocalAgentConnector(descriptor: .cursor)
         let x1 = await codex.apply(CodexEvent(
             hookEventName: .sessionStart, sessionId: "s1", cwd: "/a"))
         let u1 = await cursor.apply(event(.sessionStart, id: "s1", roots: ["/b"]))

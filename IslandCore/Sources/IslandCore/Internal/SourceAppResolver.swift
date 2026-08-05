@@ -23,19 +23,14 @@ enum SourceAppResolver {
         "com.apple.Terminal",            // Terminal.app (last: everyone has it)
     ]
 
-    /// Candidate bundle IDs per task source, most specific first.
+    /// Candidate bundle IDs per task source, most specific first — driven
+    /// by the agent's registry row (own app first, then terminals when its
+    /// CLI sessions live in one). Sources without a registry entry (manus
+    /// & friends) resolve to nothing and the caller falls back.
     static func candidates(for source: String) -> [String] {
-        switch source {
-        case "cursor":
-            return ["com.todesktop.230313mzl4w4u92"]  // Cursor.app
-        case "codex":
-            // Codex Desktop first; CLI sessions live in a terminal.
-            return ["com.openai.codex"] + terminalCandidates
-        case "claude-code":
-            return terminalCandidates
-        default:
-            return []  // manus & friends: no local app — caller falls back
-        }
+        guard let descriptor = LocalAgentRegistry.descriptor(for: source) else { return [] }
+        return descriptor.appCandidates
+            + (descriptor.usesTerminalFallback ? terminalCandidates : [])
     }
 
     /// Pure resolution step, unit-testable: pick the first candidate that

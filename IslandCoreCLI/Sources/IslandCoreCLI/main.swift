@@ -30,9 +30,9 @@ if CommandLine.arguments.contains("local-hooks") || CommandLine.arguments.contai
     print("[CLI] Cursor hook command:      \(CursorHooksInstaller.hookCommand())")
     print("[CLI] Waiting for events (Ctrl+C to stop)...")
 
-    let claude = ClaudeCodeConnector()
-    let codex = CodexConnector()
-    let cursor = CursorConnector()
+    let connectors = Dictionary(uniqueKeysWithValues: LocalAgentRegistry.all.map {
+        ($0.source, LocalAgentConnector(descriptor: $0))
+    })
     let server = LocalHookServer()
 
     @Sendable func report(_ label: String, _ snapshot: [AgentTask]) {
@@ -44,26 +44,13 @@ if CommandLine.arguments.contains("local-hooks") || CommandLine.arguments.contai
     }
 
     Task {
-        await server.start(
-            onClaudeCodeEvent: { event in
-                Task {
-                    let snapshot = await claude.apply(event)
-                    report("claude-code \(event.hookEventName.rawValue) session=\(event.sessionId)", snapshot)
-                }
-            },
-            onCodexEvent: { event in
-                Task {
-                    let snapshot = await codex.apply(event)
-                    report("codex \(event.hookEventName.rawValue) session=\(event.sessionId)", snapshot)
-                }
-            },
-            onCursorEvent: { event in
-                Task {
-                    let snapshot = await cursor.apply(event)
-                    report("cursor \(event.hookEventName.rawValue) session=\(event.id ?? "?")", snapshot)
-                }
+        await server.start(agents: LocalAgentRegistry.all) { source, event in
+            Task {
+                guard let connector = connectors[source] else { return }
+                let snapshot = await connector.apply(event)
+                report("\(source) session=\(event.sessionId)", snapshot)
             }
-        )
+        }
     }
     RunLoop.main.run()
     exit(0)

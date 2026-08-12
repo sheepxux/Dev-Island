@@ -14,10 +14,12 @@ import ServiceManagement
 /// Bound directly to `TaskStore.shared` so the Manus row's status dot
 /// reflects live `apiKeyStatus` / `connectionStatus` without manual
 /// notification plumbing.
-struct SettingsView: View {
+public struct SettingsView: View {
     @State private var store = TaskStore.shared
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
@@ -25,6 +27,8 @@ struct SettingsView: View {
                 ConnectedServicesSection(store: store)
 
                 GeneralSection()
+
+                NotificationsSection()
 
                 Divider()
 
@@ -50,6 +54,9 @@ struct SettingsView: View {
 
     private var footer: some View {
         HStack {
+            Button("View Welcome Tour") {
+                NotificationCenter.default.post(name: .islandOpenOnboardingRequested, object: nil)
+            }
             Spacer()
             Button("Quit Island") {
                 NSApp.terminate(nil)
@@ -59,22 +66,51 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Connected Services
+// MARK: - Notifications
 
-private struct ConnectedServicesSection: View {
-    let store: TaskStore
+private struct NotificationsSection: View {
+    @AppStorage(TaskNotificationPreferences.attentionRequiredKey)
+    private var attentionRequired = true
+
+    @AppStorage(TaskNotificationPreferences.completionsKey)
+    private var completions = false
+
+    @State private var authorizationIssue: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Connected Services")
+            sectionTitle("Notifications")
 
             VStack(spacing: 0) {
-                ManusServiceRow(store: store)
-                // Local agents come straight from the registry: adding an
-                // agent to LocalAgentRegistry adds its Settings row.
-                ForEach(LocalAgentRegistry.all, id: \.source) { descriptor in
-                    rowDivider
-                    LocalAgentServiceRow(descriptor: descriptor)
+                notificationToggle(
+                    title: "Attention Required",
+                    subtitle: "Notify when a task needs input or fails.",
+                    isOn: $attentionRequired
+                )
+
+                Divider().padding(.leading, 16)
+
+                notificationToggle(
+                    title: "Task Completed",
+                    subtitle: "Optionally notify when a task finishes.",
+                    isOn: $completions
+                )
+
+                if notificationsEnabled, let authorizationIssue {
+                    Divider().padding(.leading, 16)
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text(authorizationIssue)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Open System Settings") {
+                            openNotificationSettings()
+                        }
+                        .controlSize(.small)
+                    }
+                    .padding(16)
                 }
             }
             .background(
@@ -82,6 +118,132 @@ private struct ConnectedServicesSection: View {
                     .fill(Color(nsColor: .controlBackgroundColor))
             )
         }
+        .onChange(of: attentionRequired) { _, enabled in
+            if enabled { TaskNotifier.shared.refreshAuthorizationIfNeeded() }
+        }
+        .onChange(of: completions) { _, enabled in
+            if enabled { TaskNotifier.shared.refreshAuthorizationIfNeeded() }
+        }
+        .onAppear {
+            authorizationIssue = TaskNotifier.shared.authorizationIssue
+            TaskNotifier.shared.refreshAuthorizationState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .islandNotificationAuthorizationChanged)) { _ in
+            authorizationIssue = TaskNotifier.shared.authorizationIssue
+        }
+    }
+
+    private var notificationsEnabled: Bool {
+        attentionRequired || completions
+    }
+
+    private func openNotificationSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func notificationToggle(
+        title: String,
+        subtitle: String,
+        isOn: Binding<Bool>
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .toggleStyle(.switch)
+        .padding(16)
+    }
+}
+
+// MARK: - Connected Services
+
+private struct ConnectedServicesSection: View {
+    let store: TaskStore
+    @State private var searchText = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionTitle("Agent Connections")
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search agents", text: $searchText)
+                    .textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+
+            if showsManus {
+                groupLabel("Cloud Agent")
+                ManusServiceRow(store: store)
+                    .background(serviceGroupBackground)
+            }
+
+            if !filteredLocalAgents.isEmpty {
+                groupLabel("Local Agents")
+                VStack(spacing: 0) {
+                    // Local agents come straight from the registry: adding an
+                    // agent to LocalAgentRegistry adds its Settings row.
+                    ForEach(filteredLocalAgents, id: \.source) { descriptor in
+                        if descriptor.source != filteredLocalAgents.first?.source { rowDivider }
+                        LocalAgentServiceRow(descriptor: descriptor)
+                    }
+                }
+                .background(serviceGroupBackground)
+            }
+
+            if !showsManus && filteredLocalAgents.isEmpty {
+                ContentUnavailableView(
+                    "No matching agents",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try a name such as Codex, Claude, Cursor, or Gemini.")
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+            }
+        }
+    }
+
+    private var normalizedSearch: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var showsManus: Bool {
+        normalizedSearch.isEmpty || "manus cloud".contains(normalizedSearch)
+    }
+
+    private var filteredLocalAgents: [LocalAgentDescriptor] {
+        guard !normalizedSearch.isEmpty else { return LocalAgentRegistry.all }
+        return LocalAgentRegistry.all.filter { descriptor in
+            [descriptor.displayName, descriptor.source, descriptor.settingsSubtitle]
+                .joined(separator: " ")
+                .lowercased()
+                .contains(normalizedSearch)
+        }
+    }
+
+    private var serviceGroupBackground: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func groupLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
     }
 
     private var rowDivider: some View {
@@ -101,7 +263,6 @@ private struct ManusServiceRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                statusDot
                 AgentLogoBadge(
                     source: "manus",
                     size: 24,
@@ -115,7 +276,10 @@ private struct ManusServiceRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                trailingControl
+                HStack(spacing: 8) {
+                    ServiceStatusBadge(label: badgeLabel, color: statusColor)
+                    trailingControl
+                }
             }
 
             // Show key entry when not configured / invalid. When valid,
@@ -133,18 +297,30 @@ private struct ManusServiceRow: View {
         .padding(16)
     }
 
-    @ViewBuilder
-    private var statusDot: some View {
-        Circle()
-            .fill(statusColor)
-            .frame(width: 8, height: 8)
-    }
-
     private var statusColor: Color {
         switch store.apiKeyStatus {
-        case .valid:        return .green
-        case .invalid:      return .red
+        case .valid:
+            switch store.connectionStatus {
+            case .connected: return .green
+            case .reconnecting, .degraded: return .orange
+            case .disconnected: return .red
+            }
+        case .invalid:       return .red
         case .notConfigured: return Color.secondary.opacity(0.5)
+        }
+    }
+
+    private var badgeLabel: String {
+        switch store.apiKeyStatus {
+        case .invalid: return "Needs attention"
+        case .notConfigured: return "Not connected"
+        case .valid:
+            switch store.connectionStatus {
+            case .connected: return "Connected"
+            case .reconnecting: return "Reconnecting"
+            case .degraded: return "Degraded"
+            case .disconnected: return "Disconnected"
+            }
         }
     }
 
@@ -245,9 +421,6 @@ private struct LocalAgentServiceRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Circle()
-                    .fill(installed ? Color.green : Color.secondary.opacity(0.5))
-                    .frame(width: 8, height: 8)
                 AgentLogoBadge(
                     source: descriptor.source,
                     size: 24,
@@ -263,13 +436,19 @@ private struct LocalAgentServiceRow: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if installed {
-                    Button("Disable", role: .destructive) {
-                        toggle({ try installer.uninstall() }, to: false)
-                    }
-                } else {
-                    Button("Enable") {
-                        toggle({ try installer.install() }, to: true)
+                HStack(spacing: 8) {
+                    ServiceStatusBadge(
+                        label: installed ? "Enabled" : "Not enabled",
+                        color: installed ? .green : Color.secondary.opacity(0.5)
+                    )
+                    if installed {
+                        Button("Disable", role: .destructive) {
+                            toggle({ try installer.uninstall() }, to: false)
+                        }
+                    } else {
+                        Button("Enable") {
+                            toggle({ try installer.install() }, to: true)
+                        }
                     }
                 }
             }
@@ -369,6 +548,29 @@ private func sectionTitle(_ text: String) -> some View {
         .font(.system(size: 12, weight: .semibold))
         .foregroundStyle(.secondary)
         .textCase(.uppercase)
+}
+
+private struct ServiceStatusBadge: View {
+    let label: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(label)
+                .lineLimit(1)
+        }
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(color.opacity(0.12))
+        )
+    }
 }
 
 #if PREVIEWS && DEBUG

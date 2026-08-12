@@ -6,9 +6,18 @@ enum Palette {
     // Surfaces
     static let notchBlack   = Color(hex: 0x000000)
     static let capsuleBlack = Color(hex: 0x0A0A0A)
-    static let cardBg       = Color(hex: 0x141414)
-    static let cardHover    = Color(hex: 0x1A1A1A)
-    static let divider      = Color.white.opacity(0.06)
+    static let islandTop    = Color(hex: 0x101218)
+    static let islandBottom = Color(hex: 0x050506)
+    static let cardBg       = Color(hex: 0x14161B)
+    static let cardHover    = Color(hex: 0x1B1E25)
+    static let divider      = Color.white.opacity(0.075)
+
+    // Welcome Tour
+    static let tourCanvas   = Color(hex: 0x08090D)
+    static let tourPanel    = Color(hex: 0x101218)
+    static let tourElevated = Color(hex: 0x171A21)
+    static let tourAccent   = Color(hex: 0x7C8CFF)
+    static let tourViolet   = Color(hex: 0x9B7BFF)
 
     // States
     static let stateIdle      = Color(hex: 0x4A4A4A)

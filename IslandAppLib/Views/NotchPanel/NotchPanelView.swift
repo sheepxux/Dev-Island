@@ -9,6 +9,7 @@ struct NotchPanelView: View {
     /// Layout snapshot of the host display so the panel knows whether to
     /// reserve space for the hardware notch at the top.
     let layout: NotchMetrics.Layout
+    let highlightedTask: TaskIdentity?
     let onTaskTap: (AgentTask) -> Void
     let onSettingsTap: () -> Void
     let onConnectTap: () -> Void
@@ -140,14 +141,28 @@ struct NotchPanelView: View {
         if tasks.isEmpty {
             emptyState
         } else {
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 6) {
-                    ForEach(tasks) { task in
-                        TaskCard(task: task, onTap: { onTaskTap(task) })
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(spacing: 6) {
+                        ForEach(tasks, id: \.identity) { task in
+                            TaskCard(
+                                task: task,
+                                isHighlighted: task.identity == highlightedTask,
+                                onTap: { onTaskTap(task) }
+                            )
+                            .id(task.identity)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+                }
+                .onChange(of: highlightedTask, initial: true) { _, identity in
+                    guard let identity,
+                          tasks.contains(where: { $0.identity == identity }) else { return }
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo(identity, anchor: .center)
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
             }
             .frame(maxHeight: 320)
         }
@@ -234,6 +249,7 @@ private let previewLayoutNotched = NotchMetrics.Layout(
         tasks: TaskStore.previewTasks,
         connectionStatus: .connected,
         layout: previewLayoutNoNotch,
+        highlightedTask: nil,
         onTaskTap: { _ in },
         onSettingsTap: {},
         onConnectTap: {}
@@ -247,6 +263,7 @@ private let previewLayoutNotched = NotchMetrics.Layout(
         tasks: TaskStore.previewTasks,
         connectionStatus: .connected,
         layout: previewLayoutNotched,
+        highlightedTask: TaskStore.previewTasks.first?.identity,
         onTaskTap: { _ in },
         onSettingsTap: {},
         onConnectTap: {}
@@ -260,6 +277,7 @@ private let previewLayoutNotched = NotchMetrics.Layout(
         tasks: [],
         connectionStatus: .reconnecting,
         layout: previewLayoutNoNotch,
+        highlightedTask: nil,
         onTaskTap: { _ in },
         onSettingsTap: {},
         onConnectTap: {}

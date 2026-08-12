@@ -12,7 +12,7 @@ import IslandCore
 ///   sitting `topMargin` below the screen edge.
 struct NotchBarView: View {
     let state: BarState
-    let taskCount: Int
+    let summary: TaskStatusSummary
     var title: String = "No tasks"
     let layout: NotchMetrics.Layout
     /// Whether to show the status dot + count inside the bar. Normal
@@ -112,10 +112,7 @@ struct NotchBarView: View {
                     .frame(width: layout.notchWidth, height: layout.menuBarHeight)
 
                 HStack(spacing: 6) {
-                    Text("\(taskCount)")
-                        .font(Typo.barCount)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .monospacedDigit()
+                    CompactTaskStatusSummary(summary: summary)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, NotchMetrics.sideInset)
@@ -136,10 +133,7 @@ struct NotchBarView: View {
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text("\(taskCount)")
-                    .font(Typo.barBadge)
-                    .foregroundStyle(.white.opacity(0.82))
-                    .monospacedDigit()
+                CompactTaskStatusSummary(summary: summary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 4)
                     .background(
@@ -195,7 +189,14 @@ private let plainLayout = NotchMetrics.Layout(
     VStack(spacing: 18) {
         ForEach(barPreviewCases, id: \.label) { sample in
             VStack(spacing: 6) {
-                NotchBarView(state: sample.state, taskCount: sample.count, layout: notchedLayout)
+                NotchBarView(
+                    state: sample.state,
+                    summary: .init(running: sample.state == .running ? sample.count : 0,
+                                   waiting: sample.state == .waiting ? sample.count : 0,
+                                   failed: sample.state == .failed ? sample.count : 0,
+                                   completed: sample.state == .completed ? sample.count : 0),
+                    layout: notchedLayout
+                )
                 Text(sample.label)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -210,7 +211,14 @@ private let plainLayout = NotchMetrics.Layout(
     VStack(spacing: 14) {
         ForEach(barPreviewCases, id: \.label) { sample in
             VStack(spacing: 6) {
-                NotchBarView(state: sample.state, taskCount: sample.count, layout: plainLayout)
+                NotchBarView(
+                    state: sample.state,
+                    summary: .init(running: sample.state == .running ? sample.count : 0,
+                                   waiting: sample.state == .waiting ? sample.count : 0,
+                                   failed: sample.state == .failed ? sample.count : 0,
+                                   completed: sample.state == .completed ? sample.count : 0),
+                    layout: plainLayout
+                )
                 Text(sample.label)
                     .font(.caption2)
                     .foregroundStyle(.secondary)

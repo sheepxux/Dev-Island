@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IslandCore
 import Observation
 import SwiftUI
 
@@ -26,6 +27,11 @@ public final class IslandCoordinator {
     }
 
     public private(set) var mode: Mode = .collapsed
+
+    /// Task the expanded panel should reveal and visually emphasize. This is
+    /// set by notification clicks, then cleared when the user leaves the
+    /// panel or opens the task.
+    public private(set) var highlightedTask: TaskIdentity?
 
     /// Called on the main thread whenever `mode` actually changes. Kept for
     /// AppKit-side window plumbing (e.g. installing event monitors). SwiftUI
@@ -64,9 +70,22 @@ public final class IslandCoordinator {
         setMode(.expanded)
     }
 
+    /// Open the panel on a specific task. Reassigning while already expanded
+    /// is intentional: it lets two notification clicks retarget the panel.
+    public func expand(highlighting task: TaskIdentity) {
+        cancelAllTimers()
+        highlightedTask = task
+        setMode(.expanded)
+    }
+
     public func collapse() {
         cancelAllTimers()
+        highlightedTask = nil
         setMode(.collapsed)
+    }
+
+    public func clearHighlight() {
+        highlightedTask = nil
     }
 
     public func toggle() {

@@ -29,16 +29,12 @@ extension TaskTransition {
     /// source (the same CLI session-id string can legally exist on two
     /// different connectors).
     static func diff(old: [AgentTask], new: [AgentTask]) -> [TaskTransition] {
-        struct Key: Hashable {
-            let source: String
-            let id: String
-        }
-        var oldStatuses: [Key: TaskStatus] = [:]
+        var oldStatuses: [TaskIdentity: TaskStatus] = [:]
         for task in old {
-            oldStatuses[Key(source: task.source, id: task.id)] = task.status
+            oldStatuses[task.identity] = task.status
         }
         return new.compactMap { task in
-            let oldStatus = oldStatuses[Key(source: task.source, id: task.id)]
+            let oldStatus = oldStatuses[task.identity]
             guard oldStatus != task.status else { return nil }
             return TaskTransition(task: task, oldStatus: oldStatus)
         }

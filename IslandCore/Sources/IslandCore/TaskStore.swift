@@ -90,10 +90,26 @@ public final class TaskStore {
         IslandLogger.store.info("API key cleared")
     }
 
-    public func openTaskInBrowser(id: String) {
-        guard let task = tasks.first(where: { $0.id == id }) else { return }
+    /// Resolve one task without assuming session IDs are globally unique.
+    public func task(with identity: TaskIdentity) -> AgentTask? {
+        tasks.first(where: { $0.identity == identity })
+    }
+
+    public func openTask(_ task: AgentTask) {
         guard let url = URL(string: task.taskURL) else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    public func openTaskInBrowser(source: String, id: String) {
+        guard let task = task(with: TaskIdentity(source: source, id: id)) else { return }
+        openTask(task)
+    }
+
+    /// Compatibility entry point for the v1.4 contract. It refuses an
+    /// ambiguous cross-agent ID instead of opening an arbitrary task.
+    public func openTaskInBrowser(id: String) {
+        guard let task = uniquelyMatchingTask(id: id) else { return }
+        openTask(task)
     }
 
     /// Jump back to the session behind a task (contract v1.4.0, J2).
@@ -101,29 +117,51 @@ public final class TaskStore {
     /// codex → Codex Desktop or a running terminal, claude-code → a running
     /// terminal); falls back to `openTaskInBrowser` behavior when no
     /// suitable app is running (local tasks → Finder, Manus → browser).
-    public func jumpToTask(id: String) {
-        guard let task = tasks.first(where: { $0.id == id }) else { return }
+    public func jumpToTask(_ task: AgentTask) {
         if SourceAppResolver.activateApp(for: task.source) {
-            IslandLogger.store.debug("jumpToTask(\(id)): activated \(task.source) host app")
+            IslandLogger.store.debug("jumpToTask(\(task.source), \(task.id)): activated host app")
             return
         }
-        openTaskInBrowser(id: id)
+        openTask(task)
+    }
+
+    public func jumpToTask(source: String, id: String) {
+        guard let task = task(with: TaskIdentity(source: source, id: id)) else { return }
+        jumpToTask(task)
+    }
+
+    /// Compatibility entry point for the v1.4 contract. New UI code should
+    /// pass the task (or source + id) so cross-agent collisions are impossible.
+    public func jumpToTask(id: String) {
+        guard let task = uniquelyMatchingTask(id: id) else { return }
+        jumpToTask(task)
     }
 
     public func stopTask(id: String) async throws {
-        guard let task = tasks.first(where: { $0.id == id }) else { return }
         // Only Manus tasks can be stopped remotely; local sessions
         // (Claude Code) are driven by their own CLI.
-        guard task.source == "manus", let connector = connectors.first else { return }
+        guard tasks.contains(where: { $0.source == "manus" && $0.id == id }),
+              let connector = connectors.first else { return }
         try await connector.stop(taskId: id)
         // Optimistically update status
         setTasks(tasks.map { t in
-            guard t.id == id else { return t }
+            guard t.source == "manus", t.id == id else { return t }
             var updated = t
             updated.status = .completed
             updated.updatedAt = Date.now
             return updated
         })
+    }
+
+    private func uniquelyMatchingTask(id: String) -> AgentTask? {
+        let matches = tasks.filter { $0.id == id }
+        guard matches.count == 1 else {
+            if matches.count > 1 {
+                IslandLogger.store.error("Ambiguous bare task id \(id); caller must include source")
+            }
+            return nil
+        }
+        return matches[0]
     }
 
     // MARK: - Internal (called by TunnelManager / PollingFallback)

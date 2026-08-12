@@ -1,193 +1,228 @@
 import AppKit
 import IslandCore
-import Observation
 import OSLog
 import UserNotifications
 
-/// Posts macOS banner notifications when `TaskStore.shared.tasks`
-/// transitions through specific status changes (CLAUDE_CLIENT.md §6
-/// task 5):
-///
-/// - `running → completed` → "Task Completed" banner
-/// - any state `→ waiting` → "Task Needs Input" banner
-///
-/// Tap a banner to open the task's URL in the default browser via
-/// `NSWorkspace.shared.open`. The URL is stashed in
-/// `UNNotificationContent.userInfo["taskURL"]` and recovered in the
-/// `UNUserNotificationCenterDelegate` callback.
-///
-/// Observation: TaskStore is `@Observable` (Swift 5.9 macro). We use
-/// `withObservationTracking` and re-arm after each fire — the
-/// non-SwiftUI canonical pattern. First observation pass establishes
-/// a baseline so existing tasks at launch don't spam notifications.
+private let taskNotifierLog = Logger(
+    subsystem: "app.devisland.Island",
+    category: "notifier"
+)
+private let taskNotificationSourceKey = "taskSource"
+private let taskNotificationIDKey = "taskID"
+
+public extension Notification.Name {
+    static let islandNotificationAuthorizationChanged = Notification.Name(
+        "island.notificationAuthorizationChanged"
+    )
+}
+
+/// User-facing notification switches. Attention-required events default on;
+/// completion banners default off so Dev Island stays quiet unless a task is
+/// blocked or failed.
+public enum TaskNotificationPreferences {
+    public static let attentionRequiredKey = "island.notifications.attentionRequired"
+    public static let completionsKey = "island.notifications.completions"
+
+    public static func registerDefaults(in defaults: UserDefaults = .standard) {
+        defaults.register(defaults: [
+            attentionRequiredKey: true,
+            completionsKey: false,
+        ])
+    }
+}
+
+/// Pure transition policy, separated from UserNotifications so the product's
+/// "notify only when useful" rules are easy to unit test.
+enum TaskNotificationKind: Equatable {
+    case waiting
+    case failed
+    case completed
+
+    static func decide(
+        for transition: TaskTransition,
+        attentionRequired: Bool,
+        completions: Bool
+    ) -> Self? {
+        // A newly discovered task is usually a bootstrap snapshot, not a
+        // live transition. Never turn startup state into a banner storm.
+        guard let oldStatus = transition.oldStatus else { return nil }
+
+        switch transition.newStatus {
+        case .waiting where attentionRequired:
+            return .waiting
+        case .failed where attentionRequired:
+            return .failed
+        case .completed where completions && oldStatus != .completed:
+            return .completed
+        default:
+            return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .waiting:   return "Task Needs Input"
+        case .failed:    return "Task Failed"
+        case .completed: return "Task Completed"
+        }
+    }
+
+    var identifierComponent: String {
+        switch self {
+        case .waiting:   return "waiting"
+        case .failed:    return "failed"
+        case .completed: return "completed"
+        }
+    }
+}
+
+/// Turns `TaskStore.onTaskTransition` events into macOS notifications and
+/// routes notification clicks back into the in-app task list.
 @MainActor
 public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
     public static let shared = TaskNotifier()
 
-    private static let log = Logger(subsystem: "app.devisland.Island", category: "notifier")
+    private var started = false
+    public private(set) var authorizationIssue: String?
 
-    /// Last seen task list, keyed by ID. We diff this against each new
-    /// snapshot to find status transitions.
-    private var previousTasksById: [String: AgentTask] = [:]
+    private override init() {
+        super.init()
+    }
 
-    /// First observation pass loads `previousTasksById` without firing
-    /// any notifications — otherwise every existing task would trigger
-    /// on launch (`running` already running, `waiting` already waiting,
-    /// etc).
-    private var hasBaseline = false
-
-    private override init() { super.init() }
-
-    /// True when the host bundle is a real `.app` (i.e., the kind of
-    /// thing `xcodebuild` / `Xcode` Run produces). False when launched
-    /// directly from SPM's `.build/debug/IslandApp` — that path has no
-    /// `Info.plist` / bundle identifier, and `UNUserNotificationCenter.current()`
-    /// throws an NSInternalInconsistencyException ("bundleProxyForCurrentProcess
-    /// is nil") on first access. We use this as a graceful-degradation
-    /// gate so dev builds via `swift run` don't crash on launch — they
-    /// just silently skip banner posting. Real .app builds (and the
-    /// eventual Homebrew Cask / Xcode-built artifact) get full
-    /// notification support.
+    /// Bare `swift run` executables have no app bundle identity and crash on
+    /// first access to `UNUserNotificationCenter.current()`. Packaged `.app`
+    /// builds have full support.
     public static var hasNotificationSupport: Bool {
         Bundle.main.bundleURL.pathExtension == "app"
     }
 
-    /// Become the system notification delegate, request authorization,
-    /// and start observing `TaskStore.shared.tasks` for transitions.
-    /// Idempotent — safe to call once at app launch.
+    /// Attach once to the transition callback and request permission when at
+    /// least one class of notification is enabled.
     public func start() {
+        guard !started else { return }
+        started = true
+
+        TaskNotificationPreferences.registerDefaults()
+        TaskStore.shared.onTaskTransition = { [weak self] transition in
+            self?.handle(transition)
+        }
+
         guard Self.hasNotificationSupport else {
-            Self.log.info("Skipping UN setup — host is not a .app bundle (\(Bundle.main.bundleURL.path)). Run via Xcode/built .app to test banner notifications.")
-            // Still observe so the diff machinery runs and we'd catch any
-            // transition-detection bugs in dev. Just don't post banners.
-            observeTaskStore()
+            taskNotifierLog.info("Skipping notification setup because the host is not an app bundle")
             return
         }
 
         UNUserNotificationCenter.current().delegate = self
+        refreshAuthorizationIfNeeded()
+    }
+
+    /// Called when Settings enables a notification category after launch.
+    public func refreshAuthorizationIfNeeded() {
+        guard Self.hasNotificationSupport else { return }
+        let defaults = UserDefaults.standard
+        let isEnabled = defaults.bool(forKey: TaskNotificationPreferences.attentionRequiredKey)
+            || defaults.bool(forKey: TaskNotificationPreferences.completionsKey)
+        guard isEnabled else { return }
 
         Task {
             do {
                 let granted = try await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .sound])
-                Self.log.info("Notification authorization granted=\(granted)")
+                taskNotifierLog.info("Notification authorization granted=\(granted)")
+                publishAuthorizationIssue(
+                    granted ? nil : "Notifications are disabled in System Settings."
+                )
             } catch {
-                Self.log.error("Notification auth failed: \(String(describing: error))")
+                let nsError = error as NSError
+                taskNotifierLog.error("Notification authorization failed: domain=\(nsError.domain, privacy: .public) code=\(nsError.code) description=\(nsError.localizedDescription, privacy: .public)")
+                publishAuthorizationIssue(nsError.localizedDescription)
             }
-        }
-
-        observeTaskStore()
-    }
-
-    // MARK: - Observation
-
-    /// Re-arming `withObservationTracking` loop. The closure body reads
-    /// every property we want to track for changes; `onChange` fires
-    /// ONCE when any of them changes, after which we have to re-register.
-    private func observeTaskStore() {
-        withObservationTracking {
-            _ = TaskStore.shared.tasks
-        } onChange: {
-            // onChange runs synchronously off the observed property's
-            // setter — hop back to MainActor before touching anything
-            // and re-arm observation.
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.handleUpdate(TaskStore.shared.tasks)
-                self.observeTaskStore()
-            }
-        }
-
-        // Establish baseline on first call, no notifications.
-        if !hasBaseline {
-            handleUpdate(TaskStore.shared.tasks)
         }
     }
 
-    private func handleUpdate(_ newTasks: [AgentTask]) {
-        let newById = Dictionary(uniqueKeysWithValues: newTasks.map { ($0.id, $0) })
-
-        if !hasBaseline {
-            previousTasksById = newById
-            hasBaseline = true
-            Self.log.debug("Baseline set with \(newById.count) tasks")
-            return
-        }
-
-        for (id, newTask) in newById {
-            guard let oldTask = previousTasksById[id] else {
-                // Brand-new task this update — no transition to fire on.
-                // (If it arrived already in `.waiting`, we deliberately
-                // skip it to avoid spamming on initial bootstrap of a
-                // fresh API key configuration.)
-                continue
-            }
-            guard oldTask.status != newTask.status else { continue }
-
-            switch (oldTask.status, newTask.status) {
-            case (.running, .completed):
-                postCompletedNotification(task: newTask)
-            case (_, .waiting):
-                postWaitingNotification(task: newTask)
-            default:
+    /// Refresh the Settings warning after the user returns from System
+    /// Settings. A request-time error is retained while status is still
+    /// undetermined so local ad-hoc builds remain diagnosable.
+    public func refreshAuthorizationState() {
+        guard Self.hasNotificationSupport else { return }
+        Task {
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                publishAuthorizationIssue(nil)
+            case .denied:
+                publishAuthorizationIssue("Notifications are disabled in System Settings.")
+            case .notDetermined:
+                break
+            @unknown default:
                 break
             }
         }
-
-        previousTasksById = newById
     }
 
-    // MARK: - Posting
+    private func publishAuthorizationIssue(_ issue: String?) {
+        authorizationIssue = issue
+        NotificationCenter.default.post(
+            name: .islandNotificationAuthorizationChanged,
+            object: self
+        )
+    }
 
-    private func postCompletedNotification(task: AgentTask) {
+    private func handle(_ transition: TaskTransition) {
+        let defaults = UserDefaults.standard
+        guard let kind = TaskNotificationKind.decide(
+            for: transition,
+            attentionRequired: defaults.bool(forKey: TaskNotificationPreferences.attentionRequiredKey),
+            completions: defaults.bool(forKey: TaskNotificationPreferences.completionsKey)
+        ) else { return }
+
+        post(kind, for: transition.task)
+    }
+
+    private func post(_ kind: TaskNotificationKind, for task: AgentTask) {
         guard Self.hasNotificationSupport else {
-            Self.log.debug("(skip) running→completed for \(task.id) — no .app bundle")
+            taskNotifierLog.debug("Skipping \(kind.identifierComponent) notification for \(task.source)/\(task.id)")
             return
         }
-        let content = UNMutableNotificationContent()
-        content.title = "Task Completed"
-        content.body = task.title
-        content.userInfo = ["taskURL": task.taskURL]
-        content.sound = .default
 
-        // Per-task identifier so a re-fire (e.g. status flapping under
-        // a flaky network) replaces the previous banner instead of
-        // stacking duplicates.
-        let id = "task-completed-\(task.id)"
-        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        let content = UNMutableNotificationContent()
+        content.title = kind.title
+        content.subtitle = sourceDisplayName(task.source)
+        content.body = body(for: kind, task: task)
+        content.sound = .default
+        content.userInfo = [
+            taskNotificationSourceKey: task.source,
+            taskNotificationIDKey: task.id,
+        ]
+
+        // Include source as well as session ID so two agents with the same ID
+        // never replace or route each other's banner.
+        let requestID = "task-\(kind.identifierComponent)-\(task.source):\(task.id)"
+        let request = UNNotificationRequest(identifier: requestID, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
-                Self.log.error("Add completed notification failed: \(String(describing: error))")
+                let nsError = error as NSError
+                taskNotifierLog.error("Adding notification failed: domain=\(nsError.domain, privacy: .public) code=\(nsError.code) description=\(nsError.localizedDescription, privacy: .public)")
             }
         }
     }
 
-    private func postWaitingNotification(task: AgentTask) {
-        guard Self.hasNotificationSupport else {
-            Self.log.debug("(skip) →waiting for \(task.id) — no .app bundle")
-            return
-        }
-        let content = UNMutableNotificationContent()
-        content.title = "Task Needs Input"
-        // Manus puts the prompt text in `waitingMessage`; fall back to
-        // the title if the connector hasn't surfaced one.
-        content.body = task.waitingMessage ?? task.title
-        content.userInfo = ["taskURL": task.taskURL]
-        content.sound = .default
-
-        let id = "task-waiting-\(task.id)"
-        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error {
-                Self.log.error("Add waiting notification failed: \(String(describing: error))")
-            }
+    private func body(for kind: TaskNotificationKind, task: AgentTask) -> String {
+        switch kind {
+        case .waiting:
+            return task.waitingMessage ?? task.currentPhase ?? task.title
+        case .failed:
+            return task.currentPhase ?? task.title
+        case .completed:
+            return task.title
         }
     }
 
-    // MARK: - UNUserNotificationCenterDelegate
+    private func sourceDisplayName(_ source: String) -> String {
+        if source == "manus" { return "Manus" }
+        return LocalAgentRegistry.descriptor(for: source)?.displayName ?? source
+    }
 
-    /// Show the banner even when our app is foreground — though as an
-    /// `.accessory` policy app we virtually never are.
     nonisolated public func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -196,18 +231,22 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound])
     }
 
-    /// User clicked the banner → open the task's URL in the default
-    /// browser. Banners with no URL (shouldn't happen, defensive) are
-    /// silently dismissed.
+    /// Clicking a banner opens the island, scrolls the referenced task into
+    /// view, and highlights it. The user can then inspect the state before a
+    /// deliberate card click jumps back to the source session.
     nonisolated public func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        if let urlString = userInfo["taskURL"] as? String,
-           let url = URL(string: urlString) {
-            NSWorkspace.shared.open(url)
+        if let source = userInfo[taskNotificationSourceKey] as? String,
+           let id = userInfo[taskNotificationIDKey] as? String {
+            let identity = TaskIdentity(source: source, id: id)
+            Task { @MainActor in
+                IslandCoordinator.shared.expand(highlighting: identity)
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
         completionHandler()
     }

@@ -1,6 +1,6 @@
 # IslandCore Interface Contract
 
-> 最后更新: 2026-08-03 | 版本: v1.5.0
+> 最后更新: 2026-08-09 | 版本: v1.6.0
 > 变更流程: 改 TaskStore 公开 API 前更新此文档,commit 用 `[S][contract]` tag。
 
 ---
@@ -28,13 +28,21 @@ public final class TaskStore {
     public func clearAPIKey()
 
     /// 在浏览器中打开指定任务。
+    /// 裸 id 兼容入口仅在匹配唯一时执行;新代码应传 source 或 AgentTask。
     public func openTaskInBrowser(id: String)
+    public func openTaskInBrowser(source: String, id: String)
+    public func openTask(_ task: AgentTask)
+
+    /// 按全局身份解析任务。
+    public func task(with identity: TaskIdentity) -> AgentTask?
 
     /// 跳回任务所在的会话(v1.4.0 新增,J2 交付)。
     /// 能解析出来源 app 时做 app 级激活(cursor → Cursor.app);
     /// 解析不出或激活失败时回退到 openTaskInBrowser 的行为
     /// (本地任务 → Finder 打开项目目录,Manus → 浏览器)。
     public func jumpToTask(id: String)
+    public func jumpToTask(source: String, id: String)
+    public func jumpToTask(_ task: AgentTask)
 
     /// 通过 Manus API 停止任务。
     public func stopTask(id: String) async throws
@@ -64,7 +72,7 @@ public struct TaskTransition: Sendable {
 |---|---|
 | 任意 → `.waiting` | 通知「需要你的审批/输入」+ `waitingMessage` |
 | 任意 → `.failed` | 通知「任务失败」 |
-| `.running` → `.completed` | 通知「任务完成」(可选,默认开) |
+| `.running` → `.completed` | 通知「任务完成」(可选,默认关,减少噪音) |
 | 首次出现(oldStatus == nil) | 不通知(避免 app 启动时快照轰炸) |
 
 ---
@@ -82,6 +90,12 @@ public struct AgentTask: Identifiable, Hashable, Codable, Sendable {
     public var updatedAt: Date
     public let taskURL: String
     public var waitingMessage: String?
+    public var identity: TaskIdentity  // (source, id),跨 agent 全局唯一
+}
+
+public struct TaskIdentity: Hashable, Codable, Sendable {
+    public let source: String
+    public let id: String
 }
 
 public enum TaskStatus: String, Codable, Sendable {
@@ -109,7 +123,9 @@ public enum APIKeyStatus: Equatable, Sendable {
 - `TaskStore` 没有 `reply` 方法 — v2 再加
 - 没有附件下载
 - 只支持单 Manus 账户
-- `openTaskInBrowser` 由 C 调用 `TaskStore.openTaskInBrowser(id:)`,不是通过 AgentConnector
+- session id 只在单个 source 内唯一。UI 列表、通知、高亮、跳回必须使用
+  `TaskIdentity` / `AgentTask`,不得把裸 `id` 当全局 key
+- `openTaskInBrowser` 由 C 调用 `TaskStore.openTask(_:)`,不是通过 AgentConnector
 
 ---
 
@@ -170,7 +186,7 @@ public enum CursorHooksInstaller {  // 写 ~/.cursor/hooks.json(扁平 entry + �
 ```swift
 /// 所有本地 agent 的注册表 — 设置页按此渲染行(顺序即显示顺序)。
 public enum LocalAgentRegistry {
-    public static let all: [LocalAgentDescriptor]          // 当前: claudeCode, codex, cursor
+    public static let all: [LocalAgentDescriptor]          // 当前: claudeCode, codex, cursor, geminiCLI
     public static func descriptor(for source: String) -> LocalAgentDescriptor?
 }
 
@@ -200,6 +216,10 @@ public struct LocalHooksInstaller: Sendable {
 - **B 侧设置页渲染循环**:`ForEach(LocalAgentRegistry.all, id: \.source)` → 每行用
   `LocalHooksInstaller(descriptor)` 做开关;当前 `SettingsView` 已按此实现,可直接参考
 - 核心侧新增 agent 只改注册表,不会破坏 B 侧代码;设置页自动多一行
+- Gemini CLI 注册项:`source == "gemini-cli"`,写 `~/.gemini/settings.json`,订阅
+  `SessionStart / BeforeAgent / Notification / AfterAgent / SessionEnd`;
+  `ToolPermission` 通知映射 waiting,`AfterAgent` 映射 completed。官方当前没有可靠的
+  failed 事件,因此不推断失败态
 - 三个旧安装器(`ClaudeHooksInstaller` / `CodexHooksInstaller` / `CursorHooksInstaller`)
   是注册表的薄兼容壳,API 与行为不变,新代码不要再用
 - `LocalAgentConnector` 是唯一的本地连接器实现(表驱动);`ClaudeCodeConnector` /
@@ -217,3 +237,5 @@ public struct LocalHooksInstaller: Sendable {
 | 2026-07-29 | v1.3.0 | Cursor 本地连接器:`CursorHooksInstaller`(写 `~/.cursor/hooks.json`,扁平 entry + 顶层 `version: 1`),tasks 新增 `source == "cursor"`;仅订阅 fire-and-forget 事件(sessionStart / beforeSubmitPrompt / stop / sessionEnd),无 waiting 态;`stop.status == "error"` 映射为 failed | `[S] feat(cursor): local hooks connector` |
 | 2026-07-29 | v1.4.0 | **契约冻结(J1/J2)**:新增 `TaskTransition` 结构与 `TaskStore.onTaskTransition` 回调(状态跃迁事件,通知投递用);新增 `TaskStore.jumpToTask(id:)`(app 级激活,失败回退 openTaskInBrowser 行为)。`openTaskInBrowser` 保持不变 | `[S][contract] feat: task transitions + jump-to-task` |
 | 2026-08-03 | v1.5.0 | **契约冻结(J3)**:声明式连接器框架 — 新增 `LocalAgentRegistry` / `LocalAgentDescriptor` / `LocalHooksInstaller`(表驱动:设置行、hook 安装、服务器路由、跳回目标全部由注册表生成);三个旧安装器 enum 降级为兼容壳;三个旧连接器 actor 删除,统一为 `LocalAgentConnector`。`TaskStore` 公开 API 不变 | `[S][contract] feat: declarative local-agent framework` |
+| 2026-08-05 | v1.5.1 | **加法式注册表扩展**:新增 Gemini CLI (`source == "gemini-cli"`,用户配置 `~/.gemini/settings.json`);复用 v1.5.0 描述符/安装器契约,`TaskStore` 公开 API 不变 | `[S][contract] feat(gemini): local hooks connector` |
+| 2026-08-09 | v1.6.0 | **跨 agent 任务身份**:新增 `TaskIdentity(source,id)`、`AgentTask.identity`、source-aware open/jump API 与直接接收 `AgentTask` 的入口;旧裸 id API 保留兼容,遇到歧义拒绝执行;通知/列表/跳回统一使用复合身份 | `[S][contract] fix: source-aware task routing` |

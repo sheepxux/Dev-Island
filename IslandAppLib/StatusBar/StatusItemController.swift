@@ -48,7 +48,8 @@ public final class StatusItemController: NSObject, NSMenuDelegate {
         if running > 0 { headline += " — \(running) 个任务进行中" }
         if waiting > 0 { headline += ",\(waiting) 个等待输入" }
         menu.addItem(disabledItem(headline))
-        menu.addItem(disabledItem("本地管线:Claude Code / Codex / Cursor"))
+        let localAgents = LocalAgentRegistry.all.map(\.displayName).joined(separator: " / ")
+        menu.addItem(disabledItem("本地管线:\(localAgents)"))
         menu.addItem(disabledItem("Manus:\(manusStatusText(store))"))
 
         menu.addItem(.separator())

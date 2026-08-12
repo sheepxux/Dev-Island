@@ -8,23 +8,25 @@ struct IslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // Settings scene is intentionally empty for v1's PoC — the real UI
-        // lives in custom NSWindows owned by AppDelegate. Task 6 builds out
-        // the SettingsWindow.
-        Settings { EmptyView() }
+        // Keep the native Command-, entry point useful as well as the island's
+        // custom gear-button window. Both host the same settings surface.
+        Settings { SettingsView() }
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var islandWindow: IslandWindow?
     private var screenChangeObserver: NSObjectProtocol?
     private var openSettingsObserver: NSObjectProtocol?
+    private var openOnboardingObserver: NSObjectProtocol?
 
     /// Lazily-created so we don't pay the SwiftUI view-construction cost
     /// until the user actually opens settings. Re-used across opens —
     /// the second gear tap brings the same window forward instead of
     /// stacking a new one.
     private var settingsWindow: SettingsWindow?
+    private var onboardingWindow: OnboardingWindow?
 
     /// Conventional menu-bar icon (`NSStatusItem`): visible whenever the
     /// app — and therefore the local hook backend — is running. Menu
@@ -83,7 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.islandWindow?.reposition()
+            Task { @MainActor [weak self] in
+                self?.islandWindow?.reposition()
+            }
         }
 
         // Settings window plumbing. Panel's gear button posts this
@@ -95,7 +99,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.openSettings()
+            Task { @MainActor [weak self] in
+                self?.openSettings()
+            }
+        }
+
+        openOnboardingObserver = NotificationCenter.default.addObserver(
+            forName: .islandOpenOnboardingRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.openOnboarding()
+            }
         }
 
         // Banner notifications for task state transitions
@@ -120,10 +136,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the panel is empty until at least one agent is connected, and
         // Settings is where connectors get set up.
         let defaults = UserDefaults.standard
-        if !defaults.bool(forKey: "island.didCompleteFirstLaunch") {
-            defaults.set(true, forKey: "island.didCompleteFirstLaunch")
+        if !defaults.bool(forKey: OnboardingWindow.completionKey) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                self?.openSettings()
+                self?.openOnboarding()
             }
         }
     }
@@ -133,6 +148,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = openSettingsObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = openOnboardingObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         removePanelEventMonitors()
@@ -147,6 +165,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let window = SettingsWindow()
         settingsWindow = window
+        window.bringToFront()
+    }
+
+    private func openOnboarding() {
+        if let existing = onboardingWindow {
+            existing.bringToFront()
+            return
+        }
+
+        let window = OnboardingWindow { [weak self] in
+            UserDefaults.standard.set(true, forKey: OnboardingWindow.completionKey)
+            self?.onboardingWindow?.close()
+            self?.onboardingWindow = nil
+            IslandCoordinator.shared.expand()
+        }
+        onboardingWindow = window
         window.bringToFront()
     }
 

@@ -1,5 +1,21 @@
 import Foundation
 
+/// Globally unique identity for one task inside Dev Island.
+///
+/// Agent session IDs are only guaranteed to be unique within their source,
+/// so every UI lookup, notification payload, and jump-back action must carry
+/// both values. Keeping this as a typed value prevents a future caller from
+/// accidentally falling back to an ambiguous bare session ID.
+public struct TaskIdentity: Hashable, Codable, Sendable {
+    public let source: String
+    public let id: String
+
+    public init(source: String, id: String) {
+        self.source = source
+        self.id = id
+    }
+}
+
 public struct AgentTask: Identifiable, Hashable, Codable, Sendable {
     public let id: String
     public let source: String          // "manus" (future: "claude-code", "cursor")
@@ -31,6 +47,12 @@ public struct AgentTask: Identifiable, Hashable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.taskURL = taskURL
         self.waitingMessage = waitingMessage
+    }
+
+    /// Stable cross-agent identity used by lists, notification routing, and
+    /// jump-back. `id` remains available for connector-facing APIs.
+    public var identity: TaskIdentity {
+        TaskIdentity(source: source, id: id)
     }
 }
 

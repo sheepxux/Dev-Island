@@ -105,6 +105,7 @@ struct IslandRootView: View {
                 tasks: store.tasks,
                 connectionStatus: store.connectionStatus,
                 layout: baseLayout,
+                highlightedTask: coordinator.highlightedTask,
                 onTaskTap: handleTaskTap,
                 onSettingsTap: handleSettingsTap,
                 onConnectTap: handleConnectTap,
@@ -250,7 +251,7 @@ struct IslandRootView: View {
         if baseLayout.hasNotch {
             NotchBarView(
                 state: effectiveBarState,
-                taskCount: barTaskCount,
+                summary: taskStatusSummary,
                 title: barTitle,
                 layout: barLayoutForContent,
                 showsContent: true,
@@ -273,10 +274,7 @@ struct IslandRootView: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("\(barTaskCount)")
-                .font(Typo.barBadge)
-                .foregroundStyle(.white.opacity(0.88))
-                .monospacedDigit()
+            CompactTaskStatusSummary(summary: taskStatusSummary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(
@@ -293,8 +291,8 @@ struct IslandRootView: View {
         )
     }
 
-    private var barTaskCount: Int {
-        store.tasks.count
+    private var taskStatusSummary: TaskStatusSummary {
+        TaskStatusSummary(tasks: store.tasks)
     }
 
     private var barTitle: String {
@@ -357,7 +355,8 @@ struct IslandRootView: View {
     }
 
     private func handleTaskTap(_ task: AgentTask) {
-        store.openTaskInBrowser(id: task.id)
+        coordinator.clearHighlight()
+        store.jumpToTask(task)
         coordinator.collapse()
     }
 
@@ -373,5 +372,6 @@ struct IslandRootView: View {
 
     private func handleConnectTap() {
         coordinator.collapse()
+        NotificationCenter.default.post(name: .islandOpenSettingsRequested, object: nil)
     }
 }

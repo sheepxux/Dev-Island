@@ -95,5 +95,10 @@ let package = Package(
             dependencies: ["IslandCore"],
             path: "IslandCoreTests/Sources/IslandCoreTests"
         ),
+        .testTarget(
+            name: "IslandAppLibTests",
+            dependencies: ["IslandAppLib", "IslandCore"],
+            path: "IslandAppLibTests/Sources/IslandAppLibTests"
+        ),
     ]
 )

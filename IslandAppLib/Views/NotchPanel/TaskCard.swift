@@ -7,6 +7,7 @@ import IslandCore
 /// chevron. Running tasks get a 2pt animated progress bar at the bottom.
 struct TaskCard: View {
     let task: AgentTask
+    var isHighlighted: Bool = false
     let onTap: () -> Void
 
     @State private var isHovering = false
@@ -58,10 +59,17 @@ struct TaskCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isHovering ? Palette.cardHover : Palette.cardBg)
+                    .fill(cardBackground)
                     // Ease the highlight in/out — the hard cut read as
                     // flicker when skimming the cursor down the list.
                     .animation(.easeOut(duration: 0.12), value: isHovering)
+            }
+            .overlay {
+                if isHighlighted {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(task.status.color.opacity(0.9), lineWidth: 1.5)
+                        .shadow(color: task.status.color.opacity(0.55), radius: 7)
+                }
             }
             .overlay(alignment: .bottom) {
                 if task.status == .running {
@@ -76,6 +84,7 @@ struct TaskCard: View {
         .onHover { isHovering = $0 }
         .pointingHandCursor()
         .onReceive(timer) { tick = $0 }
+        .animation(.easeOut(duration: 0.2), value: isHighlighted)
     }
 
     // MARK: - Pieces
@@ -84,6 +93,13 @@ struct TaskCard: View {
         // Real brand logo (template PNG) with monogram fallback —
         // see AgentBrand.
         AgentLogoBadge(source: task.source)
+    }
+
+    private var cardBackground: Color {
+        if isHighlighted {
+            return task.status.color.opacity(0.18)
+        }
+        return isHovering ? Palette.cardHover : Palette.cardBg
     }
 
     private var durationString: String {

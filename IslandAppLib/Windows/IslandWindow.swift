@@ -9,9 +9,9 @@ import IslandCore
 /// jankier than SwiftUI's own spring).
 ///
 /// **Click-through model.** This window is much taller than the actual
-/// visible silhouette (the bar's ~28pt vs. the window's 408pt allowance
-/// for the expanded panel). The empty area is fully transparent, but a
-/// transparent NSWindow still intercepts every mouse event in its frame
+/// visible silhouette (the bar's ~28pt vs. the window's allowance for a
+/// full-height expanded panel). The empty area is fully transparent, but
+/// a transparent NSWindow still intercepts every mouse event in its frame
 /// — that means clicks across the upper-middle of the screen get
 /// silently swallowed unless we opt out. We do that by polling the
 /// cursor position via a low-frequency timer and toggling

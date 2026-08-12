@@ -32,6 +32,7 @@ enum AgentBrand {
         case "claude-code": return "C"
         case "codex":       return "Cx"
         case "cursor":      return "Cu"
+        case "gemini-cli":  return "G"
         default:            return String(source.prefix(1)).uppercased()
         }
     }
@@ -79,7 +80,7 @@ struct AgentLogoBadge: View {
 #if PREVIEWS && DEBUG
 #Preview("Agent logo badges") {
     HStack(spacing: 10) {
-        ForEach(["claude-code", "codex", "cursor", "manus", "opencode"], id: \.self) {
+        ForEach(["claude-code", "codex", "cursor", "gemini-cli", "manus", "opencode"], id: \.self) {
             AgentLogoBadge(source: $0)
         }
     }

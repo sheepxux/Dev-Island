@@ -49,9 +49,11 @@ The bar carries five states, ordered by priority — the highest one wins:
 | 🟦 | **Completed** | Done, nothing to do |
 | ⚪ | **Idle** | No tasks, or sync is paused |
 
-Hover the bar and it widens to show the current task title. Click it and the
-panel expands into a scrollable task list with one-click open-in-browser. Click
-outside or press <kbd>Esc</kbd> to collapse it back.
+Hover the bar and it widens to show the current task title plus compact counts
+for running, waiting, and failed sessions. Click it and the panel expands into
+a scrollable task list. Clicking a task activates its source app or terminal;
+when that is unavailable, Dev Island opens its project folder or browser URL.
+Click outside or press <kbd>Esc</kbd> to collapse it back.
 
 ## Install
 
@@ -92,9 +94,13 @@ swift run IslandApp           # dev launch
 
 ## First-run setup
 
-1. Click the gear icon in the expanded panel (or pick *Settings* from the menu)
-2. Paste your Manus API key (`sk-…`) and hit **Connect**
-3. The status dot turns green. That's it — your live tasks start syncing.
+The three-step welcome tour explains the island, lets you enable local agents,
+and configures notification noise. You can reopen it anytime from Settings.
+
+Local agents need no account: enable Claude Code, Codex, Cursor, or Gemini CLI
+in **Settings → Agent Connections**. Manus users can paste an API key (`sk-…`)
+in the cloud-agent group. Settings is available from the panel gear, the menu
+bar item, or <kbd>⌘,</kbd>.
 
 Keys are stored in the macOS Keychain. Disconnect at any time from the same
 settings pane. Optional **Launch at Login** hooks up via `SMAppService`, no
@@ -119,19 +125,23 @@ mode you're in.
 | Manus | ✅ Available |
 | Claude Code | ✅ Available (local hooks, no tunnel needed) |
 | Codex CLI | ✅ Available (local hooks, no tunnel needed) |
+| Gemini CLI | 🧪 In validation (local hooks, no tunnel needed) |
 | Cursor | ✅ Available (local hooks, no tunnel needed) |
 
-**Claude Code**, **Codex** and **Cursor** need no API key: flip the toggle in
-*Settings → Connected Services*. Dev Island installs a fire-and-forget hook
-(into `~/.claude/settings.json` / `~/.codex/hooks.json` /
-`~/.cursor/hooks.json`) that reports session
-lifecycle events (start / needs-input / approval-request / done / failed) to
-a localhost-only endpoint. New sessions appear in the island within
-milliseconds; clicking one opens the project folder.
+**Claude Code**, **Codex**, **Gemini CLI** and **Cursor** need no API key: flip
+the toggle in *Settings → Agent Connections*. Dev Island installs a local
+hook (into `~/.claude/settings.json` / `~/.codex/hooks.json` /
+`~/.gemini/settings.json` / `~/.cursor/hooks.json`) that reports the lifecycle
+events each source exposes (start / needs-input / approval-request / done /
+failed when available) to a localhost-only endpoint. New sessions appear in
+the island within milliseconds. Waiting and failed transitions notify by
+default; completion banners are opt-in. Clicking a notification reveals and
+highlights the exact task, then clicking its card jumps back to the source.
 
-The connector layer is intentionally pluggable — `IslandCore` exposes an
-`AgentConnector` protocol, and adding a new source is a matter of writing
-`fetchTasks()` + (optionally) a webhook handler that emits `WebhookPayload`.
+The connector layer is intentionally declarative. Adding a local source means
+providing one `LocalAgentDescriptor`, a payload-to-`LocalAgentEvent` mapping,
+and a logo; the registry then drives hook installation, routing, Settings, and
+jump-back targets.
 
 ## Architecture
 
@@ -172,6 +182,7 @@ changes go through [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
 | Homebrew Cask tap | 🚧 Draft in `dist/homebrew-island/` |
 | Claude Code connector (local hooks) | ✅ Shipping |
 | Codex connector (local hooks) | ✅ Shipping |
+| Gemini CLI connector | 🧪 Implemented; real-session validation pending |
 | Cursor connector (local hooks) | ✅ Shipping |
 
 ## Contributing

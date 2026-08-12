@@ -13,6 +13,7 @@ public enum LocalAgentRegistry {
         .claudeCode,
         .codex,
         .cursor,
+        .geminiCLI,
     ]
 
     public static func descriptor(for source: String) -> LocalAgentDescriptor? {

@@ -94,7 +94,8 @@ public struct LocalAgentDescriptor: Sendable {
 /// with a genuinely new shape adds a case here plus its rendering in
 /// `LocalHooksInstaller` — the rest of the framework is unaffected.
 public enum HookEntryStyle: Sendable {
-    /// Claude Code `~/.claude/settings.json`:
+    /// Claude Code `~/.claude/settings.json` and Gemini CLI
+    /// `~/.gemini/settings.json`:
     /// `{"matcher": "", "hooks": [{"type": "command", "command": …}]}`
     case nestedWithEmptyMatcher
     /// Codex `~/.codex/hooks.json`: same nesting, no matcher key

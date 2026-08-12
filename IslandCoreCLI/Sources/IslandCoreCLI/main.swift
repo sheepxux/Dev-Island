@@ -12,22 +12,22 @@ import IslandCore
 //   5. Print all received events
 //   6. Cleanup (delete webhook, stop tunnel)
 //
-// Local hooks mode (Claude Code + Codex + Cursor):
+// Local hooks mode (every descriptor in LocalAgentRegistry):
 //   swift run IslandCoreCLI local-hooks
 //   Starts LocalHookServer + all local connectors, prints the task snapshot
 //   after every event. Exercise it from another terminal, e.g.:
 //     echo '{"session_id":"s1","cwd":"'$PWD'","hook_event_name":"SessionStart"}' \
 //       | curl -sf -m 2 -X POST http://127.0.0.1:7824/hooks/claude-code \
 //              -H 'Content-Type: application/json' --data-binary @-
-//   (same for /hooks/codex; /hooks/cursor uses camelCase event names,
-//    "conversation_id" and "workspace_roots")
+//   (same for the other registry-driven endpoints; Cursor uses camelCase
+//    event names, "conversation_id" and "workspace_roots")
 
 if CommandLine.arguments.contains("local-hooks") || CommandLine.arguments.contains("claude-hooks") {
     setvbuf(stdout, nil, _IONBF, 0)  // unbuffered so piped output appears live
     print("[CLI] Local hooks mode — LocalHookServer on 127.0.0.1:\(ClaudeHooksInstaller.defaultPort)")
-    print("[CLI] Claude Code hook command: \(ClaudeHooksInstaller.hookCommand())")
-    print("[CLI] Codex hook command:       \(CodexHooksInstaller.hookCommand())")
-    print("[CLI] Cursor hook command:      \(CursorHooksInstaller.hookCommand())")
+    for descriptor in LocalAgentRegistry.all {
+        print("[CLI] \(descriptor.displayName) hook command: \(LocalHooksInstaller(descriptor).hookCommand())")
+    }
     print("[CLI] Waiting for events (Ctrl+C to stop)...")
 
     let connectors = Dictionary(uniqueKeysWithValues: LocalAgentRegistry.all.map {

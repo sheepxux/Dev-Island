@@ -4,7 +4,21 @@
 > 目标覆盖 26+ 个 agent:Claude Code、Codex、ZCode、Gemini CLI、Antigravity CLI、Cursor、Trae、OpenCode、MiMoCode、Droid、Qoder、Qwen、Grok Build、Kimi Code、DeepSeek、Mistral Vibe、Copilot、CodeBuddy、WorkBuddy、Kiro、Hermes、Amp、Pi Agent、Oh My Pi、Gajae Code…
 >
 > **当前方向:先把产品做到足够好用、功能足够全面,变现后置。**
-> **当前状态:v0.2.0 已发布** —— Manus + Claude Code + Codex + Cursor 四个连接器,签名 + 公证的发布流水线。
+> **当前状态:v0.2.2 已发布;下一版开发中** —— Gemini CLI A 侧已实现;
+> M1/J3 产品代码已接通(通知→定位→跳回、onboarding、多会话摘要、设置分组搜索),
+> 待 Developer ID 包通知真机联调、真实 Gemini 会话与 B 验收后发版。
+
+### 2026-08-09 实现快照
+
+| 能力 | 代码状态 | 发版前出口 |
+|---|---|---|
+| waiting / failed 系统通知,completed 可选默认关 | ✅ | Developer ID 签名包真机投递 |
+| 通知点击 → 面板滚动并高亮正确任务 | ✅ | 点击横幅联调 |
+| 任务卡 → source-aware `jumpToTask` | ✅ | 每个 agent 真机跳回 |
+| 三步 onboarding | ✅ | 新用户走查 |
+| 胶囊多会话状态计数 | ✅ | B 视觉验收 |
+| Settings 云端/本地分组、搜索、状态徽标 | ✅ | B 连接器开关联调 |
+| Gemini CLI 连接器 | ✅ 核心 / 🧪 产品 | 真实认证会话 + logo 复核 |
 
 ---
 
@@ -60,6 +74,8 @@
 
 **汇合点:J1(通知链路)、J2(跳回链路)。出口 = M1,发 v0.3.0。**
 
+实现状态:代码侧已完成;J1/J2 仍需使用正式 Developer ID 构建做真机签字。
+
 ### 阶段 2:全面 —— 连接器矩阵铺开
 
 > 主题:"我用的 agent 它都支持",以及长期挂机不出幺蛾子。铺开策略与状态见「四、连接器矩阵」。
@@ -75,6 +91,8 @@
 | ⑦ 卸载时 hooks 一键全清 | ⑦ 会话历史视图(SQLite 已有落库基础) |
 
 **汇合点:J3(框架×列表,达成即发 v0.4.0 = M2)、J4(每 Wave 一次,全部 Wave 验收完发 v0.5.0 = M3)。出口 = M3。**
+
+实现状态:J3 两侧代码已完成;待本地连接器逐行开关与搜索状态的 B 验收。
 
 ### 阶段 3:公开发布
 
@@ -206,7 +224,7 @@ gantt
 | Codex | claude-hooks | ✅ | — | v0.2.0,写 ~/.codex/hooks.json |
 | Cursor | cursor-hooks | ✅ | — | v0.2.0,含 stop.status→failed |
 | Manus | api | ✅ | — | v0.1.x,轮询 + webhook |
-| Gemini CLI | gemini-hooks | 📋 | A | Wave 1 头号目标 |
+| Gemini CLI | gemini-hooks | 🧪 | A | A 侧已实现,待真实会话 / B 验收 |
 | Qwen(Qwen Code) | gemini-hooks? | 📋 | A | Gemini CLI 衍生,大概率同族 |
 | Kimi Code | claude-hooks? | 📋 | A | 待装机确认 |
 | DeepSeek | 📋 | 📋 | A | CLI 形态待确认 |

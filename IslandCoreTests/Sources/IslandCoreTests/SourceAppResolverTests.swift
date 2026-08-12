@@ -38,6 +38,16 @@ final class SourceAppResolverTests: XCTestCase {
         )
     }
 
+    func testGeminiCLIResolvesRunningTerminal() {
+        XCTAssertEqual(
+            SourceAppResolver.resolveBundleId(source: "gemini-cli", running: ["dev.warp.Warp-Stable"]),
+            "dev.warp.Warp-Stable"
+        )
+        XCTAssertNil(
+            SourceAppResolver.resolveBundleId(source: "gemini-cli", running: [cursorBundle])
+        )
+    }
+
     func testManusAndUnknownSourcesNeverResolve() {
         // No local app to jump to — TaskStore falls back to openTaskInBrowser.
         XCTAssertNil(SourceAppResolver.resolveBundleId(source: "manus", running: [cursorBundle, codexBundle]))

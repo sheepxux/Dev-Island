@@ -19,7 +19,7 @@ public actor WebhookServer {  // [C→S] public so the CLI target can use it
             let pem = webhookPublicKeyPEM  // capture for closure
 
             router.post("/webhook") { request, _ -> HTTPResponse.Status in
-                var buffer = try await request.body.collect(upTo: 1_048_576)
+                let buffer = try await request.body.collect(upTo: 1_048_576)
                 let data = Data(buffer.readableBytesView)
 
                 // Signature verification (skipped if no PEM configured)

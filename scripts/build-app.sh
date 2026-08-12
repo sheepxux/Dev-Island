@@ -26,12 +26,16 @@
 # Usage:
 #   scripts/build-app.sh           # release, universal, unsigned
 #   CONFIG=debug scripts/build-app.sh   # debug build (testing only)
+#   BUILD_DIR=/path/to/output scripts/build-app.sh
 
 set -euo pipefail
 
 CONFIG="${CONFIG:-release}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD_DIR="${ROOT}/build"
+# Allow release/QA automation to build outside synced or File Provider-backed
+# folders, whose extended attributes can race local codesigning. The default
+# remains the repository's build/ directory for compatibility.
+BUILD_DIR="${BUILD_DIR:-${ROOT}/build}"
 # Bundle filename uses the user-facing display name with a space, so
 # Finder shows "Dev Island" everywhere (Applications, Downloads, Dock,
 # Spotlight) — not just the locations that consult CFBundleDisplayName.

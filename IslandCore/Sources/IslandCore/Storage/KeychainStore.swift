@@ -17,12 +17,16 @@ enum KeychainStore {
         case unexpectedData
     }
 
-    static func save(_ value: String) throws {
+    static func save(
+        _ value: String,
+        service: String = KeychainStore.service,
+        account: String = KeychainStore.accountKey
+    ) throws {
         let valueData = Data(value.utf8)
         let updateQuery: [CFString: Any] = [
             kSecClass:       kSecClassGenericPassword,
             kSecAttrService: service,
-            kSecAttrAccount: accountKey,
+            kSecAttrAccount: account,
         ]
         let updateAttribs: [CFString: Any] = [
             kSecValueData:     valueData,
@@ -42,11 +46,14 @@ enum KeychainStore {
         }
     }
 
-    static func load() throws -> String? {
+    static func load(
+        service: String = KeychainStore.service,
+        account: String = KeychainStore.accountKey
+    ) throws -> String? {
         let query: [CFString: Any] = [
             kSecClass:            kSecClassGenericPassword,
             kSecAttrService:      service,
-            kSecAttrAccount:      accountKey,
+            kSecAttrAccount:      account,
             kSecReturnData:       true,
             kSecMatchLimit:       kSecMatchLimitOne,
         ]
@@ -62,11 +69,14 @@ enum KeychainStore {
         return string
     }
 
-    static func delete() throws {
+    static func delete(
+        service: String = KeychainStore.service,
+        account: String = KeychainStore.accountKey
+    ) throws {
         let query: [CFString: Any] = [
             kSecClass:       kSecClassGenericPassword,
             kSecAttrService: service,
-            kSecAttrAccount: accountKey,
+            kSecAttrAccount: account,
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {

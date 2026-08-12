@@ -20,11 +20,12 @@ final class LocalAgentFrameworkTests: XCTestCase {
         // onboarding path and must not break this suite — only accidental
         // *removal* of a shipped agent should.
         let sources = Set(LocalAgentRegistry.all.map(\.source))
-        XCTAssertTrue(sources.isSuperset(of: ["claude-code", "codex", "cursor"]))
+        XCTAssertTrue(sources.isSuperset(of: ["claude-code", "codex", "cursor", "gemini-cli"]))
     }
 
     func testDescriptorLookup() {
         XCTAssertEqual(LocalAgentRegistry.descriptor(for: "codex")?.displayName, "Codex")
+        XCTAssertEqual(LocalAgentRegistry.descriptor(for: "gemini-cli")?.displayName, "Gemini CLI")
         XCTAssertNil(LocalAgentRegistry.descriptor(for: "manus"), "remote agents are not registry rows")
         XCTAssertNil(LocalAgentRegistry.descriptor(for: "unknown"))
     }
@@ -88,6 +89,7 @@ final class LocalAgentFrameworkTests: XCTestCase {
             (.claudeCode, #"{"session_id":"  ","hook_event_name":"Stop"}"#),
             (.codex, #"{"session_id":"","hook_event_name":"SessionStart"}"#),
             (.cursor, #"{"conversation_id":" ","hook_event_name":"stop"}"#),
+            (.geminiCLI, #"{"session_id":"\n\t","hook_event_name":"BeforeAgent"}"#),
         ]
         for (descriptor, json) in payloads {
             XCTAssertNil(

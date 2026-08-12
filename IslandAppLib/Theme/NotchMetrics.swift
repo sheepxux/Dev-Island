@@ -23,6 +23,21 @@ public enum NotchMetrics {
     public static let panelWidth: CGFloat = 480
     /// Maximum panel width on notched displays — never exceed this.
     public static let panelMaxWidth: CGFloat = 480
+    /// Vertical space the task list may occupy before it starts scrolling.
+    public static let panelTaskListMaxHeight: CGFloat = 320
+    /// Ceiling for the expanded panel. The silhouette clips its content, so
+    /// this must stay above the tallest layout the panel can produce:
+    /// header + a full `panelTaskListMaxHeight` list + divider + footer.
+    public static let panelMaxHeight: CGFloat = 440
+    /// Floor for the expanded panel, so a transient zero/short measurement
+    /// can't collapse the silhouette into a sliver mid-morph.
+    public static let panelMinHeight: CGFloat = 120
+
+    /// Clamp a measured panel-content height into the range the silhouette
+    /// (and its host window) can actually display.
+    public static func panelHeight(forContentHeight content: CGFloat) -> CGFloat {
+        min(max(content, panelMinHeight), panelMaxHeight)
+    }
 
     // Hover affordance — how much the bar grows when the mouse enters,
     // signalling "clickable". Pre-Task-2 polish; the panel expansion that

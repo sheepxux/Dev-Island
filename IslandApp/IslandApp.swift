@@ -187,24 +187,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Panel-only event monitors
 
     /// Install Esc + click-outside monitors. CLAUDE_CLIENT.md §2 trigger
-    /// spec: "点外部 / Esc 收起". Both are global because:
+    /// spec: "点外部 / Esc 收起".
     ///
-    /// - IslandWindow doesn't override `canBecomeKey` for keyDown, so
-    ///   keyboard events flow to whatever app IS key, and only a global
-    ///   monitor sees them there.
-    /// - Global monitors only fire for events targeted at OTHER apps —
-    ///   clicks on the visible shape itself don't trigger collapse, which
-    ///   is the behavior we want.
+    /// The click monitor is global: IslandWindow never becomes key, and
+    /// global monitors only fire for events targeted at OTHER apps, so
+    /// clicks on the visible shape itself don't trigger a collapse.
+    ///
+    /// Esc needs both legs. The global one covers the normal case (the
+    /// user's editor is still focused) but is inert until the app is
+    /// trusted for Accessibility — see `InputPermissions`. The local one
+    /// covers the case where our own app happens to be active, needs no
+    /// authorization, and consumes the event so Esc doesn't also reach
+    /// whatever view is focused.
     private func installPanelEventMonitors() {
         guard panelEventMonitors.isEmpty else { return }
 
+        // 53 = Escape (kVK_Escape).
         if let escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { event in
-            // 53 = Escape (kVK_Escape).
             if event.keyCode == 53 {
                 Task { @MainActor in IslandCoordinator.shared.collapse() }
             }
         }) {
             panelEventMonitors.append(escMonitor)
+        }
+
+        if let localEscMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
+            guard event.keyCode == 53 else { return event }
+            Task { @MainActor in IslandCoordinator.shared.collapse() }
+            return nil
+        }) {
+            panelEventMonitors.append(localEscMonitor)
         }
 
         if let clickMonitor = NSEvent.addGlobalMonitorForEvents(

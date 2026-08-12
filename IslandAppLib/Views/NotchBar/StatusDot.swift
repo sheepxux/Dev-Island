@@ -26,15 +26,20 @@ struct StatusDot: View {
     @State private var completedScale: CGFloat = 1.0
     @State private var lastFlashedAt: Date?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !needsAnimation)) { context in
-            let phase = StatusPhase.compute(state: state, at: context.date)
+            let phase = StatusPhase.compute(state: state, at: context.date, animated: !reduceMotion)
 
             ZStack {
                 // ── Ripple layer ────────────────────────────────────────
-                if state == .waiting {
+                // Rings travel outward continuously, which is exactly what
+                // Reduce Motion asks us not to do; the pulsing color alone
+                // still distinguishes "waiting".
+                if state == .waiting, !reduceMotion {
                     RippleLayer(color: state.color, baseSize: size, time: context.date)
-                        .transition(.opacity.animation(.easeInOut(duration: 0.18)))
+                        .transition(.opacity.animation(Motion.colorTransition))
                 }
 
                 // ── Main dot ───────────────────────────────────────────
@@ -58,7 +63,10 @@ struct StatusDot: View {
 
     /// Whether the timeline needs to drive frame updates. Idle/failed/completed
     /// (after the flash settles) are static so we let the timeline pause.
+    /// Under Reduce Motion nothing loops, so the timeline stays parked and
+    /// the dot costs zero frames.
     private var needsAnimation: Bool {
+        guard !reduceMotion else { return false }
         switch state {
         case .running, .waiting: return true
         case .completed:         return lastFlashedAt != nil  // briefly true during flash
@@ -81,18 +89,25 @@ struct StatusDot: View {
 
     private func handleStateChange(from old: BarState, to new: BarState) {
         if new == .completed && old != .completed {
+            // A scale jump is spatial travel, so Reduce Motion gets the
+            // color change on its own — no flash, no timeline to unpause.
+            guard !reduceMotion else {
+                completedScale = 1.0
+                lastFlashedAt = nil
+                return
+            }
             // One-shot flash: scale up fast, settle slower.
-            withAnimation(.easeOut(duration: 0.18)) {
+            withAnimation(.easeOut(duration: Motion.completedFlashRise)) {
                 completedScale = 1.5
             }
             let flashStart = Date()
             lastFlashedAt = flashStart
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                withAnimation(.easeIn(duration: 0.27)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Motion.completedFlashRise) {
+                withAnimation(.easeIn(duration: Motion.completedFlashSettle)) {
                     completedScale = 1.0
                 }
                 // Allow the timeline to pause after the flash completes.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Motion.completedFlashSettle + 0.03) {
                     if lastFlashedAt == flashStart { lastFlashedAt = nil }
                 }
             }
@@ -113,7 +128,7 @@ private struct RippleLayer: View {
     let baseSize: CGFloat
     let time: Date
 
-    private let cycleSeconds: Double = 1.5
+    private let cycleSeconds: Double = Motion.waitingRipplePeriod
     private let ringCount: Int = 3
 
     var body: some View {
@@ -152,24 +167,28 @@ struct StatusPhase {
     /// Glow opacity (0–1).
     let glowOpacity: Double
 
-    static func compute(state: BarState, at time: Date) -> StatusPhase {
+    /// - Parameter animated: `false` for Reduce Motion. The loop states then
+    ///   report their mid-cycle glow with the dot at rest, so a parked
+    ///   timeline shows a deliberate resting appearance rather than
+    ///   whichever frame of the breath it happened to stop on.
+    static func compute(state: BarState, at time: Date, animated: Bool = true) -> StatusPhase {
         let t = time.timeIntervalSinceReferenceDate
 
         switch state {
         case .running:
             // 2s breath, scale 1.0 ↔ 1.2, glow 4 ↔ 7.
-            let p = (sin(t * .pi) + 1) / 2  // 2π/2s = π → 2s period
+            let p = animated ? loopPhase(t, period: Motion.runningBreathPeriod) : 0.5
             return StatusPhase(
-                dotScale: 1.0 + 0.2 * p,
+                dotScale: animated ? 1.0 + 0.2 * p : 1.0,
                 glowRadius: 4 + 3 * p,
                 glowOpacity: 0.35 + 0.20 * p
             )
 
         case .waiting:
             // 1s pulse, scale 1.0 ↔ 1.4, glow 5 ↔ 11.
-            let p = (sin(t * 2 * .pi) + 1) / 2  // 2π/1s = 2π → 1s period
+            let p = animated ? loopPhase(t, period: Motion.waitingPulsePeriod) : 0.5
             return StatusPhase(
-                dotScale: 1.0 + 0.4 * p,
+                dotScale: animated ? 1.0 + 0.4 * p : 1.0,
                 glowRadius: 5 + 6 * p,
                 glowOpacity: 0.45 + 0.25 * p
             )
@@ -183,6 +202,11 @@ struct StatusPhase {
         case .idle:
             return StatusPhase(dotScale: 1.0, glowRadius: 0, glowOpacity: 0)
         }
+    }
+
+    /// 0…1 sine ramp over `period` seconds.
+    private static func loopPhase(_ t: TimeInterval, period: TimeInterval) -> CGFloat {
+        CGFloat((sin(t * 2 * .pi / period) + 1) / 2)
     }
 }
 

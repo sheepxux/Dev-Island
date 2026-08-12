@@ -8,13 +8,17 @@ import IslandCore
 struct TaskCard: View {
     let task: AgentTask
     var isHighlighted: Bool = false
+    /// Shared clock owned by the containing panel — one tick for the whole
+    /// list, and only while the list is on screen.
+    var now: Date = Date()
+    /// Whether the card is actually visible. Gates the running shimmer,
+    /// which would otherwise loop forever behind a collapsed panel.
+    var isLive: Bool = true
     let onTap: () -> Void
 
     @State private var isHovering = false
-    /// Re-tick every second so the duration display stays live without
-    /// relying on the parent re-rendering.
-    @State private var tick = Date()
-    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: onTap) {
@@ -62,7 +66,7 @@ struct TaskCard: View {
                     .fill(cardBackground)
                     // Ease the highlight in/out — the hard cut read as
                     // flicker when skimming the cursor down the list.
-                    .animation(.easeOut(duration: 0.12), value: isHovering)
+                    .animation(Motion.hoverHighlight, value: isHovering)
             }
             .overlay {
                 if isHighlighted {
@@ -73,7 +77,7 @@ struct TaskCard: View {
             }
             .overlay(alignment: .bottom) {
                 if task.status == .running {
-                    AnimatedProgressBar()
+                    AnimatedProgressBar(animated: isLive && !reduceMotion)
                         .frame(height: 2)
                         .padding(.horizontal, 1)
                         .padding(.bottom, 1)
@@ -83,8 +87,7 @@ struct TaskCard: View {
         .buttonStyle(PressableButtonStyle())
         .onHover { isHovering = $0 }
         .pointingHandCursor()
-        .onReceive(timer) { tick = $0 }
-        .animation(.easeOut(duration: 0.2), value: isHighlighted)
+        .animation(Motion.colorTransition, value: isHighlighted)
     }
 
     // MARK: - Pieces
@@ -103,9 +106,7 @@ struct TaskCard: View {
     }
 
     private var durationString: String {
-        // tick is referenced so SwiftUI re-evaluates each second
-        _ = tick
-        let elapsed = max(0, Int(Date().timeIntervalSince(task.createdAt)))
+        let elapsed = max(0, Int(now.timeIntervalSince(task.createdAt)))
         let m = elapsed / 60
         let s = elapsed % 60
         if m >= 60 {
@@ -117,7 +118,14 @@ struct TaskCard: View {
 }
 
 /// Indeterminate 2pt progress bar — a thin gradient shimmer that loops.
+///
+/// `animated == false` renders the same bar as a static band. The loop is a
+/// `repeatForever` animation, which SwiftUI keeps driving regardless of
+/// whether anything can see it, so the caller has to switch it off when the
+/// panel is collapsed or the user asked for reduced motion.
 private struct AnimatedProgressBar: View {
+    var animated: Bool = true
+
     @State private var phase: CGFloat = -1
 
     var body: some View {
@@ -128,10 +136,12 @@ private struct AnimatedProgressBar: View {
                 endPoint: .trailing
             )
             .frame(width: geo.size.width * 0.4)
-            .offset(x: phase * geo.size.width * 1.4)
+            .offset(x: (animated ? phase : 0) * geo.size.width * 1.4)
             .animation(
-                .linear(duration: 1.4).repeatForever(autoreverses: false),
-                value: phase
+                animated
+                    ? .linear(duration: Motion.progressShimmerPeriod).repeatForever(autoreverses: false)
+                    : nil,
+                value: animated ? phase : 0
             )
             .clipShape(Capsule())
             .frame(width: geo.size.width, alignment: .leading)
@@ -139,7 +149,16 @@ private struct AnimatedProgressBar: View {
         }
         .background(Color.white.opacity(0.05))
         .clipShape(Capsule())
-        .onAppear {
+        // Restart on every off→on flip, not just on first appearance: a
+        // card that was built while the panel was collapsed would
+        // otherwise stay frozen at its start offset once shown.
+        .onChange(of: animated, initial: true) { _, isAnimated in
+            guard isAnimated else {
+                phase = -1
+                return
+            }
+            // Commit the reset before retargeting, or SwiftUI collapses
+            // both into one update and skips the animation.
             DispatchQueue.main.async { phase = 1 }
         }
     }

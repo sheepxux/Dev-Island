@@ -46,17 +46,17 @@ public final class IslandCoordinator {
     /// observing `mode` so the bar↔panel morph feels like a single shape
     /// breathing.
     ///
-    /// `.smooth` (critically-damped, zero overshoot) is deliberate here:
-    /// the morph spans ~7× in height (≈43→360pt), and any spring overshoot
-    /// at that scale reads as the whole panel "wobbling" rather than as
-    /// playful bounce. The Dynamic-Island feel comes from the bar's hover-
-    /// widen (small delta, where bounce sits well); the bar↔panel morph
-    /// itself is too big for bounce to look intentional. `.smooth` also
-    /// gives a continuous velocity profile (no abrupt acceleration at
-    /// t=0), which keeps the silhouette's edge crisp through the first
-    /// few frames where sub-pixel reflow would otherwise show as a seam.
-    @ObservationIgnored
-    public static let modeAnimation: Animation = .smooth(duration: 0.42, extraBounce: 0.0)
+    /// Resolved per access rather than stored, so toggling "Reduce motion"
+    /// in System Settings takes effect on the next expand instead of
+    /// needing a relaunch. `Motion.islandMorph` is the shared token — the
+    /// views that ride along on this morph reach for the same one, and
+    /// this used to be a second, slightly different curve of its own.
+    public static var modeAnimation: Animation {
+        Motion.respectingReducedMotion(
+            Motion.systemPrefersReducedMotion,
+            preferred: Motion.islandMorph
+        )
+    }
 
     @ObservationIgnored private var expandTimer: Timer?
     @ObservationIgnored private var collapseTimer: Timer?

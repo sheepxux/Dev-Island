@@ -36,6 +36,12 @@ struct IslandRootView: View {
     private let coordinator = IslandCoordinator.shared
     @State private var isHovering = false
     @State private var store = TaskStore.shared
+    /// Intrinsic height the panel content reports through
+    /// `PanelContentHeightKey`. Drives `expandedHeight` so the silhouette
+    /// morphs to the task list instead of a fixed guess.
+    @State private var panelContentHeight: CGFloat = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var mode: IslandCoordinator.Mode { coordinator.mode }
 
@@ -109,7 +115,13 @@ struct IslandRootView: View {
                 onTaskTap: handleTaskTap,
                 onSettingsTap: handleSettingsTap,
                 onConnectTap: handleConnectTap,
-                drawsBackdrop: false
+                drawsBackdrop: false,
+                // The panel stays in the tree while collapsed so it can keep
+                // reporting the height the silhouette morphs to. `isLive`
+                // tells it to stop everything that only matters on screen —
+                // the per-second duration clock, the progress shimmer — so a
+                // hidden panel costs nothing but layout.
+                isLive: mode == .expanded
             )
             .opacity(mode == .expanded ? 1 : 0)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -130,6 +142,21 @@ struct IslandRootView: View {
         .onHover(perform: handleHover)
         .onTapGesture(perform: handleTap)
         .allowsHitTesting(mode == .collapsed || mode == .expanded)
+        .onPreferenceChange(PanelContentHeightKey.self) { height in
+            // Sub-point deltas are layout noise; reacting to them would
+            // feed the measurement back into the frame it measures.
+            guard abs(height - panelContentHeight) > 0.5 else { return }
+            // Animate only while the panel is on screen — a task arriving
+            // while collapsed should just resize the hidden layout so the
+            // next expand lands at the right height in one spring.
+            if mode == .expanded {
+                withAnimation(Motion.respectingReducedMotion(reduceMotion, preferred: Motion.layout)) {
+                    panelContentHeight = height
+                }
+            } else {
+                panelContentHeight = height
+            }
+        }
     }
 
     // MARK: - Backdrop with synced glow
@@ -144,7 +171,7 @@ struct IslandRootView: View {
     private var backdrop: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !needsTimelineGlow)) { context in
             let state = effectiveBarState
-            let phase = StatusPhase.compute(state: state, at: context.date)
+            let phase = StatusPhase.compute(state: state, at: context.date, animated: !reduceMotion)
             ZStack(alignment: .top) {
                 silhouette
                     .fill(Palette.notchBlack)
@@ -158,6 +185,10 @@ struct IslandRootView: View {
     }
 
     private var needsTimelineGlow: Bool {
+        // The glow pulse is ambient motion in the user's peripheral vision
+        // — the first thing Reduce Motion should silence. Parking the
+        // timeline also stops re-rasterizing a full-width shadow at 60fps.
+        guard !reduceMotion else { return false }
         let s = effectiveBarState
         return s == .running || s == .waiting
     }
@@ -234,11 +265,13 @@ struct IslandRootView: View {
             : NotchMetrics.panelWidth
     }
 
-    /// Conservative fixed height for the expanded panel. The inner task
-    /// list caps itself at `maxHeight: 320` (NotchPanelView), so 360 is a
-    /// comfortable upper bound for header + list + footer. Refinement:
-    /// drive this off intrinsic content height via a PreferenceKey.
-    private var expandedHeight: CGFloat { 360 }
+    /// Height of the expanded panel, driven by what the content actually
+    /// measures. Clamped on both ends: the floor keeps a transient zero
+    /// measurement from collapsing the silhouette mid-morph, the ceiling
+    /// keeps the panel inside the host window's container.
+    private var expandedHeight: CGFloat {
+        NotchMetrics.panelHeight(forContentHeight: panelContentHeight)
+    }
 
     // MARK: - Sub-layouts
 
@@ -321,7 +354,7 @@ struct IslandRootView: View {
             // here never worked (AppKit cursorUpdate resets non-key
             // borderless windows to arrow) and leaked stack pushes when a
             // click expanded the panel before the un-hover pop could fire.
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            withAnimation(Motion.respectingReducedMotion(reduceMotion, preferred: Motion.hover)) {
                 isHovering = hovering
             }
 

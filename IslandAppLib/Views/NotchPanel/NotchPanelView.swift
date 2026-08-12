@@ -1,6 +1,18 @@
 import SwiftUI
 import IslandCore
 
+/// Intrinsic height of the panel's content, published to `IslandRootView`
+/// so the morphing silhouette can size itself to what's actually inside.
+/// Before this existed the expanded height was a fixed 360pt guess, and
+/// anything past ~5 tasks pushed the "Connect Service" footer outside the
+/// silhouette's clip.
+struct PanelContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// Expanded panel content. Single-column layout per CLAUDE_CLIENT.md §6
 /// Task 2: header → scrollable task list → "Connect Service" footer.
 struct NotchPanelView: View {
@@ -17,6 +29,17 @@ struct NotchPanelView: View {
     /// (`IslandRootView`) is drawing a shared backdrop that spans both bar
     /// and panel states for a single SwiftUI morph.
     var drawsBackdrop: Bool = true
+    /// Whether the panel is actually on screen. `false` keeps the layout
+    /// (the parent measures it to size the silhouette) but stops the clock
+    /// below and every per-card animation.
+    var isLive: Bool = true
+
+    /// Shared "now" for every card's elapsed-time readout. One clock for
+    /// the whole list instead of a `Timer.publish` per card, and it only
+    /// runs while the panel is visible — the old arrangement woke the app
+    /// once a second per task, forever, to recompute strings nobody could
+    /// see.
+    @State private var now = Date()
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -35,9 +58,31 @@ struct NotchPanelView: View {
                 footerDivider
                 connectFooter
             }
+            // Measured on the content stack rather than the outer frame:
+            // the parent sizes the silhouette FROM this value, so reading
+            // it off the parent-imposed frame would be circular.
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: PanelContentHeightKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            }
         }
         .frame(width: panelWidth)
         .fixedSize(horizontal: false, vertical: true)
+        .task(id: isLive) {
+            guard isLive else { return }
+            // Catch up immediately on expand, then tick. `.task(id:)`
+            // cancels this the moment the panel goes away.
+            now = Date()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { break }
+                now = Date()
+            }
+        }
     }
 
     // MARK: - Top row (header)
@@ -148,6 +193,8 @@ struct NotchPanelView: View {
                             TaskCard(
                                 task: task,
                                 isHighlighted: task.identity == highlightedTask,
+                                now: now,
+                                isLive: isLive,
                                 onTap: { onTaskTap(task) }
                             )
                             .id(task.identity)
@@ -159,12 +206,12 @@ struct NotchPanelView: View {
                 .onChange(of: highlightedTask, initial: true) { _, identity in
                     guard let identity,
                           tasks.contains(where: { $0.identity == identity }) else { return }
-                    withAnimation(.easeOut(duration: 0.25)) {
+                    withAnimation(Motion.contentReveal) {
                         proxy.scrollTo(identity, anchor: .center)
                     }
                 }
             }
-            .frame(maxHeight: 320)
+            .frame(maxHeight: NotchMetrics.panelTaskListMaxHeight)
         }
     }
 

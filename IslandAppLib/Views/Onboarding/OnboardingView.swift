@@ -10,6 +10,8 @@ struct OnboardingView: View {
     @AppStorage(TaskNotificationPreferences.completionsKey)
     private var completions = false
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private let stepCount = 3
 
     var body: some View {
@@ -32,7 +34,10 @@ struct OnboardingView: View {
     }
 
     private var stepTransition: AnyTransition {
-        .asymmetric(
+        // Reduce Motion swaps the horizontal travel for a plain dissolve;
+        // the page still changes, it just doesn't slide across the window.
+        guard !reduceMotion else { return .opacity }
+        return .asymmetric(
             insertion: .move(edge: .trailing).combined(with: .opacity),
             removal: .move(edge: .leading).combined(with: .opacity)
         )
@@ -169,7 +174,7 @@ struct OnboardingView: View {
                     Capsule()
                         .fill(index == step ? Color.accentColor : Color.secondary.opacity(0.25))
                         .frame(width: index == step ? 20 : 7, height: 7)
-                        .animation(.easeOut(duration: 0.2), value: step)
+                        .animation(Motion.colorTransition, value: step)
                 }
             }
 
@@ -199,7 +204,7 @@ struct OnboardingView: View {
     }
 
     private func move(to newStep: Int) {
-        withAnimation(.easeInOut(duration: 0.28)) {
+        withAnimation(Motion.respectingReducedMotion(reduceMotion, preferred: Motion.tourStep)) {
             step = newStep
         }
     }

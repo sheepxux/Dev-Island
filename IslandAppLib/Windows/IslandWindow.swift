@@ -13,13 +13,16 @@ import IslandCore
 /// full-height expanded panel). The empty area is fully transparent, but
 /// a transparent NSWindow still intercepts every mouse event in its frame
 /// — that means clicks across the upper-middle of the screen get
-/// silently swallowed unless we opt out. We do that by polling the
-/// cursor position via a low-frequency timer and toggling
-/// `ignoresMouseEvents` based on whether the cursor is inside the
-/// silhouette's screen-coords rect. Cursor inside silhouette: window
-/// receives events normally (bar is clickable, panel buttons work).
-/// Cursor anywhere else (including the transparent area of our own
-/// window): events fall through to the app below.
+/// silently swallowed unless we opt out. We do that by tracking the
+/// cursor position and toggling `ignoresMouseEvents` based on whether it
+/// is inside the silhouette's screen-coords rect. Cursor inside
+/// silhouette: window receives events normally (bar is clickable, panel
+/// buttons work). Cursor anywhere else (including the transparent area of
+/// our own window): events fall through to the app below.
+///
+/// Tracking is driven by mouse-move monitors, so a boundary crossing takes
+/// effect on the very event that caused it, with a low-frequency timer
+/// behind them as a safety net.
 public final class IslandWindow: NSWindow {
     private var hostingView: NSHostingView<IslandRootView>!
     public private(set) var layout: NotchMetrics.Layout = NotchMetrics.current()
@@ -28,12 +31,18 @@ public final class IslandWindow: NSWindow {
     /// panel max height + shadow padding at bottom. Constants chosen so the
     /// inside SwiftUI shape never touches the window's edges.
     private static let containerWidth: CGFloat  = NotchMetrics.panelMaxWidth + 2 * NotchMetrics.shadowPadding
-    private static let containerHeight: CGFloat = 380 + NotchMetrics.shadowPadding
+    private static let containerHeight: CGFloat = NotchMetrics.panelMaxHeight + NotchMetrics.shadowPadding
 
-    /// Cursor-tracking poll interval. 40ms ≈ 25 Hz — enough that the bar
-    /// "feels" instantly clickable on hover without any visible latency,
-    /// cheap enough that the CPU cost is invisible at idle.
-    private static let mouseTrackingInterval: TimeInterval = 0.04
+    /// Poll interval while the cursor is over the silhouette. Fast, because
+    /// this is the tick that keeps re-asserting the pointing-hand cursor
+    /// against a system that clears it behind our back (see below).
+    private static let activeTrackingInterval: TimeInterval = 0.04
+    /// Poll interval while the cursor is elsewhere — the overwhelming
+    /// majority of the app's lifetime. Boundary crossings are picked up by
+    /// the mouse-move monitors, so this is only a safety net for state
+    /// changes that arrive without a mouse event (window repositioned under
+    /// a stationary cursor, monitor starved during a modal loop).
+    private static let idleTrackingInterval: TimeInterval = 0.25
 
     /// Cached silhouette rect in absolute screen coordinates. Updated
     /// whenever the SwiftUI side reports a new silhouette (mode flip /
@@ -42,6 +51,10 @@ public final class IslandWindow: NSWindow {
     private var silhouetteScreenRect: CGRect = .zero
 
     private var mouseTrackingTimer: Timer?
+    private var mouseMoveMonitors: [Any] = []
+    /// Interval the live timer was scheduled with, so a tick only pays for
+    /// rescheduling when the cursor actually crosses the boundary.
+    private var mouseTrackingInterval: TimeInterval = IslandWindow.idleTrackingInterval
 
     /// Whether the poll below last set the pointing-hand cursor. Cursor
     /// writes happen only on transitions, so panel sub-elements (task
@@ -104,6 +117,9 @@ public final class IslandWindow: NSWindow {
 
     deinit {
         mouseTrackingTimer?.invalidate()
+        for monitor in mouseMoveMonitors {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 
     // MARK: - Click-through tracking
@@ -128,19 +144,53 @@ public final class IslandWindow: NSWindow {
     }
 
     private func startMouseTracking() {
+        installMouseMoveMonitors()
+        scheduleMouseTrackingTimer(interval: Self.idleTrackingInterval)
+    }
+
+    /// Mouse-move monitors make boundary crossings synchronous with the
+    /// event that caused them. On a timer alone, `ignoresMouseEvents`
+    /// lagged the cursor by up to one interval, so a fast move-then-click
+    /// landed while the window was still click-through and the first click
+    /// on the bar went silently to the app underneath.
+    ///
+    /// Mouse events need no accessibility authorization (unlike keyDown),
+    /// so this works without prompting. The global monitor covers the
+    /// normal case where another app is active; the local one covers our
+    /// own (Settings open, notification click).
+    private func installMouseMoveMonitors() {
+        let mask: NSEvent.EventTypeMask = [
+            .mouseMoved,
+            .leftMouseDragged,
+            .rightMouseDragged,
+            .otherMouseDragged,
+        ]
+
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+            self?.tickMouseTracking()
+        }) {
+            mouseMoveMonitors.append(global)
+        }
+
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            self?.tickMouseTracking()
+            return event
+        }) {
+            mouseMoveMonitors.append(local)
+        }
+    }
+
+    private func scheduleMouseTrackingTimer(interval: TimeInterval) {
         mouseTrackingTimer?.invalidate()
-        mouseTrackingTimer = Timer.scheduledTimer(
-            withTimeInterval: Self.mouseTrackingInterval,
-            repeats: true
-        ) { [weak self] _ in
+        mouseTrackingInterval = interval
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.tickMouseTracking()
         }
         // Run during scrolling / dragging too — without .common mode the
         // timer pauses while the user is actively moving the cursor in
         // certain UI contexts.
-        if let t = mouseTrackingTimer {
-            RunLoop.main.add(t, forMode: .common)
-        }
+        RunLoop.main.add(timer, forMode: .common)
+        mouseTrackingTimer = timer
     }
 
     private func tickMouseTracking() {
@@ -151,6 +201,15 @@ public final class IslandWindow: NSWindow {
         let shouldIgnore = !inside
         if ignoresMouseEvents != shouldIgnore {
             ignoresMouseEvents = shouldIgnore
+        }
+
+        // Spin fast only while the cursor is on the silhouette — that's the
+        // only time the cursor re-assert below has anything to do. Away
+        // from the island (nearly always) a quarter-second safety net is
+        // enough, because the move monitors own the transitions.
+        let wantedInterval = inside ? Self.activeTrackingInterval : Self.idleTrackingInterval
+        if wantedInterval != mouseTrackingInterval {
+            scheduleMouseTrackingTimer(interval: wantedInterval)
         }
 
         // Pointing-hand affordance for the collapsed bar (the whole bar is

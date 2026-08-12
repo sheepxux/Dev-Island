@@ -485,6 +485,7 @@ private struct LocalAgentServiceRow: View {
 private struct GeneralSection: View {
     @State private var launchAtLogin: Bool = (SMAppService.mainApp.status == .enabled)
     @State private var lastError: String?
+    @State private var canObserveGlobalKeys = InputPermissions.canObserveGlobalKeys
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -513,12 +514,44 @@ private struct GeneralSection: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
                 }
+
+                if !canObserveGlobalKeys {
+                    Divider().padding(.leading, 16)
+                    escShortcutRow
+                }
             }
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor))
             )
         }
+        // The user grants the permission in System Settings, so re-read it
+        // whenever they come back to us rather than caching it for the
+        // lifetime of the window.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            canObserveGlobalKeys = InputPermissions.canObserveGlobalKeys
+        }
+    }
+
+    private var escShortcutRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "keyboard")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Close the Panel with Esc")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Needs Accessibility access — Esc is pressed while your editor still has focus. Clicking away always closes the panel.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button("Open System Settings") {
+                InputPermissions.openAccessibilitySettings()
+            }
+            .controlSize(.small)
+        }
+        .padding(16)
     }
 
     private func apply(launchAtLogin: Bool) {

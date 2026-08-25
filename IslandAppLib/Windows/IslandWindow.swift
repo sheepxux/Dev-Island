@@ -52,6 +52,8 @@ public final class IslandWindow: NSWindow {
 
     private var mouseTrackingTimer: Timer?
     private var mouseMoveMonitors: [Any] = []
+    private var mouseTrackingStarted = false
+    private var pointerWasInsideSilhouette: Bool?
     /// Interval the live timer was scheduled with, so a tick only pays for
     /// rescheduling when the cursor actually crosses the boundary.
     private var mouseTrackingInterval: TimeInterval = IslandWindow.idleTrackingInterval
@@ -76,9 +78,8 @@ public final class IslandWindow: NSWindow {
 
         isOpaque = false
         backgroundColor = .clear
-        // Start with no shadow — idle bar matches the original Apple notch
-        // (flat, embedded). The SwiftUI root view toggles `hasShadow` on
-        // hover or expand for the affordance-shadow effect.
+        // Start with no shadow — the compact island stays flat and embedded.
+        // The SwiftUI root enables it only for the expanded panel lifecycle.
         hasShadow = false
         level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
@@ -141,11 +142,20 @@ public final class IslandWindow: NSWindow {
             width: localRect.width,
             height: localRect.height
         )
+
+        // A phase completion can grow the accepted region under a stationary
+        // pointer. Reconcile immediately so the first click never waits for
+        // the 250ms idle safety timer and falls through to the app below.
+        if mouseTrackingStarted {
+            tickMouseTracking(forceCollapseReconciliation: true)
+        }
     }
 
     private func startMouseTracking() {
         installMouseMoveMonitors()
         scheduleMouseTrackingTimer(interval: Self.idleTrackingInterval)
+        mouseTrackingStarted = true
+        tickMouseTracking(forceCollapseReconciliation: true)
     }
 
     /// Mouse-move monitors make boundary crossings synchronous with the
@@ -193,11 +203,13 @@ public final class IslandWindow: NSWindow {
         mouseTrackingTimer = timer
     }
 
-    private func tickMouseTracking() {
+    private func tickMouseTracking(forceCollapseReconciliation: Bool = false) {
         // Skip work until we have a real silhouette to compare against.
         guard silhouetteScreenRect.width > 0, silhouetteScreenRect.height > 0 else { return }
         let cursor = NSEvent.mouseLocation  // already screen coords (bottom-left)
         let inside = silhouetteScreenRect.contains(cursor)
+        let crossedBoundary = pointerWasInsideSilhouette != inside
+        pointerWasInsideSilhouette = inside
         let shouldIgnore = !inside
         if ignoresMouseEvents != shouldIgnore {
             ignoresMouseEvents = shouldIgnore
@@ -231,6 +243,25 @@ public final class IslandWindow: NSWindow {
         } else if cursorShowsPointingHand {
             cursorShowsPointingHand = false
             NSCursor.arrow.set()
+        }
+
+        // Direct-click opens are already armed. Reconcile on real boundary
+        // crossings and whenever a newly published phase rect changes under
+        // a stationary pointer; repeated outside mouse moves do not reset the
+        // grace-period timer.
+        if crossedBoundary || forceCollapseReconciliation {
+            reconcileAutomaticCollapse(pointerInside: inside)
+        }
+    }
+
+    private func reconcileAutomaticCollapse(pointerInside: Bool) {
+        let coordinator = IslandCoordinator.shared
+        guard coordinator.mode == .expanded,
+              coordinator.automaticCollapseArmed else { return }
+        if pointerInside {
+            coordinator.cancelCollapse()
+        } else {
+            coordinator.scheduleCollapse()
         }
     }
 

@@ -21,7 +21,7 @@
 #     strategy :github_latest
 #   end
 cask "dev-island" do
-  version "0.1.1"
+  version "0.3.0"
   # Replaced by the GitHub Actions release workflow's per-tag SHA-256
   # before publishing. Local test value is the SHA of the most recent
   # local build under build/Dev-Island.zip.

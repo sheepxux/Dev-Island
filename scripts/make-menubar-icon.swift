@@ -1,9 +1,11 @@
 import AppKit
 
-// Monochrome menu-bar adaptation of docs/media/logo.png:
-// rounded-square frame + ">_" prompt glyph, black on transparent.
-// Rendered at 18pt and 36pt (@2x). Geometry is defined in an 18-unit
-// space and scaled, so both densities are pixel-identical in layout.
+// Monochrome menu-bar adaptation of docs/media/logo.png. The full artwork is
+// deliberately not downsampled into an 18-point slot: its cream material and
+// pixel lettering would turn muddy at that size. Instead this keeps the new
+// logo's two defining silhouettes — the soft square body and the elevated
+// terminal island — as a macOS template image that stays crisp in light and
+// dark menu bars.
 
 func draw(scale: CGFloat) -> NSBitmapImageRep {
     let size = Int(18 * scale)
@@ -22,38 +24,31 @@ func draw(scale: CGFloat) -> NSBitmapImageRep {
 
     NSColor.black.setStroke()
 
-    // Frame: inset so the stroke stays inside 18×18; corner radius echoes
-    // the logo's squircle.
+    // Outer app body.
     let frame = NSBezierPath(
         roundedRect: NSRect(x: 1.0, y: 1.0, width: 16.0, height: 16.0),
-        xRadius: 4.2, yRadius: 4.2
+        xRadius: 4.8, yRadius: 4.8
     )
-    frame.lineWidth = 1.6
+    frame.lineWidth = 1.35
     frame.stroke()
 
-    // ">" chevron — left-of-center, like the logo.
-    let chevron = NSBezierPath()
-    chevron.move(to: NSPoint(x: 4.9, y: 12.1))
-    chevron.line(to: NSPoint(x: 8.4, y: 9.2))
-    chevron.line(to: NSPoint(x: 4.9, y: 6.3))
-    chevron.lineWidth = 1.8
-    chevron.lineCapStyle = .round
-    chevron.lineJoinStyle = .round
-    chevron.stroke()
-
-    // "_" underscore — baseline aligned with chevron's lower arm.
-    let underscore = NSBezierPath()
-    underscore.move(to: NSPoint(x: 9.9, y: 6.3))
-    underscore.line(to: NSPoint(x: 13.4, y: 6.3))
-    underscore.lineWidth = 1.8
-    underscore.lineCapStyle = .round
-    underscore.stroke()
+    // Elevated terminal island from the upper half of the final logo.
+    let island = NSBezierPath(
+        roundedRect: NSRect(x: 2.7, y: 7.8, width: 12.6, height: 7.5),
+        xRadius: 3.2, yRadius: 3.2
+    )
+    island.fill()
 
     NSGraphicsContext.restoreGraphicsState()
     return rep
 }
 
-let out = "/Users/xu/Desktop/DevLand/IslandApp/Resources"
+let scriptURL = URL(fileURLWithPath: #filePath)
+let out = scriptURL
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .appendingPathComponent("IslandApp/Resources")
+    .path
 for (scale, name) in [(CGFloat(1), "MenuBarIcon.png"), (CGFloat(2), "MenuBarIcon@2x.png")] {
     let rep = draw(scale: scale)
     let data = rep.representation(using: .png, properties: [:])!

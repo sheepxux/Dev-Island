@@ -13,8 +13,9 @@ struct PanelContentHeightKey: PreferenceKey {
     }
 }
 
-/// Expanded panel content. Single-column layout per CLAUDE_CLIENT.md §6
-/// Task 2: header → scrollable task list → "Connect Service" footer.
+/// Expanded panel content. A single warm graphite surface with line-based
+/// hierarchy; rows only emerge on hover and task state is never used as a
+/// decorative panel accent.
 struct NotchPanelView: View {
     let tasks: [AgentTask]
     let connectionStatus: ConnectionStatus
@@ -34,13 +35,6 @@ struct NotchPanelView: View {
     /// below and every per-card animation.
     var isLive: Bool = true
 
-    /// Shared "now" for every card's elapsed-time readout. One clock for
-    /// the whole list instead of a `Timer.publish` per card, and it only
-    /// runs while the panel is visible — the old arrangement woke the app
-    /// once a second per task, forever, to recompute strings nobody could
-    /// see.
-    @State private var now = Date()
-
     var body: some View {
         ZStack(alignment: .top) {
             if drawsBackdrop {
@@ -48,15 +42,13 @@ struct NotchPanelView: View {
                     notchWidth: layout.hasNotch ? layout.notchWidth : 0,
                     notchHeight: layout.hasNotch ? layout.notchHeight : 0
                 )
-                .fill(Palette.notchBlack)
+                .fill(Palette.islandTop)
             }
 
             VStack(spacing: 0) {
                 topRow
-                taskList
+                panelBody
                     .padding(.top, layout.hasNotch ? 8 : 0)
-                footerDivider
-                connectFooter
             }
             // Measured on the content stack rather than the outer frame:
             // the parent sizes the silhouette FROM this value, so reading
@@ -72,17 +64,6 @@ struct NotchPanelView: View {
         }
         .frame(width: panelWidth)
         .fixedSize(horizontal: false, vertical: true)
-        .task(id: isLive) {
-            guard isLive else { return }
-            // Catch up immediately on expand, then tick. `.task(id:)`
-            // cancels this the moment the panel goes away.
-            now = Date()
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { break }
-                now = Date()
-            }
-        }
     }
 
     // MARK: - Top row (header)
@@ -113,37 +94,48 @@ struct NotchPanelView: View {
                 Spacer()
                 trailingCluster
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 16)
+            .padding(.top, 11)
+            .padding(.bottom, 9)
         }
     }
 
     @ViewBuilder
     private var titleLabel: some View {
         HStack(spacing: 6) {
-            Text("Tasks")
+            Text("Sessions")
                 .font(Typo.sectionHeader)
-                .foregroundStyle(.white)
-            Text("(\(tasks.count))")
-                .font(Typo.sectionHeader)
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(Palette.warmWhite.opacity(0.9))
+            Text("\(tasks.count)")
+                .font(Typo.barCount)
+                .foregroundStyle(Palette.textTertiary)
                 .monospacedDigit()
         }
     }
 
     @ViewBuilder
     private var trailingCluster: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             connectionDot
-            Button(action: onSettingsTap) {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .frame(width: 22, height: 22)
+            Button(action: onConnectTap) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Palette.textSecondary.opacity(0.72))
+                    .frame(width: 24, height: 26)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(PressableButtonStyle(pressedScale: 0.9))
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+            .pointingHandCursor()
+            .help("Connect an agent")
+
+            Button(action: onSettingsTap) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.textSecondary.opacity(0.72))
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
             .pointingHandCursor()
         }
     }
@@ -159,16 +151,16 @@ struct NotchPanelView: View {
         // status palette when reconnecting/degraded states flap.
         Circle()
             .fill(connectionColor)
-            .frame(width: 6, height: 6)
+            .frame(width: 5, height: 5)
             .animation(Motion.colorTransition, value: connectionStatus)
             .help(connectionTooltip)
     }
 
     private var connectionColor: Color {
         switch connectionStatus {
-        case .connected:                 return Palette.stateCompleted
-        case .reconnecting:              return Palette.stateWaiting
-        case .disconnected, .degraded:   return Palette.stateFailed
+        case .connected:                 return Palette.stateCompleted.opacity(0.85)
+        case .reconnecting, .degraded:   return Palette.stateWaiting.opacity(0.85)
+        case .disconnected:              return Color.white.opacity(0.20)
         }
     }
 
@@ -182,89 +174,99 @@ struct NotchPanelView: View {
     }
 
     @ViewBuilder
-    private var taskList: some View {
-        if tasks.isEmpty {
-            emptyState
-        } else {
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(spacing: 6) {
-                        ForEach(tasks, id: \.identity) { task in
-                            TaskCard(
-                                task: task,
-                                isHighlighted: task.identity == highlightedTask,
-                                now: now,
-                                isLive: isLive,
-                                onTap: { onTaskTap(task) }
-                            )
-                            .id(task.identity)
-                        }
+    private var panelBody: some View {
+        // Keep one stable hierarchy across reveal and status changes. Swapping
+        // a direct list for a TimelineView rebuilt ScrollViewReader, which
+        // could lose both the user's position and notification pre-position.
+        TimelineView(
+            .animation(
+                minimumInterval: 1,
+                paused: !isLive || !hasLiveDurations
+            )
+        ) { context in
+            if tasks.isEmpty {
+                emptyState
+            } else {
+                taskList(now: context.date)
+            }
+        }
+    }
+
+    private var hasLiveDurations: Bool {
+        tasks.contains { $0.status == .running || $0.status == .waiting }
+    }
+
+    private func taskList(now: Date) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 1) {
+                    ForEach(tasks, id: \.identity) { task in
+                        TaskCard(
+                            task: task,
+                            isHighlighted: task.identity == highlightedTask,
+                            now: now,
+                            onTap: { onTaskTap(task) }
+                        )
+                        .id(task.identity)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 8)
                 }
-                .onChange(of: highlightedTask, initial: true) { _, identity in
-                    guard let identity,
-                          tasks.contains(where: { $0.identity == identity }) else { return }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+            }
+            .onChange(of: highlightedTask, initial: true) { _, identity in
+                guard let identity,
+                      tasks.contains(where: { $0.identity == identity }) else { return }
+                if isLive {
                     withAnimation(Motion.contentReveal) {
+                        proxy.scrollTo(identity, anchor: .center)
+                    }
+                } else {
+                    var transaction = Transaction()
+                    transaction.animation = nil
+                    withTransaction(transaction) {
                         proxy.scrollTo(identity, anchor: .center)
                     }
                 }
             }
-            .frame(maxHeight: NotchMetrics.panelTaskListMaxHeight)
         }
+        .frame(maxHeight: NotchMetrics.panelTaskListMaxHeight)
     }
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "tray")
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(.white.opacity(0.3))
-            Text("No active tasks")
-                .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.5))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-    }
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Nothing needs you")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Palette.warmWhite.opacity(0.78))
 
-    @ViewBuilder
-    private var footerDivider: some View {
-        Rectangle()
-            .fill(Palette.divider)
-            .frame(height: 1)
-            .padding(.horizontal, 14)
-    }
+            Text("Agent sessions will appear here automatically.")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.textTertiary)
 
-    @ViewBuilder
-    private var connectFooter: some View {
-        Button(action: onConnectTap) {
-            HStack(spacing: 7) {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
-                Text("Connect Service")
-                    .font(.system(size: 12, weight: .medium))
-                Spacer()
+            Button(action: onConnectTap) {
+                HStack(spacing: 6) {
+                    Text("Connect an agent")
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Palette.warmWhite.opacity(0.66))
+                .contentShape(Rectangle())
             }
-            .foregroundStyle(.white.opacity(0.55))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 11)
-            .contentShape(Rectangle())
+            .buttonStyle(PressableButtonStyle())
+            .pointingHandCursor()
+            .padding(.top, 5)
         }
-        .buttonStyle(PressableButtonStyle())
-        .pointingHandCursor()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 18)
     }
 
     // MARK: - Geometry
 
     private var panelWidth: CGFloat {
-        if layout.hasNotch {
-            // Wide enough that the notch corridor (top center) doesn't
-            // squeeze the header content. Cap at panelMaxWidth.
-            return min(NotchMetrics.panelMaxWidth, layout.notchWidth + 240)
-        }
-        return NotchMetrics.panelWidth
+        NotchMetrics.panelWidth(for: layout)
     }
 
 }

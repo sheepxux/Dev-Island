@@ -1,10 +1,9 @@
 import XCTest
 @testable import IslandAppLib
 
-/// `StatusPhase` is the shared time→appearance function behind the status
-/// dot and the bar's glow. Both read it every frame, so the two have to
-/// agree, and under Reduce Motion both have to come to rest rather than
-/// freeze on whatever frame their timeline happened to stop on.
+/// `StatusPhase` is the shared time→scale function behind the status dot.
+/// Under Reduce Motion every state must come to rest rather than freeze on
+/// whichever frame its timeline happened to stop on.
 final class StatusPhaseTests: XCTestCase {
     private let t0 = Date(timeIntervalSinceReferenceDate: 0)
 
@@ -22,11 +21,27 @@ final class StatusPhaseTests: XCTestCase {
     func testLoopPeriodsAreHonored() {
         // One full period later the phase must repeat, or the dot would
         // visibly jump when a paused timeline resumes.
-        let fullCycle = t0.addingTimeInterval(Motion.waitingPulsePeriod)
+        let fullCycle = t0.addingTimeInterval(Motion.waitingBreathPeriod)
 
         XCTAssertEqual(
             StatusPhase.compute(state: .waiting, at: t0).dotScale,
             StatusPhase.compute(state: .waiting, at: fullCycle).dotScale,
+            accuracy: 0.0001
+        )
+    }
+
+    func testLoopAmplitudesStayRestrained() {
+        let runningPeak = t0.addingTimeInterval(Motion.runningBreathPeriod / 4)
+        let waitingPeak = t0.addingTimeInterval(Motion.waitingBreathPeriod / 4)
+
+        XCTAssertEqual(
+            StatusPhase.compute(state: .running, at: runningPeak).dotScale,
+            1.08,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            StatusPhase.compute(state: .waiting, at: waitingPeak).dotScale,
+            1.12,
             accuracy: 0.0001
         )
     }
@@ -44,30 +59,29 @@ final class StatusPhaseTests: XCTestCase {
         }
     }
 
-    func testReducedMotionKeepsStateReadableAsGlow() {
-        // Scale is what we drop; the colored glow is the remaining signal
-        // that separates running/waiting from idle, so it must survive.
-        let running = StatusPhase.compute(state: .running, at: t0, animated: false)
-        let waiting = StatusPhase.compute(state: .waiting, at: t0, animated: false)
-
-        XCTAssertGreaterThan(running.glowOpacity, 0)
-        XCTAssertGreaterThan(waiting.glowOpacity, running.glowOpacity)
-    }
-
     func testReducedMotionIsTimeInvariant() {
         let early = StatusPhase.compute(state: .waiting, at: t0, animated: false)
         let late = StatusPhase.compute(state: .waiting, at: t0.addingTimeInterval(37), animated: false)
 
-        XCTAssertEqual(early.glowRadius, late.glowRadius)
-        XCTAssertEqual(early.glowOpacity, late.glowOpacity)
+        XCTAssertEqual(early.dotScale, late.dotScale)
     }
 
-    func testIdleIsAlwaysDark() {
-        for animated in [true, false] {
-            let phase = StatusPhase.compute(state: .idle, at: t0, animated: animated)
-            XCTAssertEqual(phase.dotScale, 1.0)
-            XCTAssertEqual(phase.glowRadius, 0)
-            XCTAssertEqual(phase.glowOpacity, 0)
+    func testIdleAndTerminalStatesStayStatic() {
+        for state in [BarState.idle, .completed, .failed] {
+            for animated in [true, false] {
+                let phase = StatusPhase.compute(state: state, at: t0, animated: animated)
+                XCTAssertEqual(phase.dotScale, 1.0)
+            }
+        }
+    }
+
+    func testEveryStateDisablesColoredGlow() {
+        for state in [BarState.idle, .running, .waiting, .completed, .failed] {
+            for animated in [true, false] {
+                let phase = StatusPhase.compute(state: state, at: t0, animated: animated)
+                XCTAssertEqual(phase.glowRadius, 0)
+                XCTAssertEqual(phase.glowOpacity, 0)
+            }
         }
     }
 }

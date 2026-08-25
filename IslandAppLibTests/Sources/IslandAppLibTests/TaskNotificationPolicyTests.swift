@@ -70,6 +70,34 @@ final class TaskNotificationPolicyTests: XCTestCase {
         XCTAssertNil(coordinator.highlightedTask)
     }
 
+    @MainActor
+    func testProgrammaticOpenStaysUnarmedUntilPointerEngages() {
+        let coordinator = IslandCoordinator.shared
+        coordinator.collapse()
+
+        coordinator.expand()
+        XCTAssertFalse(coordinator.automaticCollapseArmed)
+
+        coordinator.armAutomaticCollapse()
+        XCTAssertTrue(coordinator.automaticCollapseArmed)
+
+        coordinator.collapse()
+        XCTAssertFalse(coordinator.automaticCollapseArmed)
+    }
+
+    @MainActor
+    func testDirectIslandClickArmsAutomaticCollapse() {
+        let coordinator = IslandCoordinator.shared
+        coordinator.collapse()
+
+        coordinator.expandFromPointer()
+
+        XCTAssertEqual(coordinator.mode, .expanded)
+        XCTAssertTrue(coordinator.automaticCollapseArmed)
+
+        coordinator.collapse()
+    }
+
     private func task(_ status: TaskStatus) -> AgentTask {
         AgentTask(
             id: "session-1",

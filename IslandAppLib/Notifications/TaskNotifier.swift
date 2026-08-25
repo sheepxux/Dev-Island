@@ -1,4 +1,3 @@
-import AppKit
 import IslandCore
 import OSLog
 import UserNotifications
@@ -96,9 +95,10 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
         Bundle.main.bundleURL.pathExtension == "app"
     }
 
-    /// Attach once to the transition callback and request permission when at
-    /// least one class of notification is enabled.
-    public func start() {
+    /// Attach once to the transition callback. Authorization is opt-in at a
+    /// deliberate UI moment (Welcome Tour completion or a Settings toggle)
+    /// so the system sheet never competes with first launch.
+    public func start(requestAuthorization: Bool = false) {
         guard !started else { return }
         started = true
 
@@ -113,30 +113,41 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
         }
 
         UNUserNotificationCenter.current().delegate = self
-        refreshAuthorizationIfNeeded()
+        if requestAuthorization {
+            refreshAuthorizationIfNeeded()
+        } else {
+            refreshAuthorizationState()
+        }
     }
 
-    /// Called when Settings enables a notification category after launch.
+    /// Fire-and-forget entry point used by Settings. Welcome Tour awaits the
+    /// async variant after its window has fully disappeared so the system
+    /// permission sheet never competes with our own transition.
     public func refreshAuthorizationIfNeeded() {
+        Task { await requestAuthorizationIfNeeded() }
+    }
+
+    /// Request authorization only when at least one notification category is
+    /// enabled. Returning after the system response lets callers sequence the
+    /// surrounding UI without guessing how long the sheet will remain open.
+    public func requestAuthorizationIfNeeded() async {
         guard Self.hasNotificationSupport else { return }
         let defaults = UserDefaults.standard
         let isEnabled = defaults.bool(forKey: TaskNotificationPreferences.attentionRequiredKey)
             || defaults.bool(forKey: TaskNotificationPreferences.completionsKey)
         guard isEnabled else { return }
 
-        Task {
-            do {
-                let granted = try await UNUserNotificationCenter.current()
-                    .requestAuthorization(options: [.alert, .sound])
-                taskNotifierLog.info("Notification authorization granted=\(granted)")
-                publishAuthorizationIssue(
-                    granted ? nil : "Notifications are disabled in System Settings."
-                )
-            } catch {
-                let nsError = error as NSError
-                taskNotifierLog.error("Notification authorization failed: domain=\(nsError.domain, privacy: .public) code=\(nsError.code) description=\(nsError.localizedDescription, privacy: .public)")
-                publishAuthorizationIssue(nsError.localizedDescription)
-            }
+        do {
+            let granted = try await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound])
+            taskNotifierLog.info("Notification authorization granted=\(granted)")
+            publishAuthorizationIssue(
+                granted ? nil : "Notifications are disabled in System Settings."
+            )
+        } catch {
+            let nsError = error as NSError
+            taskNotifierLog.error("Notification authorization failed: domain=\(nsError.domain, privacy: .public) code=\(nsError.code) description=\(nsError.localizedDescription, privacy: .public)")
+            publishAuthorizationIssue(nsError.localizedDescription)
         }
     }
 
@@ -245,7 +256,6 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
             let identity = TaskIdentity(source: source, id: id)
             Task { @MainActor in
                 IslandCoordinator.shared.expand(highlighting: identity)
-                NSApp.activate(ignoringOtherApps: true)
             }
         }
         completionHandler()

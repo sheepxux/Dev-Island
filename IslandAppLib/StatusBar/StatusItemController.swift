@@ -56,6 +56,7 @@ public final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(actionItem("打开面板", #selector(openPanel), key: "p"))
         menu.addItem(actionItem("设置…", #selector(openSettings), key: ","))
+        menu.addItem(actionItem("欢迎导览…", #selector(openWelcomeTour), key: ""))
 
         menu.addItem(.separator())
 
@@ -70,6 +71,10 @@ public final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() {
         NotificationCenter.default.post(name: .islandOpenSettingsRequested, object: nil)
+    }
+
+    @objc private func openWelcomeTour() {
+        NotificationCenter.default.post(name: .islandOpenOnboardingRequested, object: nil)
     }
 
     @objc private func quit() {

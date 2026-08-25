@@ -33,6 +33,13 @@ public final class IslandCoordinator {
     /// panel or opens the task.
     public private(set) var highlightedTask: TaskIdentity?
 
+    /// Programmatic opens stay put until the user explicitly engages with
+    /// the panel. A synthetic hover-out can arrive when a view first grows
+    /// under the pointer; keeping the arming bit here (rather than in view
+    /// state) makes that event unable to dismiss notification/onboarding
+    /// opens before they are readable.
+    public private(set) var automaticCollapseArmed = false
+
     /// Called on the main thread whenever `mode` actually changes. Kept for
     /// AppKit-side window plumbing (e.g. installing event monitors). SwiftUI
     /// views can observe `mode` directly via Observation.
@@ -40,7 +47,12 @@ public final class IslandCoordinator {
     public var onModeChange: ((Mode) -> Void)?
 
     public static let expandDelay: TimeInterval = 0.12
-    public static let collapseDelay: TimeInterval = 0.30
+    /// A forgiving exit grace period. 300ms was short enough that moving
+    /// diagonally from a card toward the panel edge could collapse the
+    /// island before the user corrected their pointer. 450ms still feels
+    /// immediate, while making the surface much harder to dismiss by
+    /// accident.
+    public static let collapseDelay: TimeInterval = 0.60
 
     /// Animation applied to every mode flip. Used by SwiftUI views
     /// observing `mode` so the bar↔panel morph feels like a single shape
@@ -67,6 +79,15 @@ public final class IslandCoordinator {
 
     public func expand() {
         cancelAllTimers()
+        automaticCollapseArmed = false
+        setMode(.expanded)
+    }
+
+    /// Expand from a direct click on the compact island. The pointer has
+    /// already engaged with the surface, so leaving it may auto-collapse.
+    public func expandFromPointer() {
+        cancelAllTimers()
+        automaticCollapseArmed = true
         setMode(.expanded)
     }
 
@@ -74,12 +95,14 @@ public final class IslandCoordinator {
     /// is intentional: it lets two notification clicks retarget the panel.
     public func expand(highlighting task: TaskIdentity) {
         cancelAllTimers()
+        automaticCollapseArmed = false
         highlightedTask = task
         setMode(.expanded)
     }
 
     public func collapse() {
         cancelAllTimers()
+        automaticCollapseArmed = false
         highlightedTask = nil
         setMode(.collapsed)
     }
@@ -115,7 +138,7 @@ public final class IslandCoordinator {
     }
 
     public func scheduleCollapse() {
-        guard mode == .expanded else { return }
+        guard mode == .expanded, automaticCollapseArmed else { return }
         expandTimer?.invalidate(); expandTimer = nil
         collapseTimer?.invalidate()
         collapseTimer = Timer.scheduledTimer(
@@ -129,6 +152,11 @@ public final class IslandCoordinator {
     public func cancelCollapse() {
         collapseTimer?.invalidate()
         collapseTimer = nil
+    }
+
+    public func armAutomaticCollapse() {
+        guard mode == .expanded else { return }
+        automaticCollapseArmed = true
     }
 
     // MARK: - Private

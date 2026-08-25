@@ -18,25 +18,25 @@ enum Motion {
     /// window wobble rather than tactility. `.smooth` also has no abrupt
     /// acceleration at t=0, which keeps the silhouette's edge crisp through
     /// the first few frames where sub-pixel reflow would show as a seam.
-    static let islandMorph = Animation.smooth(duration: 0.38, extraBounce: 0)
+    static let islandMorphDuration: TimeInterval = 0.30
+    static let islandMorph = Animation.smooth(duration: islandMorphDuration, extraBounce: 0)
     /// Small hover and press geometry changes can carry a hint of energy.
-    static let hover = Animation.snappy(duration: 0.22, extraBounce: 0.08)
+    static let hover = Animation.smooth(duration: 0.16, extraBounce: 0)
     /// Content enters after its containing surface has begun to settle.
-    static let contentReveal = Animation.smooth(duration: 0.26, extraBounce: 0)
+    static let contentReveal = Animation.easeOut(duration: 0.18)
     /// Task-list and empty-state height changes.
-    static let layout = Animation.smooth(duration: 0.32, extraBounce: 0)
+    static let layoutDuration: TimeInterval = 0.24
+    static let layout = Animation.smooth(duration: layoutDuration, extraBounce: 0)
     /// Welcome Tour page choreography.
-    static let tourStep = Animation.smooth(duration: 0.42, extraBounce: 0)
-    /// Welcome Tour's persistent island illustration changing state.
-    static let tourHero = Animation.spring(response: 0.48, dampingFraction: 0.86)
+    static let tourStep = Animation.smooth(duration: 0.28, extraBounce: 0)
     /// Tiny controls should acknowledge immediately.
-    static let press = Animation.easeOut(duration: 0.09)
+    static let press = Animation.easeOut(duration: 0.08)
     /// Color cross-fade between states.
-    static let colorTransition = Animation.easeInOut(duration: 0.22)
+    static let colorTransition = Animation.easeInOut(duration: 0.18)
     /// Row background following the cursor. Shorter than `colorTransition`
     /// on purpose: skimming down a list shouldn't leave a trail of rows
     /// fading out behind the pointer.
-    static let hoverHighlight = Animation.easeOut(duration: 0.12)
+    static let hoverHighlight = Animation.easeOut(duration: 0.10)
 
     // MARK: - Loop periods
 
@@ -47,18 +47,11 @@ enum Motion {
     // switch. These are the periods that the phase math keys off.
 
     static let runningBreathPeriod: TimeInterval = 2
-    static let waitingPulsePeriod: TimeInterval = 1
-    static let waitingRipplePeriod: TimeInterval = 1.5
-    /// Sweep of the indeterminate bar under a running task card.
-    static let progressShimmerPeriod: TimeInterval = 1.4
-
-    /// One-shot "completed" flash on the status dot. `completedFlashRise`
-    /// is both the rise duration and how long the dot is held at full
-    /// scale before settling, so it's named rather than repeated at the
-    /// animation and the scheduling call site — those two drifting apart
-    /// is what makes a flash look like a stutter.
-    static let completedFlashRise: TimeInterval = 0.18
-    static let completedFlashSettle: TimeInterval = 0.27
+    static let waitingBreathPeriod: TimeInterval = 1.4
+    /// The delay before the completed acknowledgement settles must match its
+    /// rise duration, so both legs use named tokens rather than inline values.
+    static let completedFeedbackRise: TimeInterval = 0.18
+    static let completedFeedbackSettle: TimeInterval = 0.27
 
     // MARK: - Accessibility
 

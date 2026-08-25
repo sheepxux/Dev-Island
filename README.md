@@ -168,7 +168,7 @@ changes go through [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
 | macOS island UI (notched + non-notched) | ✅ Shipping |
 | Manus task sync (polling, webhook fallback path) | ✅ Shipping |
 | Settings + Launch at Login + banner notifications | ✅ Shipping |
-| Signed + notarized public release | ✅ v0.1.1 on [Releases](https://github.com/sheepxux/Dev-Island/releases) |
+| Signed + notarized public release | ✅ v0.3.0 on [Releases](https://github.com/sheepxux/Dev-Island/releases) |
 | Homebrew Cask tap | 🚧 Draft in `dist/homebrew-island/` |
 | Claude Code connector (local hooks) | ✅ Shipping |
 | Codex connector (local hooks) | ✅ Shipping |

@@ -340,8 +340,8 @@ struct IslandRootView: View {
 
     private var syntheticBarContent: some View {
         HStack(spacing: 10) {
-            StatusDot(state: effectiveBarState, size: 10)
-                .frame(width: 14, height: 14)
+            StatusDot(state: effectiveBarState, size: 12)
+                .frame(width: 16, height: 16)
 
             Text(barTitle)
                 .font(Typo.barTitle)

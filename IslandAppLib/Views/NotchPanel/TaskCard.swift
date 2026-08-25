@@ -3,8 +3,8 @@ import IslandCore
 
 /// One task row in the panel.
 ///
-/// Layout: status dot • tool logo • title + phase·duration • chevron.
-/// State appears once, in the dot. Rows stay transparent until hovered so the
+/// Layout: status matrix • tool logo • title + phase·duration • chevron.
+/// State appears once, in the matrix. Rows stay transparent until hovered so the
 /// panel reads as one calm surface instead of a stack of animated cards.
 struct TaskCard: View {
     let task: AgentTask
@@ -21,13 +21,14 @@ struct TaskCard: View {
             HStack(spacing: 11) {
                 ZStack(alignment: .bottomTrailing) {
                     toolLogo
-                    Circle()
-                        .fill(task.status.color)
-                        .frame(width: 6, height: 6)
-                        .overlay {
-                            Circle()
-                                .stroke(Palette.islandTop, lineWidth: 1.5)
-                        }
+                    DotMatrixMark(
+                        color: task.status.color,
+                        size: 9,
+                        pattern: task.status.matrixPattern,
+                        intensity: task.status.matrixIntensity
+                    )
+                        .compositingGroup()
+                        .shadow(color: Palette.islandTop, radius: 1.5)
                         .offset(x: 1, y: 1)
                         .animation(Motion.colorTransition, value: task.status)
                 }

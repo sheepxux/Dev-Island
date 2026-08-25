@@ -249,11 +249,11 @@ struct OnboardingView: View {
                 .fill(Palette.hairline)
                 .frame(height: 1)
 
-            signalRow(title: "Running", detail: "3 sessions", color: Palette.stateRunning)
+            signalRow(title: "Running", detail: "3 sessions", state: .running)
             rowDivider
-            signalRow(title: "Needs attention", detail: "None", color: Palette.stateWaiting)
+            signalRow(title: "Needs attention", detail: "None", state: .waiting)
             rowDivider
-            signalRow(title: "Completed", detail: "2 today", color: Palette.stateCompleted)
+            signalRow(title: "Completed", detail: "2 today", state: .completed)
         }
         .background(stageSurface)
         .accessibilityElement(children: .contain)
@@ -261,9 +261,7 @@ struct OnboardingView: View {
 
     private var compactIslandPreview: some View {
         HStack(spacing: 11) {
-            Circle()
-                .fill(Palette.stateRunning)
-                .frame(width: 7, height: 7)
+            staticSignal(.running, size: 10)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Prepare release build")
@@ -305,11 +303,9 @@ struct OnboardingView: View {
         )
     }
 
-    private func signalRow(title: String, detail: String, color: Color) -> some View {
+    private func signalRow(title: String, detail: String, state: BarState) -> some View {
         HStack(spacing: 10) {
-            Circle()
-                .fill(color)
-                .frame(width: 6, height: 6)
+            staticSignal(state, size: 8)
 
             Text(title)
                 .font(Typo.tourStageBody.weight(.medium))
@@ -369,7 +365,7 @@ struct OnboardingView: View {
             notificationRow(
                 title: "Needs input or failed",
                 detail: "Recommended",
-                color: Palette.stateWaiting,
+                state: .waiting,
                 isOn: $attentionRequired
             )
 
@@ -379,7 +375,7 @@ struct OnboardingView: View {
             notificationRow(
                 title: "Task completed",
                 detail: "Off by default",
-                color: Palette.stateCompleted,
+                state: .completed,
                 isOn: $completions
             )
 
@@ -388,9 +384,7 @@ struct OnboardingView: View {
                 .frame(height: 1)
 
             HStack(spacing: 9) {
-                Circle()
-                    .fill(Palette.stateWaiting)
-                    .frame(width: 6, height: 6)
+                staticSignal(.waiting, size: 8)
                 Text("Codex · Waiting for approval")
                     .font(Typo.tourStageBody)
 
@@ -410,14 +404,12 @@ struct OnboardingView: View {
     private func notificationRow(
         title: String,
         detail: String,
-        color: Color,
+        state: BarState,
         isOn: Binding<Bool>
     ) -> some View {
         Toggle(isOn: isOn) {
             HStack(spacing: 12) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 6, height: 6)
+                staticSignal(state, size: 8)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
@@ -435,6 +427,15 @@ struct OnboardingView: View {
         .frame(height: 76)
         .accessibilityLabel(title)
         .accessibilityHint(detail)
+    }
+
+    private func staticSignal(_ state: BarState, size: CGFloat) -> some View {
+        DotMatrixMark(
+            color: state.color,
+            size: size,
+            pattern: state.matrixPattern,
+            intensity: state.matrixIntensity
+        )
     }
 
     private func stageHeader(title: String, trailing: String) -> some View {

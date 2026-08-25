@@ -35,6 +35,9 @@ struct DebugSandboxView: View {
             sectionHeader("Connection")
             connectionRow
 
+            sectionHeader("Signal language")
+            signalLanguagePreview
+
             Divider().padding(.vertical, 4)
 
             livePreview
@@ -82,6 +85,33 @@ struct DebugSandboxView: View {
             Button("Reconnecting") { store.debugSetConnectionStatus(.reconnecting) }
             Button("Disconnected") { store.debugSetConnectionStatus(.disconnected) }
         }
+    }
+
+    private var signalLanguagePreview: some View {
+        HStack(spacing: 0) {
+            signalSample("Idle", state: .idle)
+            signalSample("Run", state: .running)
+            signalSample("Wait", state: .waiting)
+            signalSample("Done", state: .completed)
+            signalSample("Fail", state: .failed)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Palette.notchBlack)
+        )
+    }
+
+    private func signalSample(_ label: String, state: BarState) -> some View {
+        VStack(spacing: 6) {
+            StatusDot(state: state, size: 14)
+                .frame(width: 20, height: 20)
+            Text(label)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(Palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Live preview

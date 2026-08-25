@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Status indicator dot with restrained state-driven animation.
+/// Status indicator rendered as Dev Island's circular 3×3 point field.
 ///
 /// State → behavior:
 /// - **Idle** — static gray.
-/// - **Running** — scale 1.0 ↔ 1.08 with a slow breath.
-/// - **Waiting** — scale 1.0 ↔ 1.12 with a slightly quicker breath.
-/// - **Completed** — one restrained 1.0 → 1.18 → 1.0 acknowledgement.
+/// - **Running** — a slow diagonal flow inside the matrix.
+/// - **Waiting** — a slightly quicker centre-out signal.
+/// - **Completed** — one restrained 1.0 → 1.12 → 1.0 acknowledgement.
 /// - **Failed** — static red.
 ///
 /// Running and waiting use a time-derived phase rather than a repeating
@@ -26,10 +26,15 @@ struct StatusDot: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !needsAnimation)) { context in
             let phase = StatusPhase.compute(state: state, at: context.date, animated: !reduceMotion)
 
-            Circle()
-                .fill(state.color)
-                .frame(width: size, height: size)
-                .scaleEffect(currentScale(loopScale: phase.dotScale))
+            DotMatrixMark(
+                color: state.color,
+                size: size,
+                phase: phase.matrixPhase,
+                motion: state.matrixMotion,
+                pattern: state.matrixPattern,
+                intensity: state.matrixIntensity
+            )
+                .scaleEffect(state == .completed ? completedScale : 1)
                 .animation(Motion.colorTransition, value: state)
         }
         .onChange(of: state, initial: false) { oldValue, newValue in
@@ -51,17 +56,6 @@ struct StatusDot: View {
         }
     }
 
-    /// Compose the live loop scale with the one-shot completed feedback so they
-    /// don't fight. Running/waiting drive `loopScale`; completed multiplies in
-    /// `completedScale` instead.
-    private func currentScale(loopScale: CGFloat) -> CGFloat {
-        switch state {
-        case .running, .waiting: return loopScale
-        case .completed:         return completedScale
-        case .idle, .failed:     return 1.0
-        }
-    }
-
     // MARK: - Effects
 
     private func handleStateChange(from old: BarState, to new: BarState) {
@@ -78,7 +72,7 @@ struct StatusDot: View {
 
             completedScale = 1.0
             withAnimation(.easeOut(duration: Motion.completedFeedbackRise)) {
-                completedScale = 1.18
+                completedScale = 1.12
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + Motion.completedFeedbackRise) {
                 guard completedFeedbackID == feedbackID else { return }
@@ -94,12 +88,12 @@ struct StatusDot: View {
 
 // MARK: - Phase computation
 
-/// Time-keyed animation phase for the bar/dot. Call `compute(state:at:)`
-/// from a `TimelineView` and apply `dotScale` to the indicator.
+/// Time-keyed animation phase for the status matrix. Call `compute(state:at:)`
+/// from a `TimelineView` and pass `matrixPhase` into `DotMatrixMark`.
 struct StatusPhase {
-    /// Current scale of the dot (loop animations only — completed feedback is
-    /// handled separately by `StatusDot`).
-    let dotScale: CGFloat
+    /// Normalized 0…1 cycle for internal point movement. Completed feedback
+    /// is handled separately by `StatusDot`.
+    let matrixPhase: CGFloat
     /// Kept at zero while the standalone `NotchBarView` still reads the shared
     /// phase. This guarantees that path cannot reintroduce a colored halo.
     let glowRadius: CGFloat = 0
@@ -112,21 +106,23 @@ struct StatusPhase {
 
         switch state {
         case .running:
-            let p = animated ? loopPhase(t, period: Motion.runningBreathPeriod) : 0.5
-            return StatusPhase(dotScale: animated ? 1.0 + 0.08 * p : 1.0)
+            let p = animated ? cyclePhase(t, period: Motion.runningBreathPeriod) : 0.5
+            return StatusPhase(matrixPhase: p)
 
         case .waiting:
-            let p = animated ? loopPhase(t, period: Motion.waitingBreathPeriod) : 0.5
-            return StatusPhase(dotScale: animated ? 1.0 + 0.12 * p : 1.0)
+            let p = animated ? cyclePhase(t, period: Motion.waitingBreathPeriod) : 0.5
+            return StatusPhase(matrixPhase: p)
 
         case .idle, .completed, .failed:
-            return StatusPhase(dotScale: 1.0)
+            return StatusPhase(matrixPhase: 0.5)
         }
     }
 
-    /// 0…1 sine ramp over `period` seconds.
-    private static func loopPhase(_ t: TimeInterval, period: TimeInterval) -> CGFloat {
-        CGFloat((sin(t * 2 * .pi / period) + 1) / 2)
+    /// Linear 0…1 cycle over `period` seconds. Each point applies its own
+    /// easing and phase offset, producing continuous motion without moving
+    /// the mark's outer footprint.
+    private static func cyclePhase(_ t: TimeInterval, period: TimeInterval) -> CGFloat {
+        CGFloat(t.truncatingRemainder(dividingBy: period) / period)
     }
 }
 

@@ -146,12 +146,16 @@ struct NotchPanelView: View {
 
     @ViewBuilder
     private var connectionDot: some View {
-        // 250ms cross-fade matches the bar's StatusDot color transition
+        // The same point-field signature used by task status keeps connection
+        // state from falling back to a generic system dot.
         // — keeps the panel header consistent with the rest of the
         // status palette when reconnecting/degraded states flap.
-        Circle()
-            .fill(connectionColor)
-            .frame(width: 5, height: 5)
+        DotMatrixMark(
+            color: connectionColor,
+            size: 8,
+            pattern: connectionPattern,
+            intensity: connectionIntensity
+        )
             .animation(Motion.colorTransition, value: connectionStatus)
             .help(connectionTooltip)
     }
@@ -161,6 +165,22 @@ struct NotchPanelView: View {
         case .connected:                 return Palette.stateCompleted.opacity(0.85)
         case .reconnecting, .degraded:   return Palette.stateWaiting.opacity(0.85)
         case .disconnected:              return Color.white.opacity(0.20)
+        }
+    }
+
+    private var connectionPattern: DotMatrixMark.Pattern {
+        switch connectionStatus {
+        case .connected:               return .plus
+        case .reconnecting, .degraded: return .ring
+        case .disconnected:            return .field
+        }
+    }
+
+    private var connectionIntensity: Double {
+        switch connectionStatus {
+        case .connected:               return 0.78
+        case .reconnecting, .degraded: return 1.00
+        case .disconnected:            return 0.42
         }
     }
 

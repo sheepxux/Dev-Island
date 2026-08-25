@@ -11,8 +11,8 @@ public enum NotchMetrics {
     public static let sideExtension: CGFloat = 90
     /// Inner inset for content inside each side extension.
     public static let sideInset: CGFloat = 10
-    /// Status dot diameter.
-    public static let dotSize: CGFloat = 12
+    /// Status point-field diameter.
+    public static let dotSize: CGFloat = 14
     /// Outer-bottom corner radius for the hardware-notch bar extensions.
     public static let cornerRadius: CGFloat = 11
     /// Outer-bottom corner radius for the synthetic notch on non-notched Macs.

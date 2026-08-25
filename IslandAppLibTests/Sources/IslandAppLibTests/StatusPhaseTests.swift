@@ -1,20 +1,20 @@
 import XCTest
 @testable import IslandAppLib
 
-/// `StatusPhase` is the shared time→scale function behind the status dot.
+/// `StatusPhase` is the shared time→cycle function behind the status matrix.
 /// Under Reduce Motion every state must come to rest rather than freeze on
 /// whichever frame its timeline happened to stop on.
 final class StatusPhaseTests: XCTestCase {
     private let t0 = Date(timeIntervalSinceReferenceDate: 0)
 
-    func testLoopStatesBreatheOverTime() {
+    func testLoopStatesFlowOverTime() {
         // A quarter of the running period apart lands on different points
-        // of the sine ramp, so the dot must be a different size.
+        // of the matrix cycle.
         let quarterCycle = t0.addingTimeInterval(Motion.runningBreathPeriod / 4)
 
         XCTAssertNotEqual(
-            StatusPhase.compute(state: .running, at: t0).dotScale,
-            StatusPhase.compute(state: .running, at: quarterCycle).dotScale
+            StatusPhase.compute(state: .running, at: t0).matrixPhase,
+            StatusPhase.compute(state: .running, at: quarterCycle).matrixPhase
         )
     }
 
@@ -24,29 +24,26 @@ final class StatusPhaseTests: XCTestCase {
         let fullCycle = t0.addingTimeInterval(Motion.waitingBreathPeriod)
 
         XCTAssertEqual(
-            StatusPhase.compute(state: .waiting, at: t0).dotScale,
-            StatusPhase.compute(state: .waiting, at: fullCycle).dotScale,
+            StatusPhase.compute(state: .waiting, at: t0).matrixPhase,
+            StatusPhase.compute(state: .waiting, at: fullCycle).matrixPhase,
             accuracy: 0.0001
         )
     }
 
-    func testLoopAmplitudesStayRestrained() {
-        let runningPeak = t0.addingTimeInterval(Motion.runningBreathPeriod / 4)
-        let waitingPeak = t0.addingTimeInterval(Motion.waitingBreathPeriod / 4)
-
-        XCTAssertEqual(
-            StatusPhase.compute(state: .running, at: runningPeak).dotScale,
-            1.08,
-            accuracy: 0.0001
-        )
-        XCTAssertEqual(
-            StatusPhase.compute(state: .waiting, at: waitingPeak).dotScale,
-            1.12,
-            accuracy: 0.0001
-        )
+    func testLoopPhasesStayNormalized() {
+        for state in [BarState.running, .waiting] {
+            for offset in stride(from: 0.0, to: 4.0, by: 0.125) {
+                let phase = StatusPhase.compute(
+                    state: state,
+                    at: t0.addingTimeInterval(offset)
+                )
+                XCTAssertGreaterThanOrEqual(phase.matrixPhase, 0)
+                XCTAssertLessThan(phase.matrixPhase, 1)
+            }
+        }
     }
 
-    func testReducedMotionHoldsTheDotAtRest() {
+    func testReducedMotionHoldsTheMatrixAtRest() {
         for state in [BarState.running, .waiting] {
             for offset in stride(from: 0.0, to: 2.0, by: 0.25) {
                 let phase = StatusPhase.compute(
@@ -54,7 +51,7 @@ final class StatusPhaseTests: XCTestCase {
                     at: t0.addingTimeInterval(offset),
                     animated: false
                 )
-                XCTAssertEqual(phase.dotScale, 1.0, "\(state) should not scale under Reduce Motion")
+                XCTAssertEqual(phase.matrixPhase, 0.5, "\(state) should not flow under Reduce Motion")
             }
         }
     }
@@ -63,14 +60,14 @@ final class StatusPhaseTests: XCTestCase {
         let early = StatusPhase.compute(state: .waiting, at: t0, animated: false)
         let late = StatusPhase.compute(state: .waiting, at: t0.addingTimeInterval(37), animated: false)
 
-        XCTAssertEqual(early.dotScale, late.dotScale)
+        XCTAssertEqual(early.matrixPhase, late.matrixPhase)
     }
 
     func testIdleAndTerminalStatesStayStatic() {
         for state in [BarState.idle, .completed, .failed] {
             for animated in [true, false] {
                 let phase = StatusPhase.compute(state: state, at: t0, animated: animated)
-                XCTAssertEqual(phase.dotScale, 1.0)
+                XCTAssertEqual(phase.matrixPhase, 0.5)
             }
         }
     }
@@ -83,5 +80,24 @@ final class StatusPhaseTests: XCTestCase {
                 XCTAssertEqual(phase.glowOpacity, 0)
             }
         }
+    }
+
+    func testSemanticStatesHaveDistinctMatrixSignatures() {
+        XCTAssertEqual(BarState.running.matrixPattern, .field)
+        XCTAssertEqual(BarState.waiting.matrixPattern, .ring)
+        XCTAssertEqual(BarState.completed.matrixPattern, .plus)
+        XCTAssertEqual(BarState.failed.matrixPattern, .cross)
+
+        XCTAssertEqual(BarState.running.matrixMotion, .flowing)
+        XCTAssertEqual(BarState.waiting.matrixMotion, .attention)
+        XCTAssertEqual(BarState.completed.matrixMotion, .still)
+        XCTAssertEqual(BarState.failed.matrixMotion, .still)
+    }
+
+    func testAttentionCarriesTheStrongestSignal() {
+        XCTAssertLessThan(BarState.idle.matrixIntensity, BarState.completed.matrixIntensity)
+        XCTAssertLessThan(BarState.completed.matrixIntensity, BarState.running.matrixIntensity)
+        XCTAssertLessThan(BarState.running.matrixIntensity, BarState.failed.matrixIntensity)
+        XCTAssertLessThan(BarState.failed.matrixIntensity, BarState.waiting.matrixIntensity)
     }
 }

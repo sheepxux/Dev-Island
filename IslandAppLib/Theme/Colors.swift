@@ -1,30 +1,31 @@
 import SwiftUI
 import IslandCore
 
-/// Design token colors. See `docs/design-tokens` (mirror of CLAUDE_CLIENT.md §5).
+/// Product color roles. The product uses warm, ink-like neutrals rather than
+/// blue-purple "AI" gradients. State colors are deliberately muted and are
+/// reserved for actual task state; they are not decorative accents.
 enum Palette {
     // Surfaces
     static let notchBlack   = Color(hex: 0x000000)
-    static let capsuleBlack = Color(hex: 0x0A0A0A)
-    static let islandTop    = Color(hex: 0x101218)
-    static let islandBottom = Color(hex: 0x050506)
-    static let cardBg       = Color(hex: 0x14161B)
-    static let cardHover    = Color(hex: 0x1B1E25)
-    static let divider      = Color.white.opacity(0.075)
+    static let islandTop    = Color(hex: 0x10100E)
+
+    // Type + rules
+    static let warmWhite     = Color(hex: 0xE8E3D9)
+    static let textSecondary = Color(hex: 0x9B978E)
+    static let textTertiary  = Color(hex: 0x817D74)
+    static let hairline      = warmWhite.opacity(0.085)
 
     // Welcome Tour
-    static let tourCanvas   = Color(hex: 0x08090D)
-    static let tourPanel    = Color(hex: 0x101218)
-    static let tourElevated = Color(hex: 0x171A21)
-    static let tourAccent   = Color(hex: 0x7C8CFF)
-    static let tourViolet   = Color(hex: 0x9B7BFF)
+    static let tourCanvas   = Color(hex: 0x0A0A09)
+    static let tourPanel    = Color(hex: 0x10100E)
+    static let tourAccent   = Color(hex: 0xD2C3AA)
 
     // States
-    static let stateIdle      = Color(hex: 0x4A4A4A)
-    static let stateRunning   = Color(hex: 0x5B9EFA)
-    static let stateWaiting   = Color(hex: 0xF5A623)
-    static let stateCompleted = Color(hex: 0x3ECF8E)
-    static let stateFailed    = Color(hex: 0xE5484D)
+    static let stateIdle      = Color(hex: 0x5B5954)
+    static let stateRunning   = Color(hex: 0x7894A8)
+    static let stateWaiting   = Color(hex: 0xC49455)
+    static let stateCompleted = Color(hex: 0x76977D)
+    static let stateFailed    = Color(hex: 0xB96860)
 }
 
 extension TaskStatus {

@@ -13,12 +13,16 @@ public extension Notification.Name {
 
 /// Standalone titled window hosting `SettingsView` (CLAUDE_CLIENT.md §6
 /// task 6). Opened on demand from the panel's gear button. Behaves like
-/// any normal app window — draggable, closeable, in the App Switcher
-/// while open. Closing the window doesn't quit the app (we're a
-/// `.accessory` activation policy).
+/// any normal app window — draggable, closeable, and represented in the
+/// Dock while open. Its owner returns the app to accessory mode after the
+/// final conventional window closes; closing Settings never quits the
+/// background agent monitor.
 public final class SettingsWindow: NSWindow {
+    private let onDidClose: @MainActor () -> Void
+    private var hasReportedClose = false
 
-    public init() {
+    public init(onDidClose: @escaping @MainActor () -> Void = {}) {
+        self.onDidClose = onDidClose
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -26,7 +30,15 @@ public final class SettingsWindow: NSWindow {
             defer: false
         )
 
-        title = "Island — Settings"
+        title = "Dev Island"
+        appearance = NSAppearance(named: .darkAqua)
+        titlebarAppearsTransparent = true
+        backgroundColor = NSColor(
+            calibratedRed: 10 / 255,
+            green: 10 / 255,
+            blue: 9 / 255,
+            alpha: 1
+        )
         isReleasedWhenClosed = false
         // .normal level so the user can put other windows on top while
         // they're working — settings is configuration, not a HUD.
@@ -47,11 +59,18 @@ public final class SettingsWindow: NSWindow {
     /// from gear-tap so a second tap on an already-open settings window
     /// just refocuses it instead of stacking.
     public func bringToFront() {
-        // Switch the app to a regular activation policy briefly so the
-        // window can become key with full focus. `.accessory` apps
-        // can show key windows but the focus story is finicky;
-        // activating ignoringOtherApps is the established pattern.
+        // AppDelegate acquires the window's Dock lease before this method,
+        // so activation always happens after the app becomes `.regular`.
+        hasReportedClose = false
         NSApp.activate(ignoringOtherApps: true)
         makeKeyAndOrderFront(nil)
+    }
+
+    public override func close() {
+        let shouldReport = !hasReportedClose
+        super.close()
+        guard shouldReport else { return }
+        hasReportedClose = true
+        onDidClose()
     }
 }

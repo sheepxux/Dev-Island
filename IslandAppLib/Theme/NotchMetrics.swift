@@ -18,11 +18,34 @@ public enum NotchMetrics {
     /// Outer-bottom corner radius for the synthetic notch on non-notched Macs.
     public static let syntheticCornerRadius: CGFloat = 12
     /// Outer-bottom corner radius for the expanded panel (Task 2).
-    public static let panelCornerRadius: CGFloat = 22
+    public static let panelCornerRadius: CGFloat = 14
     /// Default panel width (synthetic-notch displays).
-    public static let panelWidth: CGFloat = 480
+    public static let panelWidth: CGFloat = 420
     /// Maximum panel width on notched displays — never exceed this.
-    public static let panelMaxWidth: CGFloat = 480
+    public static let panelMaxWidth: CGFloat = 440
+    /// Vertical space the task list may occupy before it starts scrolling.
+    public static let panelTaskListMaxHeight: CGFloat = 320
+    /// Ceiling for the expanded panel. The silhouette clips its content, so
+    /// this must stay above the tallest layout the panel can produce:
+    /// header + a full `panelTaskListMaxHeight` list + panel padding.
+    public static let panelMaxHeight: CGFloat = 392
+    /// Floor for the expanded panel, so a transient zero/short measurement
+    /// can't collapse the silhouette into a sliver mid-morph.
+    public static let panelMinHeight: CGFloat = 104
+
+    /// Clamp a measured panel-content height into the range the silhouette
+    /// (and its host window) can actually display.
+    public static func panelHeight(forContentHeight content: CGFloat) -> CGFloat {
+        min(max(content, panelMinHeight), panelMaxHeight)
+    }
+
+    /// Expanded width for a display layout. Keeping this here prevents the
+    /// host root and panel content from drifting apart during future tuning.
+    public static func panelWidth(for layout: Layout) -> CGFloat {
+        layout.hasNotch
+            ? min(panelMaxWidth, layout.notchWidth + 240)
+            : panelWidth
+    }
 
     // Hover affordance — how much the bar grows when the mouse enters,
     // signalling "clickable". Pre-Task-2 polish; the panel expansion that
@@ -32,11 +55,11 @@ public enum NotchMetrics {
     // capsules grow to fill the OS status bar exactly (no overflow), so
     // idle height is `thickness - capsuleVerticalInset` and hover height
     // is `thickness`.
-    public static let hoverWidthBoostNotched: CGFloat = 30   // 15pt each side
-    public static let hoverHeightBoostNotched: CGFloat = 4
-    public static let hoverWidthBoostCapsule: CGFloat = 50
+    public static let hoverWidthBoostNotched: CGFloat = 12
+    public static let hoverHeightBoostNotched: CGFloat = 2
+    public static let hoverWidthBoostCapsule: CGFloat = 12
     /// Extra height the synthetic notch drops below the menu bar on hover.
-    public static let hoverHeightBoostCapsule: CGFloat = 8
+    public static let hoverHeightBoostCapsule: CGFloat = 2
 
     /// Padding around the bar inside the window so SwiftUI .shadow renders
     /// fully (the NSWindow content view clips otherwise).
@@ -46,7 +69,7 @@ public enum NotchMetrics {
     public static let defaultNotchWidth: CGFloat = 200
 
     // No-notch fallback (per CLAUDE_CLIENT.md §6 task 7)
-    public static let fallbackWidth: CGFloat = 240
+    public static let fallbackWidth: CGFloat = 216
     public static let fallbackBarHeight: CGFloat = 28
 
 

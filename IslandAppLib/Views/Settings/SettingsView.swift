@@ -21,7 +21,7 @@ public struct SettingsView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 24) {
                 header
 
                 ConnectedServicesSection(store: store)
@@ -30,14 +30,18 @@ public struct SettingsView: View {
 
                 NotificationsSection()
 
-                Divider()
+                settingsDivider
 
                 footer
             }
-            .padding(28)
+            .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minWidth: 520, minHeight: 440)
+        .background(Palette.tourCanvas)
+        .foregroundStyle(Palette.warmWhite)
+        .tint(Palette.warmWhite)
+        .preferredColorScheme(.dark)
     }
 
     // MARK: - Sections
@@ -45,22 +49,26 @@ public struct SettingsView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Settings")
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 25, weight: .regular, design: .serif))
+                .tracking(-0.35)
+                .foregroundStyle(Palette.warmWhite)
             Text("Configure your agent connections and app preferences.")
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.textSecondary)
         }
     }
 
     private var footer: some View {
         HStack {
-            Button("View Welcome Tour") {
+            Button("Welcome Tour") {
                 NotificationCenter.default.post(name: .islandOpenOnboardingRequested, object: nil)
             }
+            .buttonStyle(SettingsTextButtonStyle())
             Spacer()
-            Button("Quit Island") {
+            Button("Quit Dev Island") {
                 NSApp.terminate(nil)
             }
+            .buttonStyle(SettingsTextButtonStyle(isDestructive: true))
             .keyboardShortcut("q", modifiers: [.command])
         }
     }
@@ -88,7 +96,7 @@ private struct NotificationsSection: View {
                     isOn: $attentionRequired
                 )
 
-                Divider().padding(.leading, 16)
+                settingsDivider.padding(.leading, 16)
 
                 notificationToggle(
                     title: "Task Completed",
@@ -97,25 +105,29 @@ private struct NotificationsSection: View {
                 )
 
                 if notificationsEnabled, let authorizationIssue {
-                    Divider().padding(.leading, 16)
+                    settingsDivider.padding(.leading, 16)
                     HStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Palette.stateWaiting)
                         Text(authorizationIssue)
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Palette.textSecondary)
                         Spacer()
                         Button("Open System Settings") {
                             openNotificationSettings()
                         }
-                        .controlSize(.small)
+                        .buttonStyle(SettingsControlButtonStyle())
                     }
                     .padding(16)
                 }
             }
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Palette.tourPanel)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Palette.hairline, lineWidth: 0.75)
+                    }
             )
         }
         .onChange(of: attentionRequired) { _, enabled in
@@ -155,10 +167,11 @@ private struct NotificationsSection: View {
                     .font(.system(size: 13, weight: .semibold))
                 Text(subtitle)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Palette.textSecondary)
             }
         }
         .toggleStyle(.switch)
+        .tint(Palette.warmWhite)
         .padding(16)
     }
 }
@@ -173,18 +186,24 @@ private struct ConnectedServicesSection: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionTitle("Agent Connections")
 
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search agents", text: $searchText)
-                    .textFieldStyle(.plain)
+            if LocalAgentRegistry.all.count > 6 {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(Palette.textTertiary)
+                    TextField("Search agents", text: $searchText)
+                        .textFieldStyle(.plain)
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Palette.tourPanel)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Palette.hairline, lineWidth: 0.75)
+                        }
+                )
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-            )
 
             if showsManus {
                 groupLabel("Cloud Agent")
@@ -236,18 +255,22 @@ private struct ConnectedServicesSection: View {
     }
 
     private var serviceGroupBackground: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor))
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Palette.tourPanel)
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Palette.hairline, lineWidth: 0.75)
+            }
     }
 
     private func groupLabel(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Palette.textTertiary)
     }
 
     private var rowDivider: some View {
-        Divider().padding(.leading, 16)
+        settingsDivider.padding(.leading, 16)
     }
 }
 
@@ -266,20 +289,17 @@ private struct ManusServiceRow: View {
                 AgentLogoBadge(
                     source: "manus",
                     size: 24,
-                    ink: .primary,
-                    badge: Color.primary.opacity(0.06)
+                    ink: Palette.warmWhite.opacity(0.82),
+                    badge: Color.white.opacity(0.045)
                 )
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Manus").font(.system(size: 13, weight: .semibold))
                     Text(statusLine)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 Spacer()
-                HStack(spacing: 8) {
-                    ServiceStatusBadge(label: badgeLabel, color: statusColor)
-                    trailingControl
-                }
+                trailingControl
             }
 
             // Show key entry when not configured / invalid. When valid,
@@ -291,37 +311,11 @@ private struct ManusServiceRow: View {
             if let lastError {
                 Text(lastError)
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.red)
+                    .foregroundStyle(Palette.stateFailed)
             }
         }
-        .padding(16)
-    }
-
-    private var statusColor: Color {
-        switch store.apiKeyStatus {
-        case .valid:
-            switch store.connectionStatus {
-            case .connected: return .green
-            case .reconnecting, .degraded: return .orange
-            case .disconnected: return .red
-            }
-        case .invalid:       return .red
-        case .notConfigured: return Color.secondary.opacity(0.5)
-        }
-    }
-
-    private var badgeLabel: String {
-        switch store.apiKeyStatus {
-        case .invalid: return "Needs attention"
-        case .notConfigured: return "Not connected"
-        case .valid:
-            switch store.connectionStatus {
-            case .connected: return "Connected"
-            case .reconnecting: return "Reconnecting"
-            case .degraded: return "Degraded"
-            case .disconnected: return "Disconnected"
-            }
-        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
     }
 
     private var statusLine: String {
@@ -346,10 +340,12 @@ private struct ManusServiceRow: View {
             Button("Disconnect", role: .destructive) {
                 disconnect()
             }
+            .buttonStyle(SettingsControlButtonStyle(isDestructive: true))
         } else {
             Button("Connect") {
                 Task { await connect() }
             }
+            .buttonStyle(SettingsControlButtonStyle())
             .disabled(apiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
             .keyboardShortcut(.defaultAction)
         }
@@ -361,8 +357,18 @@ private struct ManusServiceRow: View {
         // example). Placeholder updated to match what users actually
         // get from manus.im.
         SecureField("sk-…", text: $apiKeyDraft)
-            .textFieldStyle(.roundedBorder)
+            .textFieldStyle(.plain)
             .font(.system(size: 12, design: .monospaced))
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Palette.tourCanvas)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .stroke(Palette.hairline, lineWidth: 0.75)
+                    }
+            )
             .onSubmit {
                 guard !apiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                 Task { await connect() }
@@ -424,48 +430,39 @@ private struct LocalAgentServiceRow: View {
                 AgentLogoBadge(
                     source: descriptor.source,
                     size: 24,
-                    ink: .primary,
-                    badge: Color.primary.opacity(0.06)
+                    ink: Palette.warmWhite.opacity(0.82),
+                    badge: Color.white.opacity(0.045)
                 )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(descriptor.displayName).font(.system(size: 13, weight: .semibold))
                     Text(installed
-                         ? "Hooks installed — sessions report status live"
+                         ? "Connected — new sessions appear automatically"
                          : descriptor.settingsSubtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Palette.textSecondary)
                 }
                 Spacer()
-                HStack(spacing: 8) {
-                    ServiceStatusBadge(
-                        label: installed ? "Enabled" : "Not enabled",
-                        color: installed ? .green : Color.secondary.opacity(0.5)
-                    )
-                    if installed {
-                        Button("Disable", role: .destructive) {
-                            toggle({ try installer.uninstall() }, to: false)
-                        }
-                    } else {
-                        Button("Enable") {
-                            toggle({ try installer.install() }, to: true)
-                        }
+                if installed {
+                    Button("Disable", role: .destructive) {
+                        toggle({ try installer.uninstall() }, to: false)
                     }
+                    .buttonStyle(SettingsControlButtonStyle(isDestructive: true))
+                } else {
+                    Button("Enable") {
+                        toggle({ try installer.install() }, to: true)
+                    }
+                    .buttonStyle(SettingsControlButtonStyle())
                 }
-            }
-
-            if installed {
-                Text("Applies to \(descriptor.displayName) sessions started after enabling.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
             }
 
             if let lastError {
                 Text(lastError)
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.red)
+                    .foregroundStyle(Palette.stateFailed)
             }
         }
-        .padding(16)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .onAppear { installed = installer.isInstalled() }
     }
 
@@ -485,6 +482,7 @@ private struct LocalAgentServiceRow: View {
 private struct GeneralSection: View {
     @State private var launchAtLogin: Bool = (SMAppService.mainApp.status == .enabled)
     @State private var lastError: String?
+    @State private var canObserveGlobalKeys = InputPermissions.canObserveGlobalKeys
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -497,7 +495,7 @@ private struct GeneralSection: View {
                             .font(.system(size: 13, weight: .semibold))
                         Text("Open Island automatically when you log in.")
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Palette.textSecondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -509,16 +507,52 @@ private struct GeneralSection: View {
                 if let lastError {
                     Text(lastError)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(Palette.stateFailed)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
                 }
+
+                if !canObserveGlobalKeys {
+                    settingsDivider.padding(.leading, 16)
+                    escShortcutRow
+                }
             }
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Palette.tourPanel)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Palette.hairline, lineWidth: 0.75)
+                    }
             )
         }
+        // The user grants the permission in System Settings, so re-read it
+        // whenever they come back to us rather than caching it for the
+        // lifetime of the window.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            canObserveGlobalKeys = InputPermissions.canObserveGlobalKeys
+        }
+    }
+
+    private var escShortcutRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "keyboard")
+                .foregroundStyle(Palette.textTertiary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Close the Panel with Esc")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Needs Accessibility access — Esc is pressed while your editor still has focus. Clicking away always closes the panel.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button("Open System Settings") {
+                InputPermissions.openAccessibilitySettings()
+            }
+            .buttonStyle(SettingsControlButtonStyle())
+        }
+        .padding(16)
     }
 
     private func apply(launchAtLogin: Bool) {
@@ -545,31 +579,56 @@ private struct GeneralSection: View {
 @ViewBuilder
 private func sectionTitle(_ text: String) -> some View {
     Text(text)
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .textCase(.uppercase)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(Palette.warmWhite.opacity(0.72))
 }
 
-private struct ServiceStatusBadge: View {
-    let label: String
-    let color: Color
+private var settingsDivider: some View {
+    Rectangle()
+        .fill(Palette.hairline)
+        .frame(height: 1)
+}
 
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 6, height: 6)
-            Text(label)
-                .lineLimit(1)
-        }
-        .font(.system(size: 10, weight: .medium))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(
-            Capsule(style: .continuous)
-                .fill(color.opacity(0.12))
-        )
+private struct SettingsTextButtonStyle: ButtonStyle {
+    var isDestructive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(
+                isDestructive
+                    ? Palette.stateFailed.opacity(configuration.isPressed ? 0.65 : 0.88)
+                    : Palette.warmWhite.opacity(configuration.isPressed ? 0.52 : 0.68)
+            )
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+            .animation(Motion.press, value: configuration.isPressed)
+    }
+}
+
+private struct SettingsControlButtonStyle: ButtonStyle {
+    var isDestructive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(
+                isDestructive
+                    ? Palette.stateFailed.opacity(configuration.isPressed ? 0.62 : 0.88)
+                    : Palette.warmWhite.opacity(configuration.isPressed ? 0.55 : 0.76)
+            )
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.045 : 0.025))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .stroke(Palette.hairline, lineWidth: 0.75)
+                    }
+            )
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 

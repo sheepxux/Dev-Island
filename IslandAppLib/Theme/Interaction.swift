@@ -33,50 +33,34 @@ extension View {
 /// mouse button is held. `.plain` (used before) gives zero visual response
 /// to a press, which reads as "did that register?".
 struct PressableButtonStyle: ButtonStyle {
-    /// 0.98 for card-sized surfaces; icons pass something smaller-delta.
-    var pressedScale: CGFloat = 0.98
+    /// Full-size surfaces barely move; icon buttons can opt into a slightly
+    /// stronger response without making rows visibly "bounce".
+    var pressedScale: CGFloat = 0.997
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? pressedScale : 1)
-            .opacity(configuration.isPressed ? 0.82 : 1)
+            .opacity(configuration.isPressed ? 0.90 : 1)
             .animation(Motion.press, value: configuration.isPressed)
     }
 }
 
-/// High-contrast action used by the Welcome Tour. The fill, border and
-/// shadow all react together, which makes the control feel like one solid
-/// material instead of an animated label on a static rectangle.
+/// Primary action used by the Welcome Tour. The warm paper fill is deliberately
+/// neutral: brand color belongs to small identifying details, not every CTA.
 struct TourPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 18)
-            .frame(height: 40)
+            .font(Typo.controlLabel)
+            .foregroundStyle(Palette.tourCanvas.opacity(isEnabled ? 1 : 0.55))
+            .frame(width: 142, height: 36)
             .background(
-                Capsule(style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Palette.tourAccent, Palette.tourViolet],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.22), lineWidth: 0.75)
-                    )
-                    .shadow(
-                        color: Palette.tourAccent.opacity(configuration.isPressed ? 0.16 : 0.28),
-                        radius: configuration.isPressed ? 5 : 11,
-                        y: configuration.isPressed ? 1 : 4
-                    )
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Palette.warmWhite.opacity(configuration.isPressed ? 0.78 : 1))
             )
-            .scaleEffect(configuration.isPressed ? 0.975 : 1)
-            .opacity(isEnabled ? 1 : 0.45)
+            .scaleEffect(configuration.isPressed ? 0.995 : 1)
+            .opacity(isEnabled ? 1 : 0.42)
             .animation(Motion.press, value: configuration.isPressed)
     }
 }
@@ -84,19 +68,19 @@ struct TourPrimaryButtonStyle: ButtonStyle {
 struct TourSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.white.opacity(configuration.isPressed ? 0.6 : 0.78))
-            .padding(.horizontal, 15)
-            .frame(height: 40)
+            .font(Typo.controlLabel)
+            .foregroundStyle(Palette.warmWhite.opacity(configuration.isPressed ? 0.5 : 0.72))
+            .padding(.horizontal, 14)
+            .frame(height: 36)
             .background(
-                Capsule(style: .continuous)
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.05 : 0.075))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Palette.warmWhite.opacity(configuration.isPressed ? 0.04 : 0.025))
                     .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.09), lineWidth: 0.75)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Palette.hairline, lineWidth: 0.75)
                     )
             )
-            .scaleEffect(configuration.isPressed ? 0.975 : 1)
+            .scaleEffect(configuration.isPressed ? 0.995 : 1)
             .animation(Motion.press, value: configuration.isPressed)
     }
 }

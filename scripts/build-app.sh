@@ -31,7 +31,10 @@ set -euo pipefail
 
 CONFIG="${CONFIG:-release}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD_DIR="${ROOT}/build"
+# Override for release-candidate verification outside File Provider-backed
+# folders (for example `BUILD_DIR=/Volumes/... ./scripts/build-app.sh`).
+# GitHub Actions and normal local builds keep the conventional repo-local path.
+BUILD_DIR="${BUILD_DIR:-${ROOT}/build}"
 # Bundle filename uses the user-facing display name with a space, so
 # Finder shows "Dev Island" everywhere (Applications, Downloads, Dock,
 # Spotlight) — not just the locations that consult CFBundleDisplayName.
@@ -126,6 +129,13 @@ fi
 # similar detritus not allowed").
 echo "==> Stripping extended attributes"
 xattr -cr "${APP}"
+# Desktop and File Provider-backed workspaces can immediately reattach these
+# bundle-root attributes even after a recursive clear. Both are forbidden on
+# signed code, so remove them explicitly at the last possible moment before
+# codesign. (They are absent on GitHub runners, but keeping the local artifact
+# clean makes the release script reproducible everywhere.)
+xattr -d com.apple.FinderInfo "${APP}" 2>/dev/null || true
+xattr -d 'com.apple.fileprovider.fpfs#P' "${APP}" 2>/dev/null || true
 
 # Ad-hoc sign so Gatekeeper at least recognizes a code signature
 # structure. This is NOT a substitute for Developer ID + notarization
@@ -133,14 +143,32 @@ xattr -cr "${APP}"
 # launch-able after right-click → Open without a corrupted-signature
 # error on recent macOS.
 #
-# `-i com.island.app` binds the bundle identifier into the signature,
+# `-i app.devisland.Island` binds the bundle identifier into the signature,
 # matching CFBundleIdentifier in Info.plist. Without `-i`, codesign
 # defaults to the executable name (IslandApp), which fails subsequent
 # `codesign --verify --strict` because the identifier doesn't match
 # the plist.
 echo "==> Ad-hoc signing (replace with Developer ID in CI)"
-codesign --force --deep --sign - -i "${BUNDLE_ID}" "${APP}"
-codesign --verify --verbose=2 "${APP}"
+if ! codesign --force --deep --sign - -i "${BUNDLE_ID}" "${APP}"; then
+    # Some File Provider implementations attach FinderInfo when codesign first
+    # discovers the new .app. Clear once more and retry; a real signing error
+    # still fails on the second invocation because set -e remains active.
+    echo "==> Metadata changed during signing; cleaning once and retrying"
+    xattr -cr "${APP}"
+    xattr -d com.apple.FinderInfo "${APP}" 2>/dev/null || true
+    xattr -d 'com.apple.fileprovider.fpfs#P' "${APP}" 2>/dev/null || true
+    codesign --force --deep --sign - -i "${BUNDLE_ID}" "${APP}"
+fi
+if ! codesign --verify --strict --deep --verbose=2 "${APP}"; then
+    # The metadata race can also land immediately after a successful sign but
+    # before verification. One final clean + re-sign closes that window.
+    echo "==> Metadata changed after signing; cleaning once and retrying"
+    xattr -cr "${APP}"
+    xattr -d com.apple.FinderInfo "${APP}" 2>/dev/null || true
+    xattr -d 'com.apple.fileprovider.fpfs#P' "${APP}" 2>/dev/null || true
+    codesign --force --deep --sign - -i "${BUNDLE_ID}" "${APP}"
+    codesign --verify --strict --deep --verbose=2 "${APP}"
+fi
 
 echo
 echo "==> Built: ${APP}"

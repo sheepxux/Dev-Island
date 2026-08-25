@@ -13,7 +13,14 @@ import IslandCore
 /// Lifecycle is owned by `AppDelegate`, gated on `#if DEBUG`. Production
 /// builds never reference this type.
 public final class DebugSandboxWindow: NSWindow {
-    public init(onReposition: @escaping () -> Void) {
+    private let onDidClose: @MainActor () -> Void
+    private var hasReportedClose = false
+
+    public init(
+        onReposition: @escaping () -> Void,
+        onDidClose: @escaping @MainActor () -> Void = {}
+    ) {
+        self.onDidClose = onDidClose
         // Initial size is a placeholder — `setContentSize(_:)` after the
         // hosting view computes its intrinsic size below.
         super.init(
@@ -50,6 +57,14 @@ public final class DebugSandboxWindow: NSWindow {
                 y: screenFrame.minY + margin
             ))
         }
+    }
+
+    public override func close() {
+        let shouldReport = !hasReportedClose
+        super.close()
+        guard shouldReport else { return }
+        hasReportedClose = true
+        onDidClose()
     }
 }
 #endif

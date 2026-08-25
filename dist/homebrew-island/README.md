@@ -7,10 +7,10 @@
 
 ## Publishing flow
 
-1. **Cut a release tag in the Dev Island monorepo** (`git tag v0.1.1 && git push origin v0.1.1`).
+1. **Cut a release tag in the Dev Island monorepo** (`git tag v0.3.0 && git push origin v0.3.0`).
 2. **GitHub Actions** (`.github/workflows/release.yml`) builds, signs,
    notarizes, staples, and uploads both `Dev-Island.zip` (stable filename)
-   and `Island-0.1.1.zip` (versioned archive) to a GitHub Release. The
+   and `Dev-Island-0.3.0.zip` (versioned archive) to a GitHub Release. The
    job log prints `Dev-Island.zip`'s SHA-256.
 3. **Update the tap**: in the public `homebrew-dev-island` repo, edit
    `Casks/dev-island.rb`:

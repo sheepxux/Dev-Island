@@ -21,11 +21,11 @@ enum Palette {
     static let tourAccent   = Color(hex: 0xD2C3AA)
 
     // States
-    static let stateIdle      = Color(hex: 0x615E58)
-    static let stateRunning   = Color(hex: 0x89AFC7)
-    static let stateWaiting   = Color(hex: 0xD6A15B)
-    static let stateCompleted = Color(hex: 0x89AF91)
-    static let stateFailed    = Color(hex: 0xCC7068)
+    static let stateIdle      = Color(hex: 0x77736A)
+    static let stateRunning   = Color(hex: 0x45C2FF)
+    static let stateWaiting   = Color(hex: 0xFFB84F)
+    static let stateCompleted = Color(hex: 0x64D88C)
+    static let stateFailed    = Color(hex: 0xFF6A61)
 }
 
 extension TaskStatus {

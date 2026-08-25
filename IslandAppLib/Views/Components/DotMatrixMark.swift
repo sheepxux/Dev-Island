@@ -13,6 +13,8 @@ struct DotMatrixMark: View {
     enum Pattern: Equatable {
         /// A complete circular-density field for neutral and active work.
         case field
+        /// Hollow perimeter used by the running state's rotating signal.
+        case orbit
         /// Bright perimeter with a quieter centre for attention.
         case ring
         /// Resolved, centred plus for successful completion.
@@ -23,7 +25,7 @@ struct DotMatrixMark: View {
 
     enum MotionStyle: Equatable {
         case still
-        case flowing
+        case orbiting
         case attention
     }
 
@@ -41,6 +43,12 @@ struct DotMatrixMark: View {
                 0.58, 0.86, 0.58,
                 0.86, 1.00, 0.86,
                 0.58, 0.86, 0.58,
+            ]
+        case .orbit:
+            return [
+                0.78, 1.00, 0.78,
+                1.00, 0.12, 1.00,
+                0.78, 1.00, 0.78,
             ]
         case .ring:
             return [
@@ -65,14 +73,15 @@ struct DotMatrixMark: View {
 
     var body: some View {
         Canvas(opaque: false, rendersAsynchronously: false) { context, canvasSize in
-            let diameter = max(0.9, min(2.4, size * 0.19))
+            let diameter = max(0.9, min(2.6, size * 0.20))
             let pitch = (min(canvasSize.width, canvasSize.height) - diameter) / 2
 
             for row in 0..<3 {
                 for column in 0..<3 {
                     let index = row * 3 + column
                     let signal = modulation(row: row, column: column)
-                    let pointDiameter = diameter * (0.88 + signal * 0.12)
+                    let response = visualResponse(signal: signal)
+                    let pointDiameter = diameter * response.scale
                     let center = CGPoint(
                         x: diameter / 2 + CGFloat(column) * pitch,
                         y: diameter / 2 + CGFloat(row) * pitch
@@ -85,7 +94,7 @@ struct DotMatrixMark: View {
                     )
                     let opacity = min(
                         1,
-                        density[index] * (0.82 + signal * 0.18) * intensity
+                        density[index] * response.opacity * intensity
                     )
 
                     context.fill(
@@ -105,22 +114,53 @@ struct DotMatrixMark: View {
         guard motion != .still else { return 1 }
 
         let normalizedPhase = Double(phase) * 2 * Double.pi
-        let offset: Double
-
         switch motion {
         case .still:
             return 1
-        case .flowing:
-            // A diagonal scan reads as ongoing work without spinning.
-            offset = Double(column) * 0.72 + Double(row) * 0.28
+        case .orbiting:
+            // One bright head with a soft trailing point moves clockwise
+            // around the perimeter. The centre remains a quiet anchor.
+            let dx = Double(column - 1)
+            let dy = Double(row - 1)
+            guard dx != 0 || dy != 0 else { return 0.36 }
+
+            let pointAngle = atan2(dy, dx)
+            let headAngle = normalizedPhase - Double.pi / 2
+            let headDistance = angularDistance(pointAngle, headAngle)
+            let trailDistance = angularDistance(pointAngle, headAngle - Double.pi / 4)
+            let head = pow((cos(headDistance) + 1) / 2, 7)
+            let trail = pow((cos(trailDistance) + 1) / 2, 7)
+            return min(1, 0.08 + head * 0.92 + trail * 0.35)
         case .attention:
             // A centre-out ripple makes the waiting state feel deliberate.
             let dx = Double(column - 1)
             let dy = Double(row - 1)
-            offset = -sqrt(dx * dx + dy * dy) * 1.05
+            let offset = -sqrt(dx * dx + dy * dy) * 1.05
+            return (sin(normalizedPhase - offset) + 1) / 2
         }
+    }
 
-        return (sin(normalizedPhase - offset) + 1) / 2
+    private func angularDistance(_ first: Double, _ second: Double) -> Double {
+        abs(atan2(sin(first - second), cos(first - second)))
+    }
+
+    private func visualResponse(signal: Double) -> (opacity: Double, scale: CGFloat) {
+        switch motion {
+        case .still:
+            return (1, 1)
+        case .orbiting:
+            // High contrast between the moving head and resting perimeter is
+            // what makes rotation legible at 14pt without adding a glow.
+            return (
+                0.30 + signal * 0.70,
+                CGFloat(0.78 + signal * 0.26)
+            )
+        case .attention:
+            return (
+                0.58 + signal * 0.42,
+                CGFloat(0.84 + signal * 0.16)
+            )
+        }
     }
 }
 
@@ -129,7 +169,8 @@ struct DotMatrixMark: View {
 extension BarState {
     var matrixPattern: DotMatrixMark.Pattern {
         switch self {
-        case .idle, .running: return .field
+        case .idle:           return .field
+        case .running:        return .orbit
         case .waiting:       return .ring
         case .completed:     return .plus
         case .failed:        return .cross
@@ -138,7 +179,7 @@ extension BarState {
 
     var matrixMotion: DotMatrixMark.MotionStyle {
         switch self {
-        case .running: return .flowing
+        case .running: return .orbiting
         case .waiting: return .attention
         case .idle, .completed, .failed: return .still
         }
@@ -146,11 +187,11 @@ extension BarState {
 
     var matrixIntensity: Double {
         switch self {
-        case .idle:      return 0.46
-        case .running:   return 0.92
+        case .idle:      return 0.52
+        case .running:   return 0.96
         case .waiting:   return 1.00
-        case .completed: return 0.78
-        case .failed:    return 0.96
+        case .completed: return 0.84
+        case .failed:    return 0.98
         }
     }
 }
@@ -158,7 +199,7 @@ extension BarState {
 extension TaskStatus {
     var matrixPattern: DotMatrixMark.Pattern {
         switch self {
-        case .running:   return .field
+        case .running:   return .orbit
         case .waiting:   return .ring
         case .completed: return .plus
         case .failed:    return .cross
@@ -167,10 +208,10 @@ extension TaskStatus {
 
     var matrixIntensity: Double {
         switch self {
-        case .running:   return 0.92
+        case .running:   return 0.96
         case .waiting:   return 1.00
-        case .completed: return 0.78
-        case .failed:    return 0.96
+        case .completed: return 0.84
+        case .failed:    return 0.98
         }
     }
 }
@@ -178,11 +219,11 @@ extension TaskStatus {
 #if PREVIEWS
 #Preview("Dot matrix marks") {
     HStack(spacing: 22) {
-        DotMatrixMark(color: Palette.stateIdle, size: 14, intensity: 0.46)
-        DotMatrixMark(color: Palette.stateRunning, size: 14, phase: 0.2, motion: .flowing, intensity: 0.92)
+        DotMatrixMark(color: Palette.stateIdle, size: 14, intensity: 0.52)
+        DotMatrixMark(color: Palette.stateRunning, size: 14, phase: 0.2, motion: .orbiting, pattern: .orbit, intensity: 0.96)
         DotMatrixMark(color: Palette.stateWaiting, size: 14, phase: 0.6, motion: .attention, pattern: .ring)
-        DotMatrixMark(color: Palette.stateCompleted, size: 14, pattern: .plus, intensity: 0.78)
-        DotMatrixMark(color: Palette.stateFailed, size: 14, pattern: .cross, intensity: 0.96)
+        DotMatrixMark(color: Palette.stateCompleted, size: 14, pattern: .plus, intensity: 0.84)
+        DotMatrixMark(color: Palette.stateFailed, size: 14, pattern: .cross, intensity: 0.98)
     }
     .padding(28)
     .background(Palette.notchBlack)

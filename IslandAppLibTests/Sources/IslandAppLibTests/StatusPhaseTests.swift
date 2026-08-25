@@ -10,7 +10,7 @@ final class StatusPhaseTests: XCTestCase {
     func testLoopStatesFlowOverTime() {
         // A quarter of the running period apart lands on different points
         // of the matrix cycle.
-        let quarterCycle = t0.addingTimeInterval(Motion.runningBreathPeriod / 4)
+        let quarterCycle = t0.addingTimeInterval(Motion.runningOrbitPeriod / 4)
 
         XCTAssertNotEqual(
             StatusPhase.compute(state: .running, at: t0).matrixPhase,
@@ -83,12 +83,12 @@ final class StatusPhaseTests: XCTestCase {
     }
 
     func testSemanticStatesHaveDistinctMatrixSignatures() {
-        XCTAssertEqual(BarState.running.matrixPattern, .field)
+        XCTAssertEqual(BarState.running.matrixPattern, .orbit)
         XCTAssertEqual(BarState.waiting.matrixPattern, .ring)
         XCTAssertEqual(BarState.completed.matrixPattern, .plus)
         XCTAssertEqual(BarState.failed.matrixPattern, .cross)
 
-        XCTAssertEqual(BarState.running.matrixMotion, .flowing)
+        XCTAssertEqual(BarState.running.matrixMotion, .orbiting)
         XCTAssertEqual(BarState.waiting.matrixMotion, .attention)
         XCTAssertEqual(BarState.completed.matrixMotion, .still)
         XCTAssertEqual(BarState.failed.matrixMotion, .still)

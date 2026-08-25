@@ -46,7 +46,7 @@ enum Motion {
     // state changes underneath it, whereas the phase formula can just
     // switch. These are the periods that the phase math keys off.
 
-    static let runningBreathPeriod: TimeInterval = 2
+    static let runningOrbitPeriod: TimeInterval = 1.8
     static let waitingBreathPeriod: TimeInterval = 1.4
     /// The delay before the completed acknowledgement settles must match its
     /// rise duration, so both legs use named tokens rather than inline values.

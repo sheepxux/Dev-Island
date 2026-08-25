@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// State → behavior:
 /// - **Idle** — static gray.
-/// - **Running** — a slow diagonal flow inside the matrix.
+/// - **Running** — a bright point orbits clockwise around the matrix.
 /// - **Waiting** — a slightly quicker centre-out signal.
 /// - **Completed** — one restrained 1.0 → 1.12 → 1.0 acknowledgement.
 /// - **Failed** — static red.
@@ -106,7 +106,7 @@ struct StatusPhase {
 
         switch state {
         case .running:
-            let p = animated ? cyclePhase(t, period: Motion.runningBreathPeriod) : 0.5
+            let p = animated ? cyclePhase(t, period: Motion.runningOrbitPeriod) : 0.5
             return StatusPhase(matrixPhase: p)
 
         case .waiting:

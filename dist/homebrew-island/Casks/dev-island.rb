@@ -22,10 +22,8 @@
 #   end
 cask "dev-island" do
   version "0.3.0"
-  # Replaced by the GitHub Actions release workflow's per-tag SHA-256
-  # before publishing. Local test value is the SHA of the most recent
-  # local build under build/Dev-Island.zip.
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  # SHA-256 of the notarized stable-name ZIP attached to the v0.3.0 release.
+  sha256 "8271a3cd171f3b04b78eda23451e94a77b9284f314f1b8b8d17850376acf913c"
 
   # Stable filename — `Dev-Island.zip` is also published as a per-version
   # asset (`Dev-Island-#{version}.zip`) but pinning to the stable name

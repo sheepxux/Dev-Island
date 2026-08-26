@@ -43,8 +43,8 @@ extension TaskStatus {
 /// Bar/dot state — derived from `TaskStore.tasks` highest priority, plus an
 /// `idle` value used when no tasks exist.
 ///
-/// Priority (per CLAUDE_CLIENT.md §4):
-/// `Waiting > Failed > Running > Completed > Idle`
+/// Attention-first presentation priority:
+/// `Waiting > Failed > Completed > Running > Idle`
 enum BarState: Equatable {
     case idle
     case running
@@ -65,8 +65,8 @@ enum BarState: Equatable {
     static func derive(from tasks: [AgentTask]) -> BarState {
         if tasks.contains(where: { $0.status == .waiting })   { return .waiting }
         if tasks.contains(where: { $0.status == .failed })    { return .failed }
-        if tasks.contains(where: { $0.status == .running })   { return .running }
         if tasks.contains(where: { $0.status == .completed }) { return .completed }
+        if tasks.contains(where: { $0.status == .running })   { return .running }
         return .idle
     }
 }

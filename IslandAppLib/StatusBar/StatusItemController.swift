@@ -42,11 +42,7 @@ public final class StatusItemController: NSObject, NSMenuDelegate {
         let store = TaskStore.shared
 
         // Status lines: disabled items, purely informational.
-        let running = store.tasks.filter { $0.status == .running }.count
-        let waiting = store.tasks.filter { $0.status == .waiting }.count
-        var headline = "后台运行中"
-        if running > 0 { headline += " — \(running) 个任务进行中" }
-        if waiting > 0 { headline += ",\(waiting) 个等待输入" }
+        let headline = statusHeadline(for: TaskStatusSummary(tasks: store.tasks))
         menu.addItem(disabledItem(headline))
         let localAgents = LocalAgentRegistry.all.map(\.displayName).joined(separator: " / ")
         menu.addItem(disabledItem("本地管线:\(localAgents)"))
@@ -106,6 +102,17 @@ public final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     // MARK: - Helpers
+
+    private func statusHeadline(for summary: TaskStatusSummary) -> String {
+        guard let segment = summary.foregroundSegment else { return "后台运行中" }
+
+        switch segment.status {
+        case .waiting:   return "\(segment.count) 个会话等待你处理"
+        case .failed:    return "\(segment.count) 个任务需要检查"
+        case .completed: return "\(segment.count) 个任务已完成"
+        case .running:   return "\(segment.count) 个任务正在运行"
+        }
+    }
 
     private func manusStatusText(_ store: TaskStore) -> String {
         guard store.apiKeyStatus == .valid else { return "未配置" }

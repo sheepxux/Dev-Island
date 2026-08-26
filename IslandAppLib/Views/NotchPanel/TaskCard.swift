@@ -3,7 +3,8 @@ import IslandCore
 
 /// One task row in the panel.
 ///
-/// Layout: status matrix • tool logo • title + phase·duration • chevron.
+/// Layout: status matrix • tool logo • session title + agent·phase·duration
+/// • chevron.
 /// State appears once, in the matrix. Rows stay transparent until hovered so the
 /// panel reads as one calm surface instead of a stack of animated cards.
 struct TaskCard: View {
@@ -44,6 +45,12 @@ struct TaskCard: View {
                         .truncationMode(.tail)
 
                     HStack(spacing: 6) {
+                        Text(agentDisplayName)
+                            .font(Typo.cardMeta)
+                            .fixedSize()
+                        Text("·")
+                            .font(.system(size: 11))
+                            .opacity(0.5)
                         if let phase = task.currentPhase {
                             Text(phase)
                                 .font(.system(size: 11))
@@ -105,6 +112,12 @@ struct TaskCard: View {
             return Color.white.opacity(0.055)
         }
         return isHovering ? Color.white.opacity(0.04) : .clear
+    }
+
+    private var agentDisplayName: String {
+        if task.source == "manus" { return "Manus" }
+        return LocalAgentRegistry.descriptor(for: task.source)?.displayName
+            ?? task.source.replacingOccurrences(of: "-", with: " ").capitalized
     }
 
     private var durationString: String {

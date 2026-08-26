@@ -92,7 +92,7 @@ private struct NotificationsSection: View {
             VStack(spacing: 0) {
                 notificationToggle(
                     title: "Attention Required",
-                    subtitle: "Notify when a task needs input or fails.",
+                    subtitle: "Bring the island forward when a task needs input or fails.",
                     isOn: $attentionRequired
                 )
 

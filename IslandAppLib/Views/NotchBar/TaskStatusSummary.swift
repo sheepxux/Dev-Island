@@ -1,10 +1,9 @@
 import IslandCore
 import SwiftUI
 
-/// Compact multi-session snapshot for the collapsed island. Active states are
-/// shown together (waiting, failed, running); completed is shown only when no
-/// task is active, keeping the capsule useful without turning it into a row of
-/// counters.
+/// Compact multi-session snapshot for the collapsed island. Only the highest
+/// attention tier is presented, keeping the capsule focused on the one thing
+/// the user should understand next instead of becoming a row of counters.
 struct TaskStatusSummary: Equatable {
     struct Segment: Equatable, Identifiable {
         let status: TaskStatus
@@ -34,15 +33,15 @@ struct TaskStatusSummary: Equatable {
 
     var total: Int { running + waiting + failed + completed }
 
-    var segments: [Segment] {
-        var active: [Segment] = []
-        if waiting > 0 { active.append(.init(status: .waiting, count: waiting)) }
-        if failed > 0 { active.append(.init(status: .failed, count: failed)) }
-        if running > 0 { active.append(.init(status: .running, count: running)) }
-        if !active.isEmpty { return active }
-        if completed > 0 { return [.init(status: .completed, count: completed)] }
-        return []
+    var foregroundSegment: Segment? {
+        if waiting > 0 { return .init(status: .waiting, count: waiting) }
+        if failed > 0 { return .init(status: .failed, count: failed) }
+        if completed > 0 { return .init(status: .completed, count: completed) }
+        if running > 0 { return .init(status: .running, count: running) }
+        return nil
     }
+
+    var segments: [Segment] { foregroundSegment.map { [$0] } ?? [] }
 
     var accessibilityLabel: String {
         guard total > 0 else { return "No tasks" }
@@ -59,19 +58,17 @@ struct CompactTaskStatusSummary: View {
     let summary: TaskStatusSummary
 
     var body: some View {
-        HStack(spacing: 7) {
-            if summary.segments.isEmpty {
+        Group {
+            if let segment = summary.foregroundSegment {
+                HStack(spacing: 4) {
+                    Text("\(segment.count)")
+                        .foregroundStyle(.white.opacity(0.94))
+                    Text(label(for: segment.status))
+                        .foregroundStyle(segment.status.color)
+                }
+            } else {
                 Text("0")
                     .foregroundStyle(.white.opacity(0.55))
-            } else {
-                ForEach(summary.segments) { segment in
-                    HStack(spacing: 3) {
-                        Text("\(segment.count)")
-                            .foregroundStyle(.white.opacity(0.9))
-                        Image(systemName: symbol(for: segment.status))
-                            .foregroundStyle(segment.status.color)
-                    }
-                }
             }
         }
         .font(Typo.barBadge)
@@ -80,12 +77,12 @@ struct CompactTaskStatusSummary: View {
         .accessibilityLabel(summary.accessibilityLabel)
     }
 
-    private func symbol(for status: TaskStatus) -> String {
+    private func label(for status: TaskStatus) -> String {
         switch status {
-        case .running:   return "play.fill"
-        case .waiting:   return "pause.fill"
-        case .failed:    return "exclamationmark"
-        case .completed: return "checkmark"
+        case .running:   return "running"
+        case .waiting:   return "waiting"
+        case .failed:    return "failed"
+        case .completed: return "done"
         }
     }
 }

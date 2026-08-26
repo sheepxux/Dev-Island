@@ -73,6 +73,15 @@ enum TaskNotificationKind: Equatable {
         case .completed: return "completed"
         }
     }
+
+    /// Waiting and failure block progress and should come to the foreground.
+    /// Completion remains a quiet, opt-in notification.
+    var shouldExpandIsland: Bool {
+        switch self {
+        case .waiting, .failed: return true
+        case .completed: return false
+        }
+    }
 }
 
 /// Turns `TaskStore.onTaskTransition` events into macOS notifications and
@@ -187,6 +196,9 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
             completions: defaults.bool(forKey: TaskNotificationPreferences.completionsKey)
         ) else { return }
 
+        if kind.shouldExpandIsland {
+            IslandCoordinator.shared.expand(highlighting: transition.task.identity)
+        }
         post(kind, for: transition.task)
     }
 

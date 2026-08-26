@@ -163,7 +163,7 @@ struct IslandRootView: View {
 
             // Panel content — visible while expanded.
             NotchPanelView(
-                tasks: store.tasks,
+                tasks: presentedTasks,
                 connectionStatus: store.connectionStatus,
                 layout: baseLayout,
                 highlightedTask: coordinator.highlightedTask,
@@ -238,25 +238,11 @@ struct IslandRootView: View {
         }
     }
 
-    /// `BarState` adjusted for the current `ConnectionStatus`. Per
-    /// CLAUDE_CLIENT.md §6 task 8, the bar should "show gray" when
-    /// `connectionStatus` is disconnected or reconnecting — the data
-    /// the user is looking at may be stale, so we don't want to keep
-    /// the dot/glow loudly running/waiting/etc. We collapse to `.idle`
-    /// (gray, no glow, no animation). The 250ms color crossfade in
-    /// StatusDot + backdrop handles the transition smoothly.
-    ///
-    /// `.degraded` is intentionally NOT dimmed — it just means the
-    /// webhook tunnel is down and we're polling, so data is still
-    /// being refreshed every 60s. Status colors stay live.
+    /// Connection health is shown separately in the panel header. It must not
+    /// erase a real task state: local agents continue to be authoritative even
+    /// when an unrelated cloud connector is disconnected.
     private var effectiveBarState: BarState {
-        let raw = BarState.derive(from: store.tasks)
-        switch store.connectionStatus {
-        case .disconnected, .reconnecting:
-            return .idle
-        case .connected, .degraded:
-            return raw
-        }
+        BarState.derive(from: presentedTasks)
     }
 
     /// The shape used for backdrop, clipping, and hit-testing — built once
@@ -363,7 +349,11 @@ struct IslandRootView: View {
     }
 
     private var taskStatusSummary: TaskStatusSummary {
-        TaskStatusSummary(tasks: store.tasks)
+        TaskStatusSummary(tasks: presentedTasks)
+    }
+
+    private var presentedTasks: [AgentTask] {
+        TaskPresentationPolicy.ordered(store.tasks)
     }
 
     private var barTitle: String {
@@ -372,13 +362,7 @@ struct IslandRootView: View {
     }
 
     private var priorityTask: AgentTask? {
-        let statuses: [TaskStatus] = [.waiting, .failed, .running, .completed]
-        for status in statuses {
-            if let task = store.tasks.first(where: { $0.status == status }) {
-                return task
-            }
-        }
-        return nil
+        TaskPresentationPolicy.primaryTask(in: presentedTasks)
     }
 
     /// Stage panel content behind the shape morph. Collapse is immediate

@@ -55,6 +55,12 @@ final class TaskNotificationPolicyTests: XCTestCase {
         ), .completed)
     }
 
+    func testOnlyAttentionNotificationsInterruptTheIsland() {
+        XCTAssertTrue(TaskNotificationKind.waiting.shouldExpandIsland)
+        XCTAssertTrue(TaskNotificationKind.failed.shouldExpandIsland)
+        XCTAssertFalse(TaskNotificationKind.completed.shouldExpandIsland)
+    }
+
     @MainActor
     func testNotificationSelectionHighlightsTaskAndExpandsPanel() {
         let identity = TaskIdentity(source: "codex", id: "session-1")

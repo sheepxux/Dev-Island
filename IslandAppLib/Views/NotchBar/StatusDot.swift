@@ -6,7 +6,7 @@ import SwiftUI
 /// - **Idle** — static gray.
 /// - **Running** — a bright point orbits clockwise around the matrix.
 /// - **Waiting** — a slightly quicker centre-out signal.
-/// - **Completed** — one restrained 1.0 → 1.12 → 1.0 acknowledgement.
+/// - **Completed** — bright cardinal points inside the fixed nine-dot grid.
 /// - **Failed** — static red.
 ///
 /// Running and waiting use a time-derived phase rather than a repeating
@@ -15,10 +15,6 @@ import SwiftUI
 struct StatusDot: View {
     let state: BarState
     var size: CGFloat = NotchMetrics.dotSize
-
-    /// Drives the one-shot completed feedback. Outside of completed it stays 1.
-    @State private var completedScale: CGFloat = 1.0
-    @State private var completedFeedbackID = UUID()
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -34,11 +30,7 @@ struct StatusDot: View {
                 pattern: state.matrixPattern,
                 intensity: state.matrixIntensity
             )
-                .scaleEffect(state == .completed ? completedScale : 1)
                 .animation(Motion.colorTransition, value: state)
-        }
-        .onChange(of: state, initial: false) { oldValue, newValue in
-            handleStateChange(from: oldValue, to: newValue)
         }
     }
 
@@ -55,35 +47,6 @@ struct StatusDot: View {
         case .idle, .completed, .failed: return false
         }
     }
-
-    // MARK: - Effects
-
-    private func handleStateChange(from old: BarState, to new: BarState) {
-        let feedbackID = UUID()
-        completedFeedbackID = feedbackID
-
-        if new == .completed && old != .completed {
-            // A scale jump is spatial travel, so Reduce Motion gets the
-            // state color on its own.
-            guard !reduceMotion else {
-                completedScale = 1.0
-                return
-            }
-
-            completedScale = 1.0
-            withAnimation(.easeOut(duration: Motion.completedFeedbackRise)) {
-                completedScale = 1.12
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + Motion.completedFeedbackRise) {
-                guard completedFeedbackID == feedbackID else { return }
-                withAnimation(.easeIn(duration: Motion.completedFeedbackSettle)) {
-                    completedScale = 1.0
-                }
-            }
-        } else if new != .completed {
-            completedScale = 1.0
-        }
-    }
 }
 
 // MARK: - Phase computation
@@ -91,8 +54,7 @@ struct StatusDot: View {
 /// Time-keyed animation phase for the status matrix. Call `compute(state:at:)`
 /// from a `TimelineView` and pass `matrixPhase` into `DotMatrixMark`.
 struct StatusPhase {
-    /// Normalized 0…1 cycle for internal point movement. Completed feedback
-    /// is handled separately by `StatusDot`.
+    /// Normalized 0…1 cycle for internal point brightness movement.
     let matrixPhase: CGFloat
     /// Kept at zero while the standalone `NotchBarView` still reads the shared
     /// phase. This guarantees that path cannot reintroduce a colored halo.
@@ -121,7 +83,7 @@ struct StatusPhase {
     /// Linear 0…1 cycle over `period` seconds. Each point applies its own
     /// easing and phase offset, producing continuous motion without moving
     /// the mark's outer footprint.
-    private static func cyclePhase(_ t: TimeInterval, period: TimeInterval) -> CGFloat {
+    static func cyclePhase(_ t: TimeInterval, period: TimeInterval) -> CGFloat {
         CGFloat(t.truncatingRemainder(dividingBy: period) / period)
     }
 }

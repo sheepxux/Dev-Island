@@ -433,6 +433,7 @@ struct OnboardingView: View {
         DotMatrixMark(
             color: state.color,
             size: size,
+            motion: state.matrixMotion,
             pattern: state.matrixPattern,
             intensity: state.matrixIntensity
         )

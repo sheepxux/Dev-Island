@@ -200,7 +200,10 @@ struct NotchPanelView: View {
         // could lose both the user's position and notification pre-position.
         TimelineView(
             .animation(
-                minimumInterval: 1,
+                // The same shared clock drives duration labels and the
+                // in-row nine-dot signals. Thirty frames per second keeps the
+                // orbit fluid without introducing one timeline per task.
+                minimumInterval: 1.0 / 30.0,
                 paused: !isLive || !hasLiveDurations
             )
         ) { context in

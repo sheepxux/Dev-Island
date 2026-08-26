@@ -15,6 +15,7 @@ struct TaskCard: View {
     let onTap: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: onTap) {
@@ -24,6 +25,8 @@ struct TaskCard: View {
                     DotMatrixMark(
                         color: task.status.color,
                         size: 9,
+                        phase: task.status.matrixPhase(at: now, animated: !reduceMotion),
+                        motion: task.status.matrixMotion,
                         pattern: task.status.matrixPattern,
                         intensity: task.status.matrixIntensity
                     )

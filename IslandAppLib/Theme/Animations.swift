@@ -48,10 +48,6 @@ enum Motion {
 
     static let runningOrbitPeriod: TimeInterval = 1.8
     static let waitingBreathPeriod: TimeInterval = 1.4
-    /// The delay before the completed acknowledgement settles must match its
-    /// rise duration, so both legs use named tokens rather than inline values.
-    static let completedFeedbackRise: TimeInterval = 0.18
-    static let completedFeedbackSettle: TimeInterval = 0.27
 
     // MARK: - Accessibility
 

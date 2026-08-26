@@ -31,6 +31,14 @@ final class TaskStatusSummaryTests: XCTestCase {
         XCTAssertEqual(summary.accessibilityLabel, "1 waiting, 1 failed, 2 running, 4 completed")
     }
 
+    func testCompactLabelReportsAllSessions() {
+        XCTAssertEqual(
+            TaskStatusSummary(running: 2, waiting: 1, failed: 1, completed: 4).compactLabel,
+            "8个会话"
+        )
+        XCTAssertEqual(TaskStatusSummary().compactLabel, "0个会话")
+    }
+
     func testBarStateUsesAttentionFirstPriority() {
         XCTAssertEqual(BarState.derive(from: [task("run", .running), task("done", .completed)]), .completed)
         XCTAssertEqual(BarState.derive(from: [task("done", .completed), task("fail", .failed)]), .failed)

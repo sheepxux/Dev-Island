@@ -1,9 +1,9 @@
 import IslandCore
 import SwiftUI
 
-/// Compact multi-session snapshot for the collapsed island. Only the highest
-/// attention tier is presented, keeping the capsule focused on the one thing
-/// the user should understand next instead of becoming a row of counters.
+/// Multi-session snapshot for the collapsed island. The point matrix and
+/// title communicate the highest-attention state; the trailing label reports
+/// the total number of sessions instead of repeating that state.
 struct TaskStatusSummary: Equatable {
     struct Segment: Equatable, Identifiable {
         let status: TaskStatus
@@ -32,6 +32,7 @@ struct TaskStatusSummary: Equatable {
     }
 
     var total: Int { running + waiting + failed + completed }
+    var compactLabel: String { "\(total)个会话" }
 
     var foregroundSegment: Segment? {
         if waiting > 0 { return .init(status: .waiting, count: waiting) }
@@ -58,31 +59,11 @@ struct CompactTaskStatusSummary: View {
     let summary: TaskStatusSummary
 
     var body: some View {
-        Group {
-            if let segment = summary.foregroundSegment {
-                HStack(spacing: 4) {
-                    Text("\(segment.count)")
-                        .foregroundStyle(.white.opacity(0.94))
-                    Text(label(for: segment.status))
-                        .foregroundStyle(segment.status.color)
-                }
-            } else {
-                Text("0")
-                    .foregroundStyle(.white.opacity(0.55))
-            }
-        }
-        .font(Typo.barBadge)
-        .monospacedDigit()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(summary.accessibilityLabel)
-    }
-
-    private func label(for status: TaskStatus) -> String {
-        switch status {
-        case .running:   return "running"
-        case .waiting:   return "waiting"
-        case .failed:    return "failed"
-        case .completed: return "done"
-        }
+        Text(summary.compactLabel)
+            .foregroundStyle(.white.opacity(summary.total > 0 ? 0.88 : 0.55))
+            .font(Typo.barBadge)
+            .monospacedDigit()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(summary.accessibilityLabel)
     }
 }

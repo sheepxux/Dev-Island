@@ -45,7 +45,8 @@ enum AgentBrand {
 /// Settings service rows. Falls back to the monogram automatically.
 struct AgentLogoBadge: View {
     let source: String
-    /// Badge edge length. The glyph is inset ~62% of this.
+    /// Badge edge length. Each mark receives a small optical-size correction
+    /// so dense silhouettes stay legible at menu-bar scale.
     var size: CGFloat = 26
     /// Ink color for the template logo / monogram text.
     var ink: Color = .white.opacity(0.85)
@@ -65,8 +66,8 @@ struct AgentLogoBadge: View {
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .frame(width: size * 0.62, height: size * 0.62)
-                    .foregroundStyle(ink)
+                    .frame(width: size * glyphScale, height: size * glyphScale)
+                    .foregroundStyle(resolvedInk)
             } else {
                 Text(AgentBrand.monogram(for: source))
                     .font(.system(size: size * 0.46, weight: .semibold, design: .rounded))
@@ -74,6 +75,19 @@ struct AgentLogoBadge: View {
             }
         }
         .frame(width: size, height: size)
+    }
+
+    /// The supplied Codex mark has a dense 24×24 outline and an internal
+    /// prompt glyph. At the generic 62% scale both details collapse into a
+    /// soft blob, so it gets a restrained optical enlargement. The warm sand
+    /// ink is the same accent used throughout Dev Island's tour and keeps the
+    /// monochrome mark inside the product palette.
+    private var glyphScale: CGFloat {
+        source == "codex" ? 0.72 : 0.62
+    }
+
+    private var resolvedInk: Color {
+        source == "codex" ? Palette.tourAccent.opacity(0.96) : ink
     }
 }
 

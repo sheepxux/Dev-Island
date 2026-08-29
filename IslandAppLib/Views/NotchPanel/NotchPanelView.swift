@@ -23,19 +23,43 @@ struct NotchPanelView: View {
     /// reserve space for the hardware notch at the top.
     let layout: NotchMetrics.Layout
     let highlightedTask: TaskIdentity?
+    var pendingActionRequests: [AgentActionRequest] = []
     let onTaskTap: (AgentTask) -> Void
+    var onActionDecision: (UUID, AgentActionDecision) -> Void = { _, _ in }
+    var onQuestionAnswer: (UUID, [AgentQuestionAnswer]) -> Void = { _, _ in }
+    var onActionDefer: (UUID) -> Void = { _ in }
     let onSettingsTap: () -> Void
     let onConnectTap: () -> Void
     /// When `false` the view renders content only — the parent
     /// (`IslandRootView`) is drawing a shared backdrop that spans both bar
     /// and panel states for a single SwiftUI morph.
     var drawsBackdrop: Bool = true
+    /// The production root has already built one attention-first snapshot.
+    /// Reuse its state instead of sorting the same rows again; standalone
+    /// previews may omit this and retain the generic derivation path.
+    var presentationState: BarState? = nil
+    /// The root snapshot has already counted every status in one pass. Reuse
+    /// it for the header count and accessibility summary instead of scanning
+    /// the same task rows again inside the expanded panel.
+    var presentationSummary: TaskStatusSummary? = nil
+    /// Deterministic final-state input for DEBUG/QA snapshot hosts, which do
+    /// not advance the run loop long enough for the asynchronous renderer.
+    /// Production leaves this empty and always uses the off-main path.
+    var initialPlanDocuments: [UUID: PlanMarkdownDocument] = [:]
     /// Whether the panel is actually on screen. `false` keeps the layout
     /// (the parent measures it to size the silhouette) but stops the clock
     /// below and every per-card animation.
     var isLive: Bool = true
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.devIslandLanguage) private var language
+
     var body: some View {
+        let requestPresentation = ActionRequestPresentationSnapshot(
+            requests: pendingActionRequests,
+            tasks: tasks
+        )
+
         ZStack(alignment: .top) {
             if drawsBackdrop {
                 NotchPanelShape(
@@ -47,7 +71,7 @@ struct NotchPanelView: View {
 
             VStack(spacing: 0) {
                 topRow
-                panelBody
+                panelBody(requestPresentation: requestPresentation)
                     .padding(.top, layout.hasNotch ? 8 : 0)
             }
             // Measured on the content stack rather than the outer frame:
@@ -102,15 +126,81 @@ struct NotchPanelView: View {
 
     @ViewBuilder
     private var titleLabel: some View {
-        HStack(spacing: 6) {
-            Text("Sessions")
+        HStack(spacing: 7) {
+            AnimatedDotMatrixMark(
+                color: headerState.color,
+                size: 8,
+                motion: headerState.matrixMotion,
+                pattern: headerState.matrixPattern,
+                intensity: headerState.matrixIntensity,
+                isAnimated: isLive && !reduceMotion
+            )
+
+            Text(L10n.string(headerTitle, language: language))
                 .font(Typo.sectionHeader)
                 .foregroundStyle(Palette.warmWhite.opacity(0.9))
-            Text("\(tasks.count)")
+
+            Text("\(headerCount)")
                 .font(Typo.barCount)
-                .foregroundStyle(Palette.textTertiary)
+                .foregroundStyle(headerState.color.opacity(0.9))
                 .monospacedDigit()
+
+            if !layout.hasNotch, headerCount != tasks.count {
+                Text("· \(sessionCountLabel)")
+                    .font(Typo.barCount)
+                    .foregroundStyle(Palette.textTertiary)
+                    .monospacedDigit()
+            }
         }
+        .lineLimit(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(headerAccessibilityLabel)
+    }
+
+    private var headerState: BarState {
+        presentationState ?? BarState.derive(from: tasks)
+    }
+
+    private var headerTitle: String {
+        switch headerState {
+        case .waiting:   return "Attention"
+        case .failed:    return "Review"
+        case .completed: return "Results"
+        case .running:   return "Working"
+        case .idle:      return "Sessions"
+        }
+    }
+
+    private var headerCount: Int {
+        switch headerState {
+        case .waiting:   return headerSummary.waiting
+        case .failed:    return headerSummary.failed
+        case .completed: return headerSummary.completed
+        case .running:   return headerSummary.running
+        case .idle:      return 0
+        }
+    }
+
+    private var headerSummary: TaskStatusSummary {
+        presentationSummary ?? TaskStatusSummary(tasks: tasks)
+    }
+
+    private var sessionCountLabel: String {
+        L10n.sessionCount(tasks.count, language: language)
+    }
+
+    private var headerAccessibilityLabel: String {
+        guard headerSummary.total > 0 else {
+            return L10n.string("No sessions", language: language)
+        }
+        return L10n.format(
+            "%@, %lld. %@. %lld sessions total.",
+            language: language,
+            L10n.string(headerTitle, language: language),
+            Int64(headerCount),
+            headerSummary.accessibilityLabel(language: language),
+            Int64(headerSummary.total)
+        )
     }
 
     @ViewBuilder
@@ -126,7 +216,13 @@ struct NotchPanelView: View {
             }
             .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
             .pointingHandCursor()
-            .help("Connect an agent")
+            .help(L10n.string("Connect an agent", language: language))
+            .accessibilityLabel(
+                L10n.string("Connect an Agent", language: language)
+            )
+            .accessibilityHint(
+                L10n.string("Opens Agent connection settings", language: language)
+            )
 
             Button(action: onSettingsTap) {
                 Image(systemName: "gearshape")
@@ -137,6 +233,13 @@ struct NotchPanelView: View {
             }
             .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
             .pointingHandCursor()
+            .help(L10n.string("Open Settings", language: language))
+            .accessibilityLabel(
+                L10n.string("Open Dev Island Settings", language: language)
+            )
+            .accessibilityHint(
+                L10n.string("Opens settings in a separate window", language: language)
+            )
         }
     }
 
@@ -150,14 +253,23 @@ struct NotchPanelView: View {
         // state from falling back to a generic system dot.
         // — keeps the panel header consistent with the rest of the
         // status palette when reconnecting/degraded states flap.
-        DotMatrixMark(
-            color: connectionColor,
-            size: 8,
-            pattern: connectionPattern,
-            intensity: connectionIntensity
-        )
+        HStack(spacing: 0) {
+            DotMatrixMark(
+                color: connectionColor,
+                size: 8,
+                pattern: connectionPattern,
+                intensity: connectionIntensity
+            )
+        }
             .animation(Motion.colorTransition, value: connectionStatus)
-            .help(connectionTooltip)
+            .help(L10n.string(connectionTooltip, language: language))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                L10n.string("Agent connections", language: language)
+            )
+            .accessibilityValue(
+                L10n.string(connectionAccessibilityValue, language: language)
+            )
     }
 
     private var connectionColor: Color {
@@ -193,44 +305,91 @@ struct NotchPanelView: View {
         }
     }
 
-    @ViewBuilder
-    private var panelBody: some View {
-        // Keep one stable hierarchy across reveal and status changes. Swapping
-        // a direct list for a TimelineView rebuilt ScrollViewReader, which
-        // could lose both the user's position and notification pre-position.
-        TimelineView(
-            .animation(
-                // The same shared clock drives duration labels and the
-                // in-row nine-dot signals. Thirty frames per second keeps the
-                // orbit fluid without introducing one timeline per task.
-                minimumInterval: 1.0 / 30.0,
-                paused: !isLive || !hasLiveDurations
-            )
-        ) { context in
-            if tasks.isEmpty {
-                emptyState
-            } else {
-                taskList(now: context.date)
-            }
+    private var connectionAccessibilityValue: String {
+        switch connectionStatus {
+        case .connected:                 return "Connected"
+        case .reconnecting:              return "Reconnecting"
+        case .disconnected:              return "Disconnected"
+        case .degraded:                  return "Needs attention"
         }
     }
 
-    private var hasLiveDurations: Bool {
-        tasks.contains { $0.status == .running || $0.status == .waiting }
+    @ViewBuilder
+    private func panelBody(
+        requestPresentation: ActionRequestPresentationSnapshot
+    ) -> some View {
+        // The scroll container is deliberately clock-free. Task durations and
+        // action countdowns own tiny row/header-local clocks, so a second tick
+        // cannot reconstruct ScrollViewReader, LazyVStack, Plan Review, hover
+        // state, or the decision buttons around the changing text.
+        if tasks.isEmpty && pendingActionRequests.isEmpty {
+            emptyState
+        } else {
+            taskList(requestPresentation: requestPresentation)
+        }
     }
 
-    private func taskList(now: Date) -> some View {
+    private func taskList(
+        requestPresentation: ActionRequestPresentationSnapshot
+    ) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 1) {
                     ForEach(tasks, id: \.identity) { task in
-                        TaskCard(
-                            task: task,
-                            isHighlighted: task.identity == highlightedTask,
-                            now: now,
-                            onTap: { onTaskTap(task) }
-                        )
+                        VStack(spacing: 1) {
+                            if let request = requestPresentation.primary(
+                                for: task.identity
+                            ) {
+                                ActionRequestSurface(
+                                    request: request,
+                                    contextTitle: task.title,
+                                    additionalQueuedCount: requestPresentation.additionalCount(
+                                        for: task.identity
+                                    ),
+                                    isLive: isLive,
+                                    isKeyboardPrimary: requestPresentation
+                                        .isKeyboardPrimary(request),
+                                    initialPlanDocument: initialPlanDocuments[request.id],
+                                    onDecision: { decision in
+                                        onActionDecision(request.id, decision)
+                                    },
+                                    onAnswer: { answers in
+                                        onQuestionAnswer(request.id, answers)
+                                    },
+                                    onDeferToAgent: {
+                                        onActionDefer(request.id)
+                                    }
+                                )
+                            } else {
+                                TaskCard(
+                                    task: task,
+                                    isHighlighted: task.identity == highlightedTask,
+                                    isLive: isLive,
+                                    onTap: { onTaskTap(task) }
+                                )
+                            }
+                        }
                         .id(task.identity)
+                    }
+
+                    ForEach(requestPresentation.orphanedRequests) { request in
+                        ActionRequestSurface(
+                            request: request,
+                            isLive: isLive,
+                            isKeyboardPrimary: requestPresentation
+                                .isKeyboardPrimary(request),
+                            initialPlanDocument: initialPlanDocuments[request.id],
+                            onDecision: { decision in
+                                onActionDecision(request.id, decision)
+                            },
+                            onAnswer: { answers in
+                                onQuestionAnswer(request.id, answers)
+                            },
+                            onDeferToAgent: {
+                                onActionDefer(request.id)
+                            }
+                        )
+                        .id(request.id)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -239,7 +398,7 @@ struct NotchPanelView: View {
             .onChange(of: highlightedTask, initial: true) { _, identity in
                 guard let identity,
                       tasks.contains(where: { $0.identity == identity }) else { return }
-                if isLive {
+                if isLive && !reduceMotion {
                     withAnimation(Motion.contentReveal) {
                         proxy.scrollTo(identity, anchor: .center)
                     }
@@ -257,33 +416,43 @@ struct NotchPanelView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Nothing needs you")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Palette.warmWhite.opacity(0.78))
+        HStack(alignment: .top, spacing: 13) {
+            DotMatrixMark(
+                color: Palette.stateIdle,
+                size: 18,
+                pattern: .field,
+                intensity: 0.95
+            )
+            .padding(.top, 1)
 
-            Text("Agent sessions will appear here automatically.")
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.textTertiary)
+            VStack(alignment: .leading, spacing: 7) {
+                Text(L10n.string("Nothing needs you", language: language))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.warmWhite.opacity(0.90))
 
-            Button(action: onConnectTap) {
-                HStack(spacing: 6) {
-                    Text("Connect an agent")
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 8, weight: .semibold))
+                Text(L10n.string(
+                    "Agent sessions will appear here automatically.",
+                    language: language
+                ))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.textSecondary.opacity(0.88))
+
+                Button(action: onConnectTap) {
+                    HStack(spacing: 6) {
+                        Text(L10n.string("Connect an agent", language: language))
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 8, weight: .semibold))
+                    }
+                    .font(.system(size: 11, weight: .medium))
                 }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Palette.warmWhite.opacity(0.66))
-                .contentShape(Rectangle())
+                .buttonStyle(IslandQuietActionButtonStyle())
+                .padding(.top, 3)
             }
-            .buttonStyle(PressableButtonStyle())
-            .pointingHandCursor()
-            .padding(.top, 5)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 18)
-        .padding(.top, 16)
-        .padding(.bottom, 18)
+        .padding(.top, 18)
+        .padding(.bottom, 20)
     }
 
     // MARK: - Geometry

@@ -12,6 +12,11 @@ public enum LocalAgentRegistry {
     public static let all: [LocalAgentDescriptor] = [
         .claudeCode,
         .codex,
+        .geminiCLI,
+        .qwenCode,
+        .copilotCLI,
+        .kimiCode,
+        .openCode,
         .cursor,
     ]
 

@@ -33,7 +33,7 @@ public final class OnboardingWindow: NSWindow {
             defer: false
         )
 
-        title = "Welcome to Dev Island"
+        title = L10n.string("Welcome to Dev Island")
         appearance = NSAppearance(named: .darkAqua)
         isMovable = true
         isMovableByWindowBackground = true
@@ -44,10 +44,12 @@ public final class OnboardingWindow: NSWindow {
         level = .normal
         collectionBehavior = [.fullScreenAuxiliary]
         contentView = NSHostingView(
-            rootView: OnboardingView { [weak self] requestsAuthorization in
-                self?.requestFinish(
-                    requestsNotificationAuthorization: requestsAuthorization
-                )
+            rootView: LocalizedAppRoot {
+                OnboardingView { [weak self] requestsAuthorization in
+                    self?.requestFinish(
+                        requestsNotificationAuthorization: requestsAuthorization
+                    )
+                }
             }
         )
         minSize = NSSize(width: OnboardingMetrics.width, height: OnboardingMetrics.height)

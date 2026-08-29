@@ -3,9 +3,9 @@
 # Trigger: pushing a tag matching `v*` (e.g. `git tag v0.1.0 && git push origin v0.1.0`).
 # Output: a signed + notarized + stapled DMG (primary, drag-to-Applications
 # install UX) and zip (stable direct-download URL + future Sparkle feed)
-# attached to a GitHub Release, plus each artifact's `sha256` so the Cask
-# formula can be updated by hand (or by a follow-up automation step in the
-# homebrew-island tap).
+# attached to a GitHub Release, plus a signed Sparkle appcast, an atomically
+# generated SHA-256 manifest, and GitHub build provenance binding every
+# published artifact to this tagged workflow run.
 #
 # Why a single job:
 # - codesign + notarytool + stapler all need a signed-in keychain on the SAME
@@ -28,6 +28,12 @@
 #   KEYCHAIN_PASSWORD              — anything; just used to lock the temporary
 #                                    keychain we create on the runner. e.g. a
 #                                    20-char random string.
+#   SPARKLE_PUBLIC_ED_KEY           — base64 Ed25519 public key emitted by
+#                                    Sparkle's generate_keys tool. Embedded in
+#                                    the signed app; public material, stored as
+#                                    a secret only to keep release setup atomic.
+#   SPARKLE_PRIVATE_ED_KEY          — private Ed25519 key exported by
+#                                    generate_keys. Never print or commit it.
 
 name: Release
 
@@ -36,19 +42,19 @@ on:
     tags:
       - 'v*'
 
-# Only one release run at a time per tag — protects against double-publish if
-# you push the same tag twice (which can happen if a hook nudges it).
+# Serialize all releases, not only runs for the same tag. Two tags publishing
+# concurrently can race the stable asset names and `releases/latest` appcast.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
-# Since GitHub tightened the default GITHUB_TOKEN scopes in 2023, workflows
-# need to opt into write permissions explicitly. `contents: write` lets the
-# softprops/action-gh-release step POST to /repos/.../releases (the v0.1.0
-# attempt with notarized .app failed with HTTP 403 "Resource not accessible
-# by integration" because we hadn't declared this).
+# `contents: write` publishes the reviewed Release. The two narrowly scoped
+# OIDC permissions let GitHub create Sigstore-backed build provenance for the
+# exact local artifact digests; they do not expose a reusable signing secret.
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build-sign-release:
@@ -70,7 +76,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # The job needs contents:write only for the final publication action.
+          # Repository-owned gates must never inherit a reusable Git credential
+          # from checkout while they execute code from the tagged revision.
+          persist-credentials: false
 
       # macos-15 default Xcode at the time of writing is 16.x (Swift 6).
       # We deliberately do NOT pin a specific Xcode_X.Y.app path because
@@ -84,6 +95,35 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # A tag can point to any commit, including one that never passed the
+      # main-branch workflow. Run all repository-owned gates before importing
+      # signing identities or exposing release secrets to later steps.
+      - name: Repository release gates
+        run: |
+          set -euo pipefail
+          ./scripts/release/verify-workflow-checkout-isolation.rb \
+            --workflow .github/workflows/release.yml
+          ./scripts/release/verify-workflow-run-shells.rb \
+            --workflow .github/workflows/ci.yml
+          ./scripts/release/verify-workflow-run-shells.rb \
+            --workflow .github/workflows/release.yml
+          ./scripts/release/verify-repository-script-syntax.rb
+          git ls-files --error-unmatch Package.resolved >/dev/null
+          test -f Package.resolved && test ! -L Package.resolved
+          swift package resolve
+          git diff --exit-code -- Package.resolved
+          ./scripts/ci/verify-security-invariants.sh
+          ./scripts/ci/verify-app-bundle-dependencies.sh
+          ./scripts/release/verify-brand-assets.rb \
+            --manifest scripts/assets/agent-logos/manifest.json \
+            --trademark-reviews scripts/assets/agent-logos/trademark-reviews.json \
+            --source-dir scripts/assets/agent-logos \
+            --bundle-dir IslandApp/Resources \
+            --licenses-dir scripts/licenses \
+            --require-release-reviewed
+          ./scripts/ci/run-authoritative-tests.sh
+          git diff --check
+
       # Read the version once so subsequent steps can reference it. The
       # tag (refs/tags/v0.1.0) and the VERSION file should match — we
       # assert they do as a guardrail against a tag/file mismatch shipping
@@ -91,13 +131,36 @@ jobs:
       - name: Resolve version
         id: version
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          FILE_VERSION="$(cat VERSION)"
+          set -euo pipefail
+          git ls-files --error-unmatch VERSION >/dev/null
+          git ls-files --error-unmatch scripts/release/validate-product-version.rb >/dev/null
+          test "${GITHUB_REF_NAME}" != "${GITHUB_REF_NAME#v}"
+          TAG_VERSION="$(./scripts/release/validate-product-version.rb \
+            --version "${GITHUB_REF_NAME#v}")"
+          FILE_VERSION="$(./scripts/release/validate-product-version.rb \
+            --version-file VERSION)"
           if [[ "${TAG_VERSION}" != "${FILE_VERSION}" ]]; then
             echo "::error::Tag (${TAG_VERSION}) does not match VERSION file (${FILE_VERSION})"
             exit 1
           fi
           echo "version=${TAG_VERSION}" >> "${GITHUB_OUTPUT}"
+
+      # Fail before importing a certificate or creating release artifacts if
+      # any part of the production trust chain is missing. Values are never
+      # printed; this step checks only presence and non-secret structure.
+      - name: Validate release credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          P12_BASE64: ${{ secrets.SIGNING_CERTIFICATE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          ./scripts/ci/validate-release-credentials.sh
 
       # Import the signing certificate into a temporary keychain.
       # Why a temporary keychain (not the default one):
@@ -117,7 +180,7 @@ jobs:
           KEYCHAIN_PATH="${RUNNER_TEMP}/signing.keychain-db"
           CERT_PATH="${RUNNER_TEMP}/signing.p12"
 
-          echo "${P12_BASE64}" | base64 --decode -o "${CERT_PATH}"
+          printf '%s' "${P12_BASE64}" | base64 --decode -o "${CERT_PATH}"
 
           # Sanity-check the decoded file before handing it to security(1):
           # if the base64 secret was somehow truncated or whitespace-mangled
@@ -165,7 +228,32 @@ jobs:
           echo "SIGNING_IDENTITY=${IDENTITY}" >> "${GITHUB_ENV}"
 
       - name: Build .app (universal)
-        run: ./scripts/build-app.sh
+        env:
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PUBLIC_ED_KEY}" ]]; then
+            echo "::error::SPARKLE_PUBLIC_ED_KEY is required for release builds"
+            exit 1
+          fi
+          ./scripts/build-app.sh
+
+      # build-app.sh already runs this fail-closed before its local ad-hoc
+      # signature. Repeat it as an explicit tagged-release boundary so the
+      # signed/notarized artifact can never depend on a developer machine,
+      # a missing framework, an escaping symlink, or a thin architecture.
+      - name: Verify app dependency closure
+        run: |
+          set -euo pipefail
+          ./scripts/release/verify-app-bundle-dependencies.rb \
+            --app "build/Dev Island.app"
+          ./scripts/release/verify-brand-assets.rb \
+            --manifest scripts/assets/agent-logos/manifest.json \
+            --trademark-reviews scripts/assets/agent-logos/trademark-reviews.json \
+            --source-dir scripts/assets/agent-logos \
+            --bundle-dir "build/Dev Island.app/Contents/Resources" \
+            --licenses-dir "build/Dev Island.app/Contents/Resources/ThirdPartyLicenses" \
+            --require-release-reviewed
 
       # Override the ad-hoc signature from build-app.sh with the real
       # Developer ID one. We re-sign rather than passing the identity into
@@ -173,16 +261,46 @@ jobs:
       # (where developers don't have the prod cert) — keeping signing
       # outside the script preserves that property.
       - name: Codesign with Developer ID
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           # The bundle filename is "Dev Island.app" — must quote the
           # path everywhere downstream because of the space.
-          codesign --force --deep --options runtime \
+          APP="build/Dev Island.app"
+          SPARKLE="${APP}/Contents/Frameworks/Sparkle.framework"
+
+          # This repo builds an app bundle outside Xcode, so sign Sparkle's
+          # nested code explicitly in leaf-to-root order. Sparkle warns
+          # against --deep for distribution because it can erase helper
+          # entitlements and conceal an incomplete signing graph.
+          codesign --force --options runtime \
+            --sign "${SIGNING_IDENTITY}" --timestamp \
+            "${SPARKLE}/Versions/B/XPCServices/Installer.xpc"
+          codesign --force --options runtime \
+            --preserve-metadata=entitlements \
+            --sign "${SIGNING_IDENTITY}" --timestamp \
+            "${SPARKLE}/Versions/B/XPCServices/Downloader.xpc"
+          codesign --force --options runtime \
+            --sign "${SIGNING_IDENTITY}" --timestamp \
+            "${SPARKLE}/Versions/B/Autoupdate"
+          codesign --force --options runtime \
+            --sign "${SIGNING_IDENTITY}" --timestamp \
+            "${SPARKLE}/Versions/B/Updater.app"
+          codesign --force --options runtime \
+            --sign "${SIGNING_IDENTITY}" --timestamp "${SPARKLE}"
+
+          codesign --force --options runtime \
             --sign "${SIGNING_IDENTITY}" \
             -i app.devisland.Island \
             --timestamp \
-            "build/Dev Island.app"
-          codesign --verify --strict --verbose=2 "build/Dev Island.app"
+            "${APP}"
+          codesign --verify --deep --strict --verbose=2 "${APP}"
+          codesign -dv --verbose=4 "${APP}" 2>build/app-signature-metadata.txt
+          if ! grep -Fqx "TeamIdentifier=${APPLE_TEAM_ID}" build/app-signature-metadata.txt; then
+            echo "::error::Signed App TeamIdentifier does not match APPLE_TEAM_ID"
+            exit 1
+          fi
           # spctl is the Gatekeeper assessment tool — pre-notarization
           # this should output "rejected (Unnotarized Developer ID)",
           # which is the *correct* state. Notarization in the next step
@@ -221,6 +339,41 @@ jobs:
           # worked!".
           xcrun stapler staple "build/Dev Island.app"
           xcrun stapler validate "build/Dev Island.app"
+          codesign --verify --deep --strict --verbose=2 "build/Dev Island.app"
+          spctl -a -vvv -t exec "build/Dev Island.app"
+
+      # Launch the exact notarized production App from a frozen private copy.
+      # The paired argument/environment opt-in renders the real shipping UI
+      # while keeping Keychain, SQLite, local Hooks, Manus, notifications and
+      # Sparkle inert. All acceptance fields stay in this process's shell
+      # memory; runner-temporary evidence paths are never publication inputs.
+      - name: Hermetically launch notarized production app
+        run: |
+          set -euo pipefail
+          production_summary="$(
+            ./scripts/qa/measure-app-performance.sh \
+              "build/Dev Island.app/Contents/MacOS/IslandApp" \
+              production-launch-smoke \
+              "${RUNNER_TEMP}/dev-island-notarized-production-launch.csv" \
+              0 8
+          )"
+          for invariant in \
+            'scenario=production-launch-smoke' \
+            'launch_profile=production-hermetic' \
+            'production_services_isolated=true' \
+            'isolated_user_home=true' \
+            'isolated_app_snapshot=true' \
+            'normal_termination=true' \
+            'app_exit_status=0' \
+            'sample_count=8'; do
+            grep -Fqx "$invariant" <<<"$production_summary"
+          done
+          private_executable_sha256="$(sed -n 's/^executable_sha256=//p' \
+            <<<"$production_summary")"
+          selected_executable_sha256="$(sed -n 's/^selected_executable_sha256=//p' \
+            <<<"$production_summary")"
+          [[ "$private_executable_sha256" =~ ^[0-9a-f]{64}$ ]]
+          test "$selected_executable_sha256" = "$private_executable_sha256"
 
       # Primary user-facing artifact: a DMG with the customary macOS
       # install experience — open it and you get the app icon next to an
@@ -279,6 +432,8 @@ jobs:
             --timeout 45m
           xcrun stapler staple "${STABLE_DMG}"
           xcrun stapler validate "${STABLE_DMG}"
+          codesign --verify --strict --verbose=2 "${STABLE_DMG}"
+          spctl -a -vvv -t open --context context:primary-signature "${STABLE_DMG}"
 
           cp "${STABLE_DMG}" "${VERSIONED_DMG}"
           SHA256="$(shasum -a 256 "${STABLE_DMG}" | awk '{print $1}')"
@@ -330,11 +485,150 @@ jobs:
           echo "versioned=${VERSIONED}" >> "${GITHUB_OUTPUT}"
           echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
 
+      - name: Render release-pinned Homebrew Cask
+        id: cask
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA256: ${{ steps.package.outputs.sha256 }}
+          OUTPUT: build/dev-island.rb
+        run: |
+          set -euo pipefail
+          ./scripts/render-homebrew-cask.sh
+          echo "path=${OUTPUT}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate signed Sparkle appcast
+        id: appcast
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PRIVATE_ED_KEY}" ]]; then
+            echo "::error::SPARKLE_PRIVATE_ED_KEY is required to sign updates"
+            exit 1
+          fi
+
+          VERSION="${{ steps.version.outputs.version }}"
+          FEED_DIR="build/sparkle-feed"
+          ARCHIVE="Dev-Island-${VERSION}.zip"
+          GENERATOR=".build/artifacts/sparkle/Sparkle/bin/generate_appcast"
+          mkdir -p "${FEED_DIR}"
+          cp "${{ steps.package.outputs.versioned }}" "${FEED_DIR}/${ARCHIVE}"
+
+          # The repository-owned wrapper moves the key into a non-exported
+          # shell buffer, removes all release credential variables, and starts
+          # Sparkle with a minimal environment. The pinned generator receives
+          # the private key only through --ed-key-file stdin.
+          ./scripts/release/run-sparkle-appcast-generator.sh \
+            "${GENERATOR}" \
+            "${FEED_DIR}" \
+            "${GITHUB_REF_NAME}"
+
+          APPCAST="${FEED_DIR}/appcast.xml"
+          grep -q 'sparkle:edSignature=' "${APPCAST}"
+          grep -q 'sparkle-signatures:' "${APPCAST}"
+          grep -q "releases/download/${GITHUB_REF_NAME}/${ARCHIVE}" "${APPCAST}"
+          # Release assets are flattened to their basename by GitHub. Keep a
+          # root copy so SHA256SUMS names exactly match downloaded files.
+          cp "${APPCAST}" build/appcast.xml
+          echo "path=build/appcast.xml" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate and verify SPDX SBOM
+        id: sbom
+        run: |
+          set -euo pipefail
+          APP='build/Dev Island.app'
+          SBOM='build/Dev-Island.spdx.json'
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct "${GITHUB_SHA}")"
+          swift scripts/release/generate-sbom.swift \
+            --package-resolved Package.resolved \
+            --version-file VERSION \
+            --licenses-dir "$APP/Contents/Resources/ThirdPartyLicenses" \
+            --toml-header .build/app-production/checkouts/swift-toml/Sources/CTomlPlusPlus/toml.hpp \
+            --brand-manifest scripts/assets/agent-logos/manifest.json \
+            --brand-source-dir scripts/assets/agent-logos \
+            --brand-bundle-dir "$APP/Contents/Resources" \
+            --source-revision "${GITHUB_SHA}" \
+            --source-date-epoch "${SOURCE_DATE_EPOCH}" \
+            --output "$SBOM"
+          swift scripts/release/generate-sbom.swift \
+            --package-resolved Package.resolved \
+            --version-file VERSION \
+            --licenses-dir "$APP/Contents/Resources/ThirdPartyLicenses" \
+            --toml-header .build/app-production/checkouts/swift-toml/Sources/CTomlPlusPlus/toml.hpp \
+            --brand-manifest scripts/assets/agent-logos/manifest.json \
+            --brand-source-dir scripts/assets/agent-logos \
+            --brand-bundle-dir "$APP/Contents/Resources" \
+            --source-revision "${GITHUB_SHA}" \
+            --source-date-epoch "${SOURCE_DATE_EPOCH}" \
+            --check "$SBOM"
+          echo "path=${SBOM}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate release integrity manifest
+        id: integrity
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          ./scripts/release/generate-release-integrity-manifest.sh
+          echo "path=build/SHA256SUMS" >> "${GITHUB_OUTPUT}"
+
+      # Exercise the same repository-owned verifier users run after download.
+      # The build directory contains intermediate files, so stage only the
+      # exact eight public assets in an isolated directory first.
+      - name: Verify complete release asset contract
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          VERIFY_DIR="$(mktemp -d "${RUNNER_TEMP}/dev-island-release-assets.XXXXXX")"
+          trap 'rm -rf "${VERIFY_DIR}"' EXIT
+          for asset in \
+            Dev-Island.dmg \
+            "Dev-Island-${VERSION}.dmg" \
+            Dev-Island.zip \
+            "Dev-Island-${VERSION}.zip" \
+            Dev-Island.spdx.json \
+            SHA256SUMS \
+            appcast.xml \
+            dev-island.rb; do
+            cp "build/${asset}" "${VERIFY_DIR}/${asset}"
+          done
+          ./scripts/release/verify-release-assets.sh \
+            --tag "${GITHUB_REF_NAME}" \
+            --asset-dir "${VERIFY_DIR}" \
+            --source-revision "${GITHUB_SHA}"
+
+      # GitHub stores this Sigstore-backed provenance separately from the
+      # Release assets. Users can verify that a downloaded file was produced
+      # by this repository's tagged workflow without trusting copied checksum
+      # text in release notes.
+      - name: Attest release build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: |
+            ${{ steps.dmg.outputs.stable }}
+            ${{ steps.dmg.outputs.versioned }}
+            ${{ steps.package.outputs.stable }}
+            ${{ steps.package.outputs.versioned }}
+            ${{ steps.appcast.outputs.path }}
+            ${{ steps.cask.outputs.path }}
+            ${{ steps.sbom.outputs.path }}
+            ${{ steps.integrity.outputs.path }}
+
+      - name: Attest release SBOM
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2
+        with:
+          subject-path: |
+            ${{ steps.dmg.outputs.stable }}
+            ${{ steps.dmg.outputs.versioned }}
+            ${{ steps.package.outputs.stable }}
+            ${{ steps.package.outputs.versioned }}
+          sbom-path: ${{ steps.sbom.outputs.path }}
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Island ${{ steps.version.outputs.version }}
+          name: Dev Island ${{ steps.version.outputs.version }}
           # Body links the Cask install command directly so users landing
           # on the Releases page have a copy-paste path to install.
           body: |
@@ -360,11 +654,40 @@ jobs:
             **SHA-256**
             - `Dev-Island.dmg`: `${{ steps.dmg.outputs.sha256 }}`
             - `Dev-Island.zip`: `${{ steps.package.outputs.sha256 }}`
+
+            `SHA256SUMS` covers every DMG/ZIP alias, the signed appcast, SPDX
+            SBOM, and generated Cask. From the download directory, verify it with:
+
+            ```sh
+            shasum -a 256 -c SHA256SUMS
+            ```
+
+            GitHub also records Sigstore-backed build provenance. With the
+            GitHub CLI, verify an individual artifact with:
+
+            ```sh
+            gh attestation verify Dev-Island.dmg --repo sheepxux/Dev-Island
+            ```
+
+            `Dev-Island.spdx.json` inventories the exact SwiftPM revisions and
+            bundled vendored components. GitHub binds that SBOM to both DMG and
+            ZIP aliases with a separate signed SBOM attestation.
+
+            In-app updates use the signed `appcast.xml` asset below. Both the
+            feed and the downloaded archive require Sparkle Ed25519 signatures.
+
+            `dev-island.rb` is a release-pinned Cask candidate generated from
+            the same version and ZIP SHA-256. Publishing it to the tap remains
+            a separate reviewed action.
           files: |
             ${{ steps.dmg.outputs.stable }}
             ${{ steps.dmg.outputs.versioned }}
             ${{ steps.package.outputs.stable }}
             ${{ steps.package.outputs.versioned }}
+            ${{ steps.appcast.outputs.path }}
+            ${{ steps.cask.outputs.path }}
+            ${{ steps.sbom.outputs.path }}
+            ${{ steps.integrity.outputs.path }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

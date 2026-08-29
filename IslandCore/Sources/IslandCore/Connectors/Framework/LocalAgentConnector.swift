@@ -26,6 +26,7 @@ public actor LocalAgentConnector: AgentConnector {
 
     public static let finishedTTL = LocalSessionTable.finishedTTL
     public static let staleTTL = LocalSessionTable.staleTTL
+    public static let maximumSessions = LocalSessionTable.maximumSessions
 
     /// Per-session bookkeeping caps so a pathological long-lived session
     /// can't grow memory unboundedly; evicting (unordered) extras only
@@ -76,7 +77,9 @@ public actor LocalAgentConnector: AgentConnector {
         pruneBookkeeping()
 
         guard let event else { return table.snapshot() }
-        let id = event.sessionId
+        guard let id = LocalAgentEvent.validSessionId(event.sessionId) else {
+            return table.snapshot()
+        }
 
         switch event.action {
         case .ignored:
@@ -95,7 +98,12 @@ public actor LocalAgentConnector: AgentConnector {
                 }
                 currentGeneration[id] = generation
             }
-            table.upsert(id: id, cwd: event.cwd, now: now) { task in
+            table.upsert(
+                id: id,
+                cwd: event.cwd,
+                jumpContext: event.jumpContext,
+                now: now
+            ) { task in
                 task.status = .running
                 task.currentPhase = nil
                 task.waitingMessage = nil
@@ -112,7 +120,12 @@ public actor LocalAgentConnector: AgentConnector {
                 IslandLogger.webhook.debug("\(self.displayName): dropping stale waiting event (finished generation)")
                 break
             }
-            table.upsert(id: id, cwd: event.cwd, now: now) { task in
+            table.upsert(
+                id: id,
+                cwd: event.cwd,
+                jumpContext: event.jumpContext,
+                now: now
+            ) { task in
                 task.status = .waiting
                 task.currentPhase = phase
                 task.waitingMessage = message
@@ -120,7 +133,12 @@ public actor LocalAgentConnector: AgentConnector {
 
         case .completed(let phase):
             guard stopApplies(id: id, generation: event.generationId) else { break }
-            table.upsert(id: id, cwd: event.cwd, now: now) { task in
+            table.upsert(
+                id: id,
+                cwd: event.cwd,
+                jumpContext: event.jumpContext,
+                now: now
+            ) { task in
                 task.status = .completed
                 task.currentPhase = phase
                 task.waitingMessage = nil
@@ -128,7 +146,12 @@ public actor LocalAgentConnector: AgentConnector {
 
         case .failed(let phase):
             guard stopApplies(id: id, generation: event.generationId) else { break }
-            table.upsert(id: id, cwd: event.cwd, now: now) { task in
+            table.upsert(
+                id: id,
+                cwd: event.cwd,
+                jumpContext: event.jumpContext,
+                now: now
+            ) { task in
                 task.status = .failed
                 task.currentPhase = phase
                 task.waitingMessage = nil
@@ -141,6 +164,9 @@ public actor LocalAgentConnector: AgentConnector {
             stoppedGenerations.removeValue(forKey: id)
         }
 
+        // Capacity eviction can remove the just-applied or another session.
+        // Do not retain generation guard state for anything no longer visible.
+        pruneBookkeeping()
         return table.snapshot()
     }
 

@@ -1,0 +1,272 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Tests, security, universal build
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify workflows + toolchain
+        id: toolchain
+        run: |
+          set -euo pipefail
+          ./scripts/release/verify-workflow-run-shells.rb \
+            --workflow .github/workflows/ci.yml
+          ./scripts/release/verify-workflow-run-shells.rb \
+            --workflow .github/workflows/release.yml
+          ./scripts/release/verify-repository-script-syntax.rb
+          xcodebuild -version
+          swift --version
+
+      - name: Resolve dependencies
+        id: dependencies
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch VERSION >/dev/null
+          git ls-files --error-unmatch scripts/release/validate-product-version.rb >/dev/null
+          ./scripts/release/validate-product-version.rb --version-file VERSION >/dev/null
+          git ls-files --error-unmatch Package.resolved >/dev/null
+          test -f Package.resolved && test ! -L Package.resolved
+          swift package resolve
+          git diff --exit-code -- Package.resolved
+
+      - name: Security and privacy invariants
+        id: security
+        run: |
+          set -o pipefail
+          ./scripts/ci/verify-security-invariants.sh 2>&1 \
+            | tee "${RUNNER_TEMP}/dev-island-security.log"
+
+      - name: Test
+        id: tests
+        run: |
+          set -euo pipefail
+          ./scripts/ci/run-authoritative-tests.sh 2>&1 \
+            | tee "${RUNNER_TEMP}/dev-island-tests.log"
+
+      # Build and really launch the hermetic fixture first. Besides preserving
+      # build-flavor isolation, this catches dependency/loader/startup failures
+      # that static bundle inspection cannot prove. A locked runner is valid
+      # only for this survival smoke and never for a performance claim.
+      - name: Build and launch isolated performance fixture
+        id: performance_build
+        env:
+          DEV_ISLAND_PERFORMANCE_QA: 1
+          BUILD_DIR: ${{ runner.temp }}/dev-island-performance-ci
+        run: |
+          set -euo pipefail
+          ./scripts/build-app.sh
+          performance_summary="$(
+            DEV_ISLAND_PERF_ALLOW_LOCKED=1 \
+              ./scripts/qa/measure-app-performance.sh \
+              "${BUILD_DIR}/Dev Island.app/Contents/MacOS/IslandApp" \
+              idle \
+              "${RUNNER_TEMP}/dev-island-launch-smoke.csv" \
+              0 8
+          )"
+          for invariant in \
+            'isolated_user_home=true' \
+            'isolated_app_snapshot=true' \
+            'normal_termination=true' \
+            'app_exit_status=0' \
+            'sample_count=8'; do
+            grep -Fqx "$invariant" <<<"$performance_summary"
+          done
+          private_executable_sha256="$(sed -n 's/^executable_sha256=//p' \
+            <<<"$performance_summary")"
+          selected_executable_sha256="$(sed -n 's/^selected_executable_sha256=//p' \
+            <<<"$performance_summary")"
+          [[ "$private_executable_sha256" =~ ^[0-9a-f]{64}$ ]]
+          test "$selected_executable_sha256" = "$private_executable_sha256"
+
+      - name: Build and launch universal production app
+        id: app_build
+        env:
+          BUILD_DIR: ${{ runner.temp }}/dev-island-ci
+        run: |
+          set -euo pipefail
+          ./scripts/build-app.sh
+          production_summary="$(
+            ./scripts/qa/measure-app-performance.sh \
+              "${BUILD_DIR}/Dev Island.app/Contents/MacOS/IslandApp" \
+              production-launch-smoke \
+              "${RUNNER_TEMP}/dev-island-production-launch-smoke.csv" \
+              0 8
+          )"
+          for invariant in \
+            'scenario=production-launch-smoke' \
+            'launch_profile=production-hermetic' \
+            'production_services_isolated=true' \
+            'isolated_user_home=true' \
+            'isolated_app_snapshot=true' \
+            'normal_termination=true' \
+            'app_exit_status=0' \
+            'sample_count=8'; do
+            grep -Fqx "$invariant" <<<"$production_summary"
+          done
+          private_executable_sha256="$(sed -n 's/^executable_sha256=//p' \
+            <<<"$production_summary")"
+          selected_executable_sha256="$(sed -n 's/^selected_executable_sha256=//p' \
+            <<<"$production_summary")"
+          [[ "$private_executable_sha256" =~ ^[0-9a-f]{64}$ ]]
+          test "$selected_executable_sha256" = "$private_executable_sha256"
+
+      - name: Verify app bundle
+        id: bundle
+        env:
+          APP: ${{ runner.temp }}/dev-island-ci/Dev Island.app
+        run: |
+          set -euo pipefail
+          ./scripts/ci/verify-app-bundle-dependencies.sh
+          ./scripts/release/verify-app-bundle-dependencies.rb --app "$APP"
+          test -x "$APP/Contents/MacOS/IslandApp"
+          test -f "$APP/Contents/Resources/AppIcon.icns"
+          test -x "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle"
+          test -f "$APP/Contents/Resources/ThirdPartyLicenses/Dev-Island-LICENSE"
+          test -f "$APP/Contents/Resources/ThirdPartyLicenses/Sparkle-LICENSE"
+          test -f "$APP/Contents/Resources/ThirdPartyLicenses/swift-toml-LICENSE.md"
+          test -f "$APP/Contents/Resources/ThirdPartyLicenses/tomlplusplus-LICENSE"
+          test -f "$APP/Contents/Resources/en.lproj/Localizable.strings"
+          test -f "$APP/Contents/Resources/zh-Hans.lproj/Localizable.strings"
+          plutil -lint "$APP/Contents/Resources/en.lproj/Localizable.strings"
+          plutil -lint "$APP/Contents/Resources/zh-Hans.lproj/Localizable.strings"
+          plutil -lint "$APP/Contents/Info.plist"
+          test "$(lipo -archs "$APP/Contents/MacOS/IslandApp")" = "x86_64 arm64" \
+            || test "$(lipo -archs "$APP/Contents/MacOS/IslandApp")" = "arm64 x86_64"
+          test "$(lipo -archs "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle")" = "x86_64 arm64" \
+            || test "$(lipo -archs "$APP/Contents/Frameworks/Sparkle.framework/Versions/B/Sparkle")" = "arm64 x86_64"
+          otool -L "$APP/Contents/MacOS/IslandApp" | grep '@rpath/Sparkle.framework' >/dev/null
+          otool -l "$APP/Contents/MacOS/IslandApp" | grep '@executable_path/../Frameworks' >/dev/null
+          ! /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$APP/Contents/Info.plist" >/dev/null 2>&1
+          ! /usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist" >/dev/null 2>&1
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Verify bundled brand asset inventory
+        id: brand
+        env:
+          APP: ${{ runner.temp }}/dev-island-ci/Dev Island.app
+        run: |
+          set -euo pipefail
+          ./scripts/release/verify-brand-assets.rb \
+            --manifest scripts/assets/agent-logos/manifest.json \
+            --trademark-reviews scripts/assets/agent-logos/trademark-reviews.json \
+            --source-dir scripts/assets/agent-logos \
+            --bundle-dir "$APP/Contents/Resources" \
+            --licenses-dir "$APP/Contents/Resources/ThirdPartyLicenses"
+
+      - name: Generate and verify SPDX SBOM
+        id: sbom
+        env:
+          APP: ${{ runner.temp }}/dev-island-ci/Dev Island.app
+          SBOM: ${{ runner.temp }}/Dev-Island.spdx.json
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct "${GITHUB_SHA}")"
+          swift scripts/release/generate-sbom.swift \
+            --package-resolved Package.resolved \
+            --version-file VERSION \
+            --licenses-dir "$APP/Contents/Resources/ThirdPartyLicenses" \
+            --toml-header .build/app-production/checkouts/swift-toml/Sources/CTomlPlusPlus/toml.hpp \
+            --brand-manifest scripts/assets/agent-logos/manifest.json \
+            --brand-source-dir scripts/assets/agent-logos \
+            --brand-bundle-dir "$APP/Contents/Resources" \
+            --source-revision "${GITHUB_SHA}" \
+            --source-date-epoch "${SOURCE_DATE_EPOCH}" \
+            --output "$SBOM"
+          swift scripts/release/generate-sbom.swift \
+            --package-resolved Package.resolved \
+            --version-file VERSION \
+            --licenses-dir "$APP/Contents/Resources/ThirdPartyLicenses" \
+            --toml-header .build/app-production/checkouts/swift-toml/Sources/CTomlPlusPlus/toml.hpp \
+            --brand-manifest scripts/assets/agent-logos/manifest.json \
+            --brand-source-dir scripts/assets/agent-logos \
+            --brand-bundle-dir "$APP/Contents/Resources" \
+            --source-revision "${GITHUB_SHA}" \
+            --source-date-epoch "${SOURCE_DATE_EPOCH}" \
+            --check "$SBOM"
+
+      - name: Verify performance fixture isolation
+        id: isolation
+        run: |
+          ./scripts/ci/verify-performance-fixture-isolation.sh \
+            '${{ runner.temp }}/dev-island-ci/Dev Island.app' \
+            '${{ runner.temp }}/dev-island-performance-ci/Dev Island.app'
+
+      - name: Repository hygiene
+        id: hygiene
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      # Always write a small, sanitized run summary. Raw logs stay in GitHub's
+      # access-controlled job log; the artifact contains only gate outcomes,
+      # aggregate test counts, failed test names, and reproduction commands.
+      - name: Generate CI diagnostics
+        id: diagnostics
+        if: always()
+        run: |
+          set -euo pipefail
+          SECURITY_LOG="${RUNNER_TEMP}/dev-island-security.log"
+          TEST_LOG="${RUNNER_TEMP}/dev-island-tests.log"
+          [[ -f "${SECURITY_LOG}" && ! -L "${SECURITY_LOG}" ]] || SECURITY_LOG=none
+          [[ -f "${TEST_LOG}" && ! -L "${TEST_LOG}" ]] || TEST_LOG=none
+          DIAGNOSTIC_ROOT="$(mktemp -d "${RUNNER_TEMP}/dev-island-ci-diagnostics.XXXXXX")"
+          chmod 700 "${DIAGNOSTIC_ROOT}"
+          OUTPUT="${DIAGNOSTIC_ROOT}/bundle"
+          ./scripts/ci/generate-ci-diagnostics.rb \
+            --output-dir "${OUTPUT}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --run-id "${GITHUB_RUN_ID}" \
+            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --event "${GITHUB_EVENT_NAME}" \
+            --ref "${GITHUB_REF}" \
+            --sha "${GITHUB_SHA}" \
+            --runner-os "${RUNNER_OS}" \
+            --runner-arch "${RUNNER_ARCH}" \
+            --security-log "${SECURITY_LOG}" \
+            --test-log "${TEST_LOG}" \
+            --step 'toolchain=${{ steps.toolchain.outcome }}' \
+            --step 'dependencies=${{ steps.dependencies.outcome }}' \
+            --step 'security=${{ steps.security.outcome }}' \
+            --step 'tests=${{ steps.tests.outcome }}' \
+            --step 'performance-build=${{ steps.performance_build.outcome }}' \
+            --step 'app-build=${{ steps.app_build.outcome }}' \
+            --step 'bundle=${{ steps.bundle.outcome }}' \
+            --step 'brand=${{ steps.brand.outcome }}' \
+            --step 'sbom=${{ steps.sbom.outcome }}' \
+            --step 'isolation=${{ steps.isolation.outcome }}' \
+            --step 'hygiene=${{ steps.hygiene.outcome }}'
+          printf 'artifact_path=%s\n' "${OUTPUT}" >>"${GITHUB_OUTPUT}"
+          sed -n '1,240p' "${OUTPUT}/README.md" >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload failed-run diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dev-island-ci-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.diagnostics.outputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 9
+          overwrite: false
+          include-hidden-files: false

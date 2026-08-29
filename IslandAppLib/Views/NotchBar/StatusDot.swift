@@ -9,8 +9,8 @@ import SwiftUI
 /// - **Completed** — bright cardinal points inside the fixed nine-dot grid.
 /// - **Failed** — static red.
 ///
-/// Running and waiting use a time-derived phase rather than a repeating
-/// animation, so changing state never has to retarget an in-flight loop.
+/// Running and waiting use compositor-owned opacity keyframes. This preserves
+/// the fluid loop without forcing SwiftUI to rebuild the island every frame.
 /// Color alone keeps every state legible when Reduce Motion is enabled.
 struct StatusDot: View {
     let state: BarState
@@ -19,27 +19,19 @@ struct StatusDot: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !needsAnimation)) { context in
-            let phase = StatusPhase.compute(state: state, at: context.date, animated: !reduceMotion)
-
-            DotMatrixMark(
-                color: state.color,
-                size: size,
-                phase: phase.matrixPhase,
-                motion: state.matrixMotion,
-                pattern: state.matrixPattern,
-                intensity: state.matrixIntensity
-            )
-                .animation(Motion.colorTransition, value: state)
-        }
+        AnimatedDotMatrixMark(
+            color: state.color,
+            size: size,
+            motion: state.matrixMotion,
+            pattern: state.matrixPattern,
+            intensity: state.matrixIntensity,
+            isAnimated: needsAnimation
+        )
     }
 
     // MARK: - Derived
 
-    /// Whether the timeline needs to drive frame updates. Idle and terminal
-    /// states are static, so their timelines stay parked.
-    /// Under Reduce Motion nothing loops, so the timeline stays parked and
-    /// the dot costs zero frames.
+    /// Under Reduce Motion nothing loops, so the mark is rendered at rest.
     private var needsAnimation: Bool {
         guard !reduceMotion else { return false }
         switch state {
@@ -51,13 +43,13 @@ struct StatusDot: View {
 
 // MARK: - Phase computation
 
-/// Time-keyed animation phase for the status matrix. Call `compute(state:at:)`
-/// from a `TimelineView` and pass `matrixPhase` into `DotMatrixMark`.
+/// Pure time-keyed phase model shared by compositor synchronization, previews,
+/// and tests. It makes loop timing deterministic without owning a view clock.
 struct StatusPhase {
     /// Normalized 0…1 cycle for internal point brightness movement.
     let matrixPhase: CGFloat
-    /// Kept at zero while the standalone `NotchBarView` still reads the shared
-    /// phase. This guarantees that path cannot reintroduce a colored halo.
+    /// Kept at zero as a regression contract: state motion belongs to the nine
+    /// points and must never reintroduce a large colored halo around the bar.
     let glowRadius: CGFloat = 0
     let glowOpacity: Double = 0
 

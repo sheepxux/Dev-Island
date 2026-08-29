@@ -3,10 +3,11 @@ import AppKit
 /// Resolves which running application to activate for "jump back to the
 /// session" (contract v1.4.0, J2 — `TaskStore.jumpToTask`).
 ///
-/// Strategy is deliberately app-level, not window-level: macOS gives us no
-/// sanctioned way to find *which* terminal window hosts a given CLI session
-/// without Accessibility permissions, so v1 activates the most plausible
-/// host app and lets the user land on their last-used window.
+/// Managed Hooks now provide a bounded host hint, so CLI tasks can prefer the
+/// terminal that actually emitted the event. tmux sessions additionally select
+/// their original window and pane before the host app is activated. Ordinary
+/// terminal tabs still fall back to app-level activation because selecting a
+/// tab would require terminal-specific Automation or Accessibility permission.
 enum SourceAppResolver {
 
     /// Terminal emulators that commonly host CLI agents, ordered by how
@@ -35,19 +36,47 @@ enum SourceAppResolver {
 
     /// Pure resolution step, unit-testable: pick the first candidate that
     /// is actually running.
-    static func resolveBundleId(source: String, running: Set<String>) -> String? {
-        candidates(for: source).first(where: running.contains)
+    static func resolveBundleId(
+        source: String,
+        running: Set<String>,
+        preferredTerminalBundleIdentifier: String? = nil
+    ) -> String? {
+        if LocalAgentRegistry.descriptor(for: source)?.usesTerminalFallback == true,
+           let preferredTerminalBundleIdentifier,
+           running.contains(preferredTerminalBundleIdentifier) {
+            return preferredTerminalBundleIdentifier
+        }
+        return candidates(for: source).first(where: running.contains)
     }
 
     /// Activate the resolved app. Returns false when nothing suitable is
     /// running (caller falls back to `openTaskInBrowser` behavior).
     @MainActor
-    static func activateApp(for source: String) -> Bool {
+    static func activateApp(for task: AgentTask) -> Bool {
         let apps = NSWorkspace.shared.runningApplications
         let running = Set(apps.compactMap(\.bundleIdentifier))
-        guard let bundleId = resolveBundleId(source: source, running: running),
+        let preferred = task.jumpContext?.terminalBundleIdentifier
+        guard let bundleId = resolveBundleId(
+            source: task.source,
+            running: running,
+            preferredTerminalBundleIdentifier: preferred
+        ),
               let app = apps.first(where: { $0.bundleIdentifier == bundleId })
         else { return false }
+
+        if bundleId == preferred,
+           let context = task.jumpContext,
+           context.hasPreciseTmuxTarget {
+            Task.detached(priority: .userInitiated) {
+                _ = TmuxSessionNavigator.selectOriginalPane(context)
+                _ = await MainActor.run {
+                    NSWorkspace.shared.runningApplications
+                        .first(where: { $0.bundleIdentifier == bundleId })?
+                        .activate()
+                }
+            }
+            return true
+        }
         return app.activate()
     }
 }

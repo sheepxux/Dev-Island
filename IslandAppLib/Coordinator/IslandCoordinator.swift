@@ -167,8 +167,19 @@ public final class IslandCoordinator {
         // observing `mode` (e.g. IslandRootView) interpolates its
         // dependent properties — width, height, corner radius, opacity —
         // with the shared `modeAnimation` spring.
-        withAnimation(Self.modeAnimation) {
-            mode = newMode
+        if Motion.systemPrefersReducedMotion {
+            // A shorter curve would still animate the capsule's width and
+            // height. Snap geometry instead; IslandRootView keeps a quiet
+            // content-opacity transition so the state change remains clear.
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                mode = newMode
+            }
+        } else {
+            withAnimation(Motion.islandMorph) {
+                mode = newMode
+            }
         }
         onModeChange?(mode)
     }

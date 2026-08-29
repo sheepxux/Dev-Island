@@ -61,6 +61,59 @@ final class TaskNotificationPolicyTests: XCTestCase {
         XCTAssertFalse(TaskNotificationKind.completed.shouldExpandIsland)
     }
 
+    func testNotificationTitlesFollowTheAppLanguage() {
+        XCTAssertEqual(TaskNotificationKind.waiting.title(language: .english), "Task Needs Input")
+        XCTAssertEqual(TaskNotificationKind.failed.title(language: .simplifiedChinese), "任务失败")
+        XCTAssertEqual(TaskNotificationKind.completed.title(language: .simplifiedChinese), "任务完成")
+    }
+
+    func testSemanticStatesUseDistinctBundledSignalSounds() {
+        let names = Set([
+            TaskNotificationKind.waiting.signalSoundFileName,
+            TaskNotificationKind.failed.signalSoundFileName,
+            TaskNotificationKind.completed.signalSoundFileName,
+        ])
+
+        XCTAssertEqual(names.count, 3)
+        XCTAssertTrue(names.allSatisfy { $0.hasPrefix("DevIsland-") && $0.hasSuffix(".wav") })
+    }
+
+    func testSignalSoundDefaultsOnWithoutChangingCompletionDefault() {
+        let suiteName = "TaskNotificationPolicyTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        TaskNotificationPreferences.registerDefaults(in: defaults)
+
+        XCTAssertTrue(defaults.bool(forKey: TaskNotificationPreferences.attentionRequiredKey))
+        XCTAssertFalse(defaults.bool(forKey: TaskNotificationPreferences.completionsKey))
+        XCTAssertTrue(defaults.bool(forKey: TaskNotificationPreferences.signalSoundsKey))
+    }
+
+    func testSignalGateCoalescesPeersButLetsUrgentFailureCutThrough() {
+        var gate = TaskSignalSoundGate()
+        let start = Date(timeIntervalSince1970: 10_000)
+
+        XCTAssertTrue(gate.shouldEmit(.completed, at: start, enabled: true))
+        XCTAssertFalse(gate.shouldEmit(.completed, at: start.addingTimeInterval(0.2), enabled: true))
+        XCTAssertTrue(gate.shouldEmit(.waiting, at: start.addingTimeInterval(0.3), enabled: true))
+        XCTAssertFalse(gate.shouldEmit(.waiting, at: start.addingTimeInterval(0.4), enabled: true))
+        XCTAssertTrue(gate.shouldEmit(.failed, at: start.addingTimeInterval(0.5), enabled: true))
+    }
+
+    func testSignalGateResumesAfterQuietWindowAndNeverEmitsWhenMuted() {
+        var gate = TaskSignalSoundGate()
+        let start = Date(timeIntervalSince1970: 20_000)
+
+        XCTAssertFalse(gate.shouldEmit(.waiting, at: start, enabled: false))
+        XCTAssertTrue(gate.shouldEmit(.waiting, at: start, enabled: true))
+        XCTAssertTrue(gate.shouldEmit(
+            .waiting,
+            at: start.addingTimeInterval(TaskSignalSoundGate.quietWindow),
+            enabled: true
+        ))
+    }
+
     @MainActor
     func testNotificationSelectionHighlightsTaskAndExpandsPanel() {
         let identity = TaskIdentity(source: "codex", id: "session-1")

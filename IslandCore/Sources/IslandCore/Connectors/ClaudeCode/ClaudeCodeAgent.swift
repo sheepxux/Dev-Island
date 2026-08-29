@@ -4,6 +4,9 @@ import Foundation
 ///
 /// Status mapping:
 ///   SessionStart / UserPromptSubmit        → .running
+///   PermissionRequest                      → .waiting + bidirectional decision
+///   PreToolUse(AskUserQuestion)            → structured island answer
+///   PreToolUse(ExitPlanMode)               → Markdown plan review + decision
 ///   Notification (permission/idle/input/…) → .waiting
 ///   Notification (agent_completed)         → .completed
 ///   Stop                                   → .completed
@@ -13,15 +16,39 @@ extension LocalAgentDescriptor {
     public static let claudeCode = LocalAgentDescriptor(
         source: "claude-code",
         displayName: "Claude Code",
-        settingsSubtitle: "Track local Claude Code sessions in the island",
+        settingsSubtitle: "Track sessions and surface requests that need attention",
         configPath: "~/.claude/settings.json",
         hookEvents: [
-            "SessionStart", "UserPromptSubmit", "Notification",
+            "SessionStart", "UserPromptSubmit", "PermissionRequest", "PreToolUse", "Notification",
             "Stop", "StopFailure", "SessionEnd",
         ],
         hookEntryStyle: .nestedWithEmptyMatcher,
         appCandidates: [],
         usesTerminalFallback: true,
+        capabilities: AgentCapabilities(
+            permissionRequests: .bidirectional,
+            questionRequests: .bidirectional,
+            planReviews: .bidirectional
+        ),
+        actionHookEvents: ["PermissionRequest", "PreToolUse"],
+        hookMatchersByEvent: ["PreToolUse": "AskUserQuestion|ExitPlanMode"],
+        decodeActionRequest: { data in
+            ClaudePermissionHook.decodeRequest(data)
+                ?? ClaudeQuestionHook.decodeRequest(data)
+                ?? ClaudePlanReviewHook.decodeRequest(data)
+        },
+        encodeActionResponse: { response in
+            switch response {
+            case .permission:
+                ClaudePermissionHook.response(forActionResponse: response)
+            case .question:
+                ClaudeQuestionHook.response(for: response)
+            case .planReview:
+                ClaudePlanReviewHook.response(for: response)
+            case nil:
+                "{}"
+            }
+        },
         decodeEvent: { data in
             (Self.decodePayload(data) as ClaudeCodeEvent?)?.normalized
         }
@@ -50,6 +77,11 @@ extension ClaudeCodeEvent {
         switch hookEventName {
         case .sessionStart, .userPromptSubmit:
             return .running
+        case .permissionRequest:
+            return .waiting(
+                phase: "Needs approval",
+                message: toolName.map { "Approval needed: \($0)" } ?? "Approval needed"
+            )
         case .notification:
             return notificationAction
         case .stop:

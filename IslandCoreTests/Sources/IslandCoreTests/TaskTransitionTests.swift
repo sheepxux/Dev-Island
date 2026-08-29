@@ -7,11 +7,12 @@ final class TaskTransitionTests: XCTestCase {
     private func task(
         _ id: String,
         source: String = "cursor",
-        status: TaskStatus
+        status: TaskStatus,
+        updatedAt: Date = .now
     ) -> AgentTask {
         AgentTask(
             id: id, source: source, title: id, status: status,
-            createdAt: .now, updatedAt: .now, taskURL: ""
+            createdAt: .now, updatedAt: updatedAt, taskURL: ""
         )
     }
 
@@ -114,7 +115,7 @@ final class TaskTransitionTests: XCTestCase {
     }
 
     @MainActor
-    func testLocalSnapshotFiresScopedTransitions() {
+    func testLocalSnapshotFiresScopedTransitions() async {
         let store = TaskStore.mock(tasks: [
             task("m", source: "manus", status: .running),
             task("c", source: "cursor", status: .running),
@@ -123,11 +124,35 @@ final class TaskTransitionTests: XCTestCase {
         store.onTaskTransition = { seen.append($0) }
 
         // Cursor snapshot replaces only cursor tasks; manus untouched.
-        store.applyLocalSnapshot(source: "cursor", [task("c", source: "cursor", status: .completed)])
+        await store.applyLocalSnapshot(
+            source: "cursor",
+            [task("c", source: "cursor", status: .completed)]
+        )
 
         XCTAssertEqual(seen.count, 1)
         XCTAssertEqual(seen[0].task.source, "cursor")
         XCTAssertEqual(seen[0].oldStatus, .running)
         XCTAssertEqual(seen[0].newStatus, .completed)
+    }
+
+    @MainActor
+    func testLocalSnapshotCannotInjectAnotherSourceOrDuplicateAnIdentity() async {
+        let store = TaskStore.mock(tasks: [
+            task("shared", source: "manus", status: .running),
+            task("shared", source: "cursor", status: .running),
+        ])
+        let older = Date(timeIntervalSinceReferenceDate: 100)
+        let newer = Date(timeIntervalSinceReferenceDate: 200)
+
+        await store.applyLocalSnapshot(source: "cursor", [
+            task("shared", source: "cursor", status: .waiting, updatedAt: older),
+            task("shared", source: "codex", status: .failed, updatedAt: newer),
+            task("shared", source: "cursor", status: .completed, updatedAt: newer),
+        ])
+
+        XCTAssertEqual(store.tasks.count, 2)
+        XCTAssertEqual(store.tasks.first { $0.source == "manus" }?.status, .running)
+        XCTAssertEqual(store.tasks.first { $0.source == "cursor" }?.status, .completed)
+        XCTAssertFalse(store.tasks.contains { $0.source == "codex" })
     }
 }

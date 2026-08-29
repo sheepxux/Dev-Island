@@ -24,25 +24,25 @@ import IslandCore
 /// effect on the very event that caused it, with a low-frequency timer
 /// behind them as a safety net.
 public final class IslandWindow: NSWindow {
-    private var hostingView: NSHostingView<IslandRootView>!
+    private var hostingView: NSHostingView<LocalizedAppRoot<IslandRootView>>!
     public private(set) var layout: NotchMetrics.Layout = NotchMetrics.current()
+
+    /// The borderless island must stay non-key during launch and automatic
+    /// attention opens so a background Agent never steals focus from the
+    /// editor. Once initial presentation is complete, an intentional click
+    /// may make the window key so Tab, VoiceOver navigation, and the visible
+    /// action shortcuts reach the real SwiftUI controls.
+    private var keyboardInteractionEnabled = false
+
+    public override var canBecomeKey: Bool {
+        keyboardInteractionEnabled
+    }
 
     /// Outer container size: panel max width + shadow padding on each side,
     /// panel max height + shadow padding at bottom. Constants chosen so the
     /// inside SwiftUI shape never touches the window's edges.
     private static let containerWidth: CGFloat  = NotchMetrics.panelMaxWidth + 2 * NotchMetrics.shadowPadding
     private static let containerHeight: CGFloat = NotchMetrics.panelMaxHeight + NotchMetrics.shadowPadding
-
-    /// Poll interval while the cursor is over the silhouette. Fast, because
-    /// this is the tick that keeps re-asserting the pointing-hand cursor
-    /// against a system that clears it behind our back (see below).
-    private static let activeTrackingInterval: TimeInterval = 0.04
-    /// Poll interval while the cursor is elsewhere — the overwhelming
-    /// majority of the app's lifetime. Boundary crossings are picked up by
-    /// the mouse-move monitors, so this is only a safety net for state
-    /// changes that arrive without a mouse event (window repositioned under
-    /// a stationary cursor, monitor starved during a modal loop).
-    private static let idleTrackingInterval: TimeInterval = 0.25
 
     /// Cached silhouette rect in absolute screen coordinates. Updated
     /// whenever the SwiftUI side reports a new silhouette (mode flip /
@@ -56,7 +56,8 @@ public final class IslandWindow: NSWindow {
     private var pointerWasInsideSilhouette: Bool?
     /// Interval the live timer was scheduled with, so a tick only pays for
     /// rescheduling when the cursor actually crosses the boundary.
-    private var mouseTrackingInterval: TimeInterval = IslandWindow.idleTrackingInterval
+    private var mouseTrackingInterval: TimeInterval =
+        IslandWindowMouseTrackingPolicy.idleWatchdogInterval
 
     /// Whether the poll below last set the pointing-hand cursor. Cursor
     /// writes happen only on transitions, so panel sub-elements (task
@@ -78,6 +79,13 @@ public final class IslandWindow: NSWindow {
 
         isOpaque = false
         backgroundColor = .clear
+        // Borderless windows otherwise expose an empty AX title (just
+        // "window"). The title is never drawn; it gives assistive technology
+        // a stable product-level destination. A borderless status-level
+        // window is not promised as a standard Window-menu entry.
+        let accessibleWindowName = L10n.string("Dev Island")
+        title = accessibleWindowName
+        setAccessibilityLabel(accessibleWindowName)
         // Start with no shadow — the compact island stays flat and embedded.
         // The SwiftUI root enables it only for the expanded panel lifecycle.
         hasShadow = false
@@ -92,16 +100,18 @@ public final class IslandWindow: NSWindow {
         animationBehavior = .none
 
         let host = NSHostingView(
-            rootView: IslandRootView(
-                baseLayout: initialLayout,
-                containerWidth: Self.containerWidth,
-                onShouldShowShadowChanged: { [weak self] enabled in
-                    self?.setShadow(enabled)
-                },
-                onSilhouetteRectChanged: { [weak self] rect in
-                    self?.cacheSilhouetteScreenRect(localRect: rect)
-                }
-            )
+            rootView: LocalizedAppRoot {
+                IslandRootView(
+                    baseLayout: initialLayout,
+                    containerWidth: Self.containerWidth,
+                    onShouldShowShadowChanged: { [weak self] enabled in
+                        self?.setShadow(enabled)
+                    },
+                    onSilhouetteRectChanged: { [weak self] rect in
+                        self?.cacheSilhouetteScreenRect(localRect: rect)
+                    }
+                )
+            }
         )
         self.hostingView = host
         contentView = host
@@ -121,6 +131,35 @@ public final class IslandWindow: NSWindow {
         for monitor in mouseMoveMonitors {
             NSEvent.removeMonitor(monitor)
         }
+    }
+
+    /// Arm click-to-focus only after AppDelegate has completed the historical
+    /// makeKeyAndOrderFront -> accessory-policy launch sequence. Keeping this
+    /// as a separate lifecycle edge prevents a newly launched background App
+    /// from becoming key merely because the always-on island was ordered.
+    public func enableKeyboardInteraction() {
+        keyboardInteractionEnabled = true
+    }
+
+    /// Release focus when the panel collapses. If another Dev Island window
+    /// (Settings, onboarding, or the DEBUG sandbox) is key, leave it alone.
+    public func releaseKeyboardInteraction() {
+        guard NSApp.keyWindow === self else { return }
+        resignKey()
+        NSApp.deactivate()
+    }
+
+    public override func sendEvent(_ event: NSEvent) {
+        if IslandWindowKeyboardFocusPolicy.shouldActivate(
+            eventType: event.type,
+            interactionEnabled: keyboardInteractionEnabled,
+            ignoresMouseEvents: ignoresMouseEvents
+        ) {
+            // Click is the consent boundary: programmatic expansion remains
+            // passive, while direct engagement unlocks the keyboard path.
+            makeKey()
+        }
+        super.sendEvent(event)
     }
 
     // MARK: - Click-through tracking
@@ -153,7 +192,9 @@ public final class IslandWindow: NSWindow {
 
     private func startMouseTracking() {
         installMouseMoveMonitors()
-        scheduleMouseTrackingTimer(interval: Self.idleTrackingInterval)
+        scheduleMouseTrackingTimer(
+            interval: IslandWindowMouseTrackingPolicy.idleWatchdogInterval
+        )
         mouseTrackingStarted = true
         tickMouseTracking(forceCollapseReconciliation: true)
     }
@@ -217,9 +258,14 @@ public final class IslandWindow: NSWindow {
 
         // Spin fast only while the cursor is on the silhouette — that's the
         // only time the cursor re-assert below has anything to do. Away
-        // from the island (nearly always) a quarter-second safety net is
-        // enough, because the move monitors own the transitions.
-        let wantedInterval = inside ? Self.activeTrackingInterval : Self.idleTrackingInterval
+        // from the island (nearly always) a one-second watchdog is enough,
+        // because move monitors and silhouette changes own the immediate
+        // transitions.
+        let coordinatorMode = IslandCoordinator.shared.mode
+        let wantedInterval = IslandWindowMouseTrackingPolicy.interval(
+            pointerInside: inside,
+            mode: coordinatorMode
+        )
         if wantedInterval != mouseTrackingInterval {
             scheduleMouseTrackingTimer(interval: wantedInterval)
         }
@@ -231,7 +277,7 @@ public final class IslandWindow: NSWindow {
         // the pop leg never ran after click-to-expand). Writes fire on
         // transitions only: while expanded, panel sub-elements own the
         // cursor via `.pointingHandCursor()`.
-        let wantsHand = inside && IslandCoordinator.shared.mode == .collapsed
+        let wantsHand = inside && coordinatorMode == .collapsed
         if wantsHand {
             // Re-assert EVERY tick, not just on the transition: as a
             // non-active app our set() can be clobbered whenever the
@@ -283,16 +329,18 @@ public final class IslandWindow: NSWindow {
         guard let screen = NSScreen.main else { return }
         let newLayout = NotchMetrics.layout(for: screen)
         layout = newLayout
-        hostingView.rootView = IslandRootView(
-            baseLayout: newLayout,
-            containerWidth: Self.containerWidth,
-            onShouldShowShadowChanged: { [weak self] enabled in
-                self?.setShadow(enabled)
-            },
-            onSilhouetteRectChanged: { [weak self] rect in
-                self?.cacheSilhouetteScreenRect(localRect: rect)
-            }
-        )
+        hostingView.rootView = LocalizedAppRoot {
+            IslandRootView(
+                baseLayout: newLayout,
+                containerWidth: Self.containerWidth,
+                onShouldShowShadowChanged: { [weak self] enabled in
+                    self?.setShadow(enabled)
+                },
+                onSilhouetteRectChanged: { [weak self] rect in
+                    self?.cacheSilhouetteScreenRect(localRect: rect)
+                }
+            )
+        }
 
         let frame = screen.frame
         let origin = NSPoint(
@@ -327,5 +375,51 @@ public final class IslandWindow: NSWindow {
             width: w,
             height: h
         )
+    }
+}
+
+/// Pure focus policy kept outside AppKit event delivery so launch/focus
+/// semantics remain regression-testable without changing the active app.
+enum IslandWindowKeyboardFocusPolicy {
+    static func shouldActivate(
+        eventType: NSEvent.EventType,
+        interactionEnabled: Bool,
+        ignoresMouseEvents: Bool
+    ) -> Bool {
+        interactionEnabled
+            && !ignoresMouseEvents
+            && eventType == .leftMouseDown
+    }
+}
+
+/// Pure cadence policy kept outside `NSWindow` so the energy/latency contract
+/// can be tested without creating a real window or reading the live cursor.
+///
+/// Mouse-move monitors and silhouette updates own boundary responsiveness.
+/// The idle timer is only a watchdog for a starved monitor or a stationary
+/// pointer after an out-of-band window move, so it must not wake the process at
+/// interactive cadence for the overwhelming majority of app uptime.
+enum IslandWindowMouseTrackingPolicy {
+    /// Fast cadence over the compact silhouette keeps re-asserting the
+    /// pointing-hand cursor against AppKit/system resets.
+    static let activeInterval: TimeInterval = 0.04
+    /// Boundary crossings are event-driven. This only catches state changes
+    /// that arrive without a mouse event or while a monitor is starved. The
+    /// expanded panel always uses this cadence: its controls own their own
+    /// cursors, so polling them at the compact island's 25 Hz would be pure
+    /// main-thread work while the user is reading.
+    static let idleWatchdogInterval: TimeInterval = 1.0
+
+    static func interval(
+        pointerInside: Bool,
+        mode: IslandCoordinator.Mode
+    ) -> TimeInterval {
+        pointerInside && mode == .collapsed
+            ? activeInterval
+            : idleWatchdogInterval
+    }
+
+    static var maximumIdleWakeupsPerMinute: Int {
+        Int((60 / idleWatchdogInterval).rounded(.up))
     }
 }

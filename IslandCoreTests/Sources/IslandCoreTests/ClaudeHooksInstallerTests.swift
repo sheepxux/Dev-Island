@@ -102,4 +102,66 @@ final class ClaudeHooksInstallerTests: XCTestCase {
         XCTAssertTrue(ClaudeHooksInstaller.hookCommand().hasSuffix("|| true"))
         XCTAssertTrue(ClaudeHooksInstaller.hookCommand().contains("-m 2"))
     }
+
+    func testPermissionRequestIsSynchronousAndKeepsStdout() {
+        let command = LocalHooksInstaller(.claudeCode)
+            .hookCommand(for: "PermissionRequest")
+        XCTAssertTrue(command.contains("-m 95"))
+        XCTAssertFalse(command.contains("@- >/dev/null"))
+        XCTAssertTrue(command.hasSuffix("|| true"))
+    }
+
+    func testPermissionRequestWritesTimeoutAndStatus() throws {
+        try ClaudeHooksInstaller.install(settingsURL: settingsURL)
+        let hooks = try XCTUnwrap(try readRoot()["hooks"] as? [String: Any])
+        let groups = try XCTUnwrap(hooks["PermissionRequest"] as? [[String: Any]])
+        let handlers = try XCTUnwrap(groups.first?["hooks"] as? [[String: Any]])
+        let handler = try XCTUnwrap(handlers.first)
+        XCTAssertEqual(handler["timeout"] as? Int, 100)
+        XCTAssertEqual(handler["statusMessage"] as? String, "Waiting for Dev Island")
+    }
+
+    func testInteractiveToolsHookIsMatcherScopedAndSynchronous() throws {
+        try ClaudeHooksInstaller.install(settingsURL: settingsURL)
+        let hooks = try XCTUnwrap(try readRoot()["hooks"] as? [String: Any])
+        let groups = try XCTUnwrap(hooks["PreToolUse"] as? [[String: Any]])
+        let group = try XCTUnwrap(groups.first)
+        XCTAssertEqual(group["matcher"] as? String, "AskUserQuestion|ExitPlanMode")
+
+        let handlers = try XCTUnwrap(group["hooks"] as? [[String: Any]])
+        let handler = try XCTUnwrap(handlers.first)
+        let command = try XCTUnwrap(handler["command"] as? String)
+        XCTAssertTrue(command.contains("-m 95"))
+        XCTAssertFalse(command.contains("@- >/dev/null"))
+        XCTAssertEqual(handler["timeout"] as? Int, 100)
+        XCTAssertEqual(handler["statusMessage"] as? String, "Waiting for Dev Island")
+    }
+
+    func testUnscopedInteractiveToolsHookIsPresentedAsUpdate() throws {
+        try ClaudeHooksInstaller.install(settingsURL: settingsURL)
+        var root = try readRoot()
+        var hooks = try XCTUnwrap(root["hooks"] as? [String: Any])
+        var groups = try XCTUnwrap(hooks["PreToolUse"] as? [[String: Any]])
+        groups[0]["matcher"] = ""
+        hooks["PreToolUse"] = groups
+        root["hooks"] = hooks
+        try JSONSerialization.data(withJSONObject: root).write(to: settingsURL)
+
+        let installer = LocalHooksInstaller(.claudeCode)
+        XCTAssertFalse(installer.isInstalled(configURL: settingsURL))
+        XCTAssertTrue(installer.requiresUpdate(configURL: settingsURL))
+    }
+
+    func testPreviousManagedInstallIsPresentedAsAnUpdate() throws {
+        try ClaudeHooksInstaller.install(settingsURL: settingsURL)
+        var root = try readRoot()
+        var hooks = try XCTUnwrap(root["hooks"] as? [String: Any])
+        hooks.removeValue(forKey: "PermissionRequest")
+        root["hooks"] = hooks
+        try JSONSerialization.data(withJSONObject: root).write(to: settingsURL)
+
+        let installer = LocalHooksInstaller(.claudeCode)
+        XCTAssertFalse(installer.isInstalled(configURL: settingsURL))
+        XCTAssertTrue(installer.requiresUpdate(configURL: settingsURL))
+    }
 }

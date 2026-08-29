@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "decisionState": "required",
+  "approval": {
+    "reviewedAt": null,
+    "reviewedBy": null,
+    "legalReviewReference": null
+  },
+  "seller": {
+    "model": null,
+    "legalName": null,
+    "jurisdiction": null,
+    "supportContact": null
+  },
+  "provider": {
+    "id": null,
+    "checkoutOrigin": null,
+    "webhookOrigin": null,
+    "activationOrigin": null,
+    "dataResidency": null,
+    "retentionDays": null
+  },
+  "offer": {
+    "licenseModel": null,
+    "priceMinorUnits": null,
+    "currency": null,
+    "trialMode": null,
+    "trialDays": null,
+    "trialStart": null,
+    "updatePolicy": null,
+    "includedUpdateMonths": null,
+    "supportPolicy": null
+  },
+  "access": {
+    "deviceLimit": null,
+    "deviceIdentity": null,
+    "transferPolicy": null,
+    "reinstallPolicy": null,
+    "offlineGraceDays": null,
+    "recoveryPolicy": null
+  },
+  "lifecycle": {
+    "refundDays": null,
+    "cancellationPolicy": null,
+    "refundEffect": null,
+    "chargebackEffect": null
+  },
+  "legal": {
+    "salesRegions": [],
+    "termsVersion": null,
+    "privacyVersion": null,
+    "mitRelationship": null
+  }
+}

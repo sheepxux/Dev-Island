@@ -95,6 +95,17 @@
     <true/>
 
     <!--
+        The connector listener and its ownership/readiness probe communicate
+        only over numeric loopback. Keep ATS strict for every external
+        destination while explicitly permitting the local transport.
+    -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+
+    <!--
         Don't restore windows on relaunch — we manage all windows
         programmatically (IslandWindow, SettingsWindow, debug sandbox)
         and a state-restoration attempt would race against

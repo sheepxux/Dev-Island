@@ -10,26 +10,41 @@ import IslandCore
 struct TaskCard: View {
     let task: AgentTask
     var isHighlighted: Bool = false
-    /// Shared clock owned by the containing panel — one tick for the whole
-    /// list, and only while the list is on screen.
-    var now: Date = Date()
+    /// Deterministic override for previews/tests. Production leaves this nil
+    /// so each live row owns its one-second clock without invalidating the
+    /// surrounding list or sibling rows.
+    var now: Date? = nil
+    /// Hidden panel rows stop their local status animation completely.
+    var isLive: Bool = true
     let onTap: () -> Void
 
     @State private var isHovering = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.devIslandLanguage) private var language
 
+    @ViewBuilder
     var body: some View {
+        if let now {
+            card(at: now)
+        } else if PanelClockPresentation.taskNeedsLiveTick(task.status) {
+            TimelineView(
+                .animation(minimumInterval: 1.0, paused: !isLive)
+            ) { context in
+                card(at: context.date)
+            }
+        } else {
+            card(at: task.updatedAt)
+        }
+    }
+
+    private func card(at referenceDate: Date) -> some View {
         Button(action: onTap) {
             HStack(spacing: 11) {
                 ZStack(alignment: .bottomTrailing) {
                     toolLogo
-                    DotMatrixMark(
-                        color: task.status.color,
+                    TaskStatusMatrix(
+                        status: task.status,
                         size: 9,
-                        phase: task.status.matrixPhase(at: now, animated: !reduceMotion),
-                        motion: task.status.matrixMotion,
-                        pattern: task.status.matrixPattern,
-                        intensity: task.status.matrixIntensity
+                        isLive: isLive
                     )
                         .compositingGroup()
                         .shadow(color: Palette.islandTop, radius: 1.5)
@@ -60,8 +75,9 @@ struct TaskCard: View {
                                 .font(.system(size: 11))
                                 .opacity(0.5)
                         }
-                        Text(durationString)
+                        Text(durationString(at: referenceDate))
                             .font(Typo.cardMeta)
+                            .monospacedDigit()
                             .fixedSize()
                     }
                     .foregroundStyle(Palette.textSecondary.opacity(0.72))
@@ -92,6 +108,15 @@ struct TaskCard: View {
         .onHover { isHovering = $0 }
         .pointingHandCursor()
         .animation(Motion.colorTransition, value: isHighlighted)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary(at: referenceDate))
+        .accessibilityHint(
+            L10n.format(
+                "Opens this session in %@",
+                language: language,
+                agentDisplayName
+            )
+        )
     }
 
     // MARK: - Pieces
@@ -120,22 +145,63 @@ struct TaskCard: View {
             ?? task.source.replacingOccurrences(of: "-", with: " ").capitalized
     }
 
-    private var durationString: String {
-        let referenceDate: Date
+    private func durationString(at referenceDate: Date) -> String {
+        PanelClockPresentation.taskDuration(for: task, at: referenceDate)
+    }
+
+    private func accessibilitySummary(at referenceDate: Date) -> String {
+        let phase = task.currentPhase.map {
+            L10n.format(", %@", language: language, $0)
+        } ?? ""
+        return L10n.format(
+            "%@, %@, %@%@, %@",
+            language: language,
+            agentDisplayName,
+            task.title,
+            statusLabel,
+            phase,
+            durationString(at: referenceDate)
+        )
+    }
+
+    private var statusLabel: String {
+        let key: String
         switch task.status {
-        case .running, .waiting:
-            referenceDate = now
-        case .completed, .failed:
-            referenceDate = task.updatedAt
+        case .running:   key = "Running"
+        case .waiting:   key = "Needs attention"
+        case .completed: key = "Completed"
+        case .failed:    key = "Failed"
         }
-        let elapsed = max(0, Int(referenceDate.timeIntervalSince(task.createdAt)))
-        let m = elapsed / 60
-        let s = elapsed % 60
-        if m >= 60 {
-            let h = m / 60
-            return String(format: "%d:%02d:%02d", h, m % 60, s)
+        return L10n.string(key, language: language)
+    }
+}
+
+/// Keeps the continuous opacity loop in Core Animation instead of rebuilding
+/// the row, its text layout, or the surrounding LazyVStack every frame.
+private struct TaskStatusMatrix: View {
+    let status: TaskStatus
+    let size: CGFloat
+    let isLive: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        AnimatedDotMatrixMark(
+            color: status.color,
+            size: size,
+            motion: status.matrixMotion,
+            pattern: status.matrixPattern,
+            intensity: status.matrixIntensity,
+            isAnimated: needsAnimation
+        )
+    }
+
+    private var needsAnimation: Bool {
+        guard isLive, !reduceMotion else { return false }
+        switch status {
+        case .running, .waiting: return true
+        case .completed, .failed: return false
         }
-        return String(format: "%d:%02d", m, s)
     }
 }
 
@@ -145,7 +211,7 @@ struct TaskCard: View {
 #Preview("Task cards — all states") {
     VStack(spacing: 6) {
         ForEach(TaskStore.previewTasks) { task in
-            TaskCard(task: task, onTap: { print("tap \(task.id)") })
+            TaskCard(task: task, onTap: {})
         }
         TaskCard(task: AgentTask(
             id: "t4",

@@ -26,6 +26,10 @@ public struct AgentTask: Identifiable, Hashable, Codable, Sendable {
     public var updatedAt: Date
     public let taskURL: String
     public var waitingMessage: String?
+    /// In-memory terminal/tmux return target captured by managed local Hooks.
+    /// The SQLite layer deliberately omits it, so it disappears with the live
+    /// session and never becomes historical terminal metadata.
+    public var jumpContext: SessionJumpContext?
 
     public init(
         id: String,
@@ -36,7 +40,8 @@ public struct AgentTask: Identifiable, Hashable, Codable, Sendable {
         createdAt: Date,
         updatedAt: Date,
         taskURL: String,
-        waitingMessage: String? = nil
+        waitingMessage: String? = nil,
+        jumpContext: SessionJumpContext? = nil
     ) {
         self.id = id
         self.source = source
@@ -47,6 +52,7 @@ public struct AgentTask: Identifiable, Hashable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.taskURL = taskURL
         self.waitingMessage = waitingMessage
+        self.jumpContext = jumpContext
     }
 
     /// Stable cross-agent identity used by lists, notification routing, and

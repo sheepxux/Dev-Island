@@ -11,7 +11,8 @@ extension LocalAgentDescriptor {
     public static let codex = LocalAgentDescriptor(
         source: "codex",
         displayName: "Codex",
-        settingsSubtitle: "Track local Codex CLI sessions in the island",
+        settingsSubtitle: "Track sessions and handle tool approvals in the island",
+        hookActivationRequirement: .reviewInAgent(command: "/hooks"),
         configPath: "~/.codex/hooks.json",
         hookEvents: [
             "SessionStart", "UserPromptSubmit", "PermissionRequest",
@@ -20,6 +21,14 @@ extension LocalAgentDescriptor {
         hookEntryStyle: .nested,
         appCandidates: ["com.openai.codex"],  // Codex Desktop first
         usesTerminalFallback: true,           // CLI sessions live in a terminal
+        capabilities: AgentCapabilities(permissionRequests: .bidirectional),
+        actionHookEvents: ["PermissionRequest"],
+        decodeActionRequest: { data in
+            CodexPermissionHook.decodeRequest(data)
+        },
+        encodeActionResponse: { response in
+            CodexPermissionHook.response(forActionResponse: response)
+        },
         decodeEvent: { data in
             (Self.decodePayload(data) as CodexEvent?)?.normalized
         }

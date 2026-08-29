@@ -52,6 +52,11 @@ struct IslandRootView: View {
     /// being visibly squeezed through the 28pt bar during the first frames
     /// of the expand animation.
     @State private var panelContentVisible = false
+    /// Continuous point-matrix loops and row/header clocks start only after
+    /// the silhouette morph settles. Keeping this distinct from visibility
+    /// avoids installing up to 189 keyframe animations in the critical first
+    /// frames of a 20-session expansion.
+    @State private var panelEffectsLive = false
     @State private var panelRevealID = UUID()
     /// AppKit hit-testing and system shadow cannot read SwiftUI's in-flight
     /// presentation frame. This explicit phase keeps them conservative:
@@ -62,8 +67,18 @@ struct IslandRootView: View {
     @State private var visualPhaseID = UUID()
     @State private var reportedPanelHeight = NotchMetrics.panelMinHeight
     @State private var panelHitRegionID = UUID()
+    /// Advances only when a recent completion's short foreground window
+    /// expires. This avoids a permanent one-second root timeline while still
+    /// returning the compact island to live Running work at the exact gate.
+    @State private var presentationNow = Date.now
+    /// Invalidates a pending completion-expiry callback when the foreground
+    /// candidate changes. Keep this scheduling on the main dispatch queue:
+    /// older builds repeatedly aborted inside Swift Concurrency task teardown
+    /// after sleeping from this root animation view.
+    @State private var presentationRefreshID = UUID()
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var accessibilityContrast
 
     private var mode: IslandCoordinator.Mode { coordinator.mode }
 
@@ -81,6 +96,11 @@ struct IslandRootView: View {
     // MARK: - Body
 
     var body: some View {
+        let presentation = IslandPresentationSnapshot(
+            tasks: store.tasks,
+            pendingActionRequests: store.pendingActionRequests,
+            now: presentationNow
+        )
         // VStack + trailing Spacer rather than a ZStack(.top) wrapper so the
         // shape is glued to the window's top edge by stack semantics, not by
         // an alignment hint. The hint version had a brief frame during the
@@ -88,7 +108,7 @@ struct IslandRootView: View {
         // the menu bar before snapping up — looked like a "gap" above the
         // panel as it popped out.
         VStack(spacing: 0) {
-            shapeWithContent
+            shapeWithContent(presentation)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -114,6 +134,9 @@ struct IslandRootView: View {
                 }
             }
 
+        }
+        .onChange(of: nextRecentResultExpiry, initial: true) { _, expiry in
+            schedulePresentationRefresh(at: expiry)
         }
     }
 
@@ -156,30 +179,42 @@ struct IslandRootView: View {
     /// The single morphing shape with all overlaid content. Sized to the
     /// current mode dimensions; SwiftUI interpolates `width`, `height`,
     /// `cornerRadius` between renders that happen inside `withAnimation`.
-    private var shapeWithContent: some View {
+    private func shapeWithContent(
+        _ presentation: IslandPresentationSnapshot
+    ) -> some View {
         ZStack(alignment: .top) {
             // Backdrop — one shape for both modes.
             backdrop
 
             // Panel content — visible while expanded.
             NotchPanelView(
-                tasks: presentedTasks,
+                tasks: presentation.tasks,
                 connectionStatus: store.connectionStatus,
                 layout: baseLayout,
                 highlightedTask: coordinator.highlightedTask,
+                pendingActionRequests: store.pendingActionRequests,
                 onTaskTap: handleTaskTap,
+                onActionDecision: { requestID, decision in
+                    store.respond(to: requestID, decision: decision)
+                },
+                onQuestionAnswer: { requestID, answers in
+                    store.respond(to: requestID, answers: answers)
+                },
+                onActionDefer: { requestID in
+                    store.deferActionRequestToAgent(requestID)
+                },
                 onSettingsTap: handleSettingsTap,
                 onConnectTap: handleConnectTap,
                 drawsBackdrop: false,
+                presentationState: presentation.state,
+                presentationSummary: presentation.summary,
                 // The panel stays in the tree while collapsed so it can keep
-                // reporting the height the silhouette morphs to. `isLive`
-                // tells it to stop everything that only matters on screen —
-                // the per-second duration clock — so a hidden panel costs
-                // nothing but layout.
-                isLive: panelContentVisible
+                // reporting the height the silhouette morphs to. Continuous
+                // effects remain paused until the surface has settled.
+                isLive: panelEffectsLive
             )
             .opacity(panelContentVisible ? 1 : 0)
-            .offset(y: panelContentVisible ? 0 : -2)
+            .offset(y: panelContentVisible || reduceMotion ? 0 : -2)
             .frame(maxHeight: .infinity, alignment: .top)
             .allowsHitTesting(panelContentVisible && visualPhase == .expanded)
         }
@@ -187,7 +222,7 @@ struct IslandRootView: View {
         .clipShape(silhouette)
         .overlay(alignment: .top) {
             if mode == .collapsed {
-                collapsedBarContent
+                collapsedBarContent(presentation)
                     .frame(width: shapeWidth, height: shapeHeight, alignment: .top)
                     .clipShape(silhouette)
                     .transition(.opacity)
@@ -206,13 +241,27 @@ struct IslandRootView: View {
             // next expand lands at the right height in one spring.
             if mode == .expanded {
                 synchronizePanelHitRegion(toContentHeight: height)
-                withAnimation(Motion.respectingReducedMotion(reduceMotion, preferred: Motion.layout)) {
+                if reduceMotion {
                     panelContentHeight = height
+                } else {
+                    withAnimation(Motion.layout) {
+                        panelContentHeight = height
+                    }
                 }
             } else {
                 panelContentHeight = height
                 reportedPanelHeight = NotchMetrics.panelHeight(forContentHeight: height)
             }
+        }
+        .onChange(
+            of: store.pendingActionRequests.map(\.id),
+            initial: true
+        ) { _, requestIDs in
+            guard !requestIDs.isEmpty,
+                  let identity = ActionRequestPresentationPolicy.attentionTarget(
+                    in: store.pendingActionRequests
+                  ) else { return }
+            coordinator.expand(highlighting: identity)
         }
     }
 
@@ -234,15 +283,16 @@ struct IslandRootView: View {
                 .opacity(mode == .expanded ? 1 : 0)
 
             silhouette
-                .stroke(Color.white.opacity(mode == .expanded ? 0.06 : 0), lineWidth: 0.5)
+                .stroke(
+                    Palette.islandBorder.opacity(mode == .expanded ? 1 : 0),
+                    lineWidth: InterfaceContrastPolicy.borderWidth(
+                        increased: InterfaceContrastPolicy.usesIncreasedContrast(
+                            accessibilityContrast
+                        ),
+                        standard: 0.5
+                    )
+                )
         }
-    }
-
-    /// Connection health is shown separately in the panel header. It must not
-    /// erase a real task state: local agents continue to be authoritative even
-    /// when an unrelated cloud connector is disconnected.
-    private var effectiveBarState: BarState {
-        BarState.derive(from: presentedTasks)
     }
 
     /// The shape used for backdrop, clipping, and hit-testing — built once
@@ -260,7 +310,7 @@ struct IslandRootView: View {
     private var shapeWidth: CGFloat {
         switch mode {
         case .collapsed:
-            return isHovering
+            return usesHoverGeometry
                 ? baseLayout.hovered().totalWidth
                 : baseLayout.totalWidth
         case .expanded:
@@ -271,7 +321,7 @@ struct IslandRootView: View {
     private var shapeHeight: CGFloat {
         switch mode {
         case .collapsed:
-            return isHovering
+            return usesHoverGeometry
                 ? baseLayout.hovered().barHeight
                 : baseLayout.barHeight
         case .expanded:
@@ -305,94 +355,106 @@ struct IslandRootView: View {
     // MARK: - Sub-layouts
 
     private var barLayoutForContent: NotchMetrics.Layout {
-        isHovering ? baseLayout.hovered() : baseLayout
+        usesHoverGeometry ? baseLayout.hovered() : baseLayout
     }
 
-    @ViewBuilder
-    private var collapsedBarContent: some View {
-        if baseLayout.hasNotch {
-            NotchBarView(
-                state: effectiveBarState,
-                summary: taskStatusSummary,
-                title: barTitle,
-                layout: barLayoutForContent,
-                showsContent: true,
-                drawsBackdrop: false
-            )
-        } else {
-            syntheticBarContent
-        }
+    /// Hover remains discoverable through cursor and contrast feedback, but
+    /// never changes the capsule's footprint when macOS Reduce Motion is on.
+    private var usesHoverGeometry: Bool {
+        isHovering && Motion.allowsSpatialFeedback(reduceMotion)
     }
 
-    private var syntheticBarContent: some View {
-        HStack(spacing: 10) {
-            StatusDot(state: effectiveBarState, size: 12)
-                .frame(width: 16, height: 16)
-
-            Text(barTitle)
-                .font(Typo.barTitle)
-                .foregroundStyle(.white.opacity(0.68))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            CompactTaskStatusSummary(summary: taskStatusSummary)
-                .padding(.horizontal, 2)
-        }
-        .padding(.leading, 16)
-        .padding(.trailing, 12)
-        .frame(
-            width: barLayoutForContent.totalWidth,
-            height: barLayoutForContent.barHeight,
-            alignment: .center
+    private func collapsedBarContent(
+        _ presentation: IslandPresentationSnapshot
+    ) -> some View {
+        NotchBarView(
+            state: presentation.state,
+            summary: presentation.summary,
+            title: barTitle(for: presentation),
+            layout: barLayoutForContent,
+            showsContent: true,
+            drawsBackdrop: false
         )
     }
 
-    private var taskStatusSummary: TaskStatusSummary {
-        TaskStatusSummary(tasks: presentedTasks)
-    }
-
-    private var presentedTasks: [AgentTask] {
-        TaskPresentationPolicy.ordered(store.tasks)
-    }
-
-    private var barTitle: String {
-        guard let task = priorityTask else { return "No tasks" }
+    private func barTitle(
+        for presentation: IslandPresentationSnapshot
+    ) -> String {
+        guard let task = presentation.primaryTask else {
+            return L10n.string("No sessions")
+        }
         return task.currentPhase ?? task.title
     }
 
-    private var priorityTask: AgentTask? {
-        TaskPresentationPolicy.primaryTask(in: presentedTasks)
+    private var nextRecentResultExpiry: Date? {
+        let now = Date.now
+        return store.tasks.compactMap { task -> Date? in
+            guard task.status == .completed else { return nil }
+            let expiry = task.updatedAt.addingTimeInterval(
+                TaskPresentationPolicy.recentResultDuration
+            )
+            return expiry > now ? expiry : nil
+        }.min()
     }
 
-    /// Stage panel content behind the shape morph. Collapse is immediate
-    /// and quick; expand waits 70ms so the surface has enough room before
-    /// the task hierarchy begins to appear. The reveal token makes rapid
-    /// collapse/re-expand sequences interruptible instead of letting an old
-    /// delayed callback flash content into the wrong state.
+    /// Refresh the ordering exactly when a recent completion stops owning the
+    /// compact foreground. A UUID provides cancellation semantics without a
+    /// sleeping Swift task: stale callbacks become inert after any state
+    /// change and every mutation stays on the main dispatch queue.
+    private func schedulePresentationRefresh(at expiry: Date?) {
+        let refreshID = UUID()
+        presentationRefreshID = refreshID
+        guard let expiry else { return }
+
+        let delay = max(0, expiry.timeIntervalSinceNow)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard presentationRefreshID == refreshID else { return }
+            presentationNow = .now
+        }
+    }
+
+    /// Stage panel content and continuous effects behind the shape morph.
+    /// Collapse stops clocks/layers immediately. Expand reveals the static
+    /// hierarchy after 40ms, then starts continuous point loops and duration
+    /// updates only after the 300ms silhouette morph has settled. The shared
+    /// token makes rapid collapse/re-expand sequences interruptible instead of
+    /// letting an old delayed callback flash or animate the wrong state.
     private func synchronizePanelContent(with newMode: IslandCoordinator.Mode) {
         let revealID = UUID()
         panelRevealID = revealID
 
         switch newMode {
         case .collapsed:
+            panelEffectsLive = false
             withAnimation(.easeOut(duration: reduceMotion ? 0.07 : 0.09)) {
                 panelContentVisible = false
             }
 
         case .expanded:
             if reduceMotion {
+                panelEffectsLive = true
                 withAnimation(.easeOut(duration: 0.12)) {
                     panelContentVisible = true
                 }
                 return
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + IslandPanelActivityTiming.contentRevealDelay
+            ) {
                 guard panelRevealID == revealID, mode == .expanded else { return }
                 withAnimation(Motion.contentReveal) {
                     panelContentVisible = true
                 }
+            }
+
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + IslandPanelActivityTiming.liveEffectsDelay(
+                    reduceMotion: false
+                )
+            ) {
+                guard panelRevealID == revealID, mode == .expanded else { return }
+                panelEffectsLive = true
             }
         }
     }
@@ -414,7 +476,12 @@ struct IslandRootView: View {
             visualPhase = .expanding
         }
 
-        let duration = reduceMotion ? 0.14 : Motion.islandMorphDuration
+        if reduceMotion {
+            visualPhase = newMode == .expanded ? .expanded : .collapsed
+            return
+        }
+
+        let duration = Motion.islandMorphDuration
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
             guard visualPhaseID == phaseID, mode == newMode else { return }
             visualPhase = newMode == .expanded ? .expanded : .collapsed
@@ -430,7 +497,12 @@ struct IslandRootView: View {
         panelHitRegionID = regionID
         reportedPanelHeight = max(reportedPanelHeight, target)
 
-        let duration = reduceMotion ? 0.14 : Motion.layoutDuration
+        if reduceMotion {
+            reportedPanelHeight = target
+            return
+        }
+
+        let duration = Motion.layoutDuration
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
             guard panelHitRegionID == regionID else { return }
             reportedPanelHeight = target

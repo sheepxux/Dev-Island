@@ -1,41 +1,81 @@
+import CryptoKit
 import Foundation
 import Security
 
-// Header name TBD — update docs/manus-api-field-notes.md after real testing
 enum WebhookSignature {
-    static let headerName = "X-Manus-Signature"
+    static let headerName = "X-Webhook-Signature"
+    static let timestampHeaderName = "X-Webhook-Timestamp"
+    static let maximumClockSkew: TimeInterval = 300
 
     enum VerificationError: Error {
         case invalidPublicKey
         case invalidSignatureEncoding
+        case invalidTimestamp
+        case staleTimestamp
+        case invalidExternalURL
         case verificationFailed
     }
 
-    /// Verify RSA-SHA256 signature.
+    /// Verify the current official Manus v2 signature format.
+    ///
+    /// Signed bytes are UTF-8 for
+    /// `{timestamp}.{full_webhook_url}.{sha256_hex(raw_body)}` and use
+    /// RSA PKCS#1 v1.5 with SHA-256.
     /// - Parameters:
     ///   - body: Raw HTTP request body bytes
     ///   - signature: Base64-encoded signature string from the webhook header
+    ///   - timestamp: Exact timestamp header value used by Manus when signing
+    ///   - externalURL: Exact registered HTTPS callback URL, including query
     ///   - publicKeyPEM: PEM-encoded RSA public key (PKCS#8 "BEGIN PUBLIC KEY" format)
-    static func verify(body: Data, signature: String, publicKeyPEM: String) throws -> Bool {
+    static func verify(
+        body: Data,
+        signature: String,
+        timestamp: String,
+        externalURL: String,
+        publicKeyPEM: String,
+        now: Date = .now
+    ) throws -> Bool {
+        guard !timestamp.isEmpty,
+              timestamp.allSatisfy(\.isNumber),
+              let timestampSeconds = TimeInterval(timestamp) else {
+            throw VerificationError.invalidTimestamp
+        }
+        guard abs(now.timeIntervalSince1970 - timestampSeconds) <= maximumClockSkew else {
+            throw VerificationError.staleTimestamp
+        }
+        guard let url = URL(string: externalURL),
+              url.scheme?.lowercased() == "https",
+              url.host != nil,
+              url.absoluteString == externalURL else {
+            throw VerificationError.invalidExternalURL
+        }
         guard let sigData = Data(base64Encoded: signature) else {
             throw VerificationError.invalidSignatureEncoding
         }
 
         let key = try importPublicKey(pem: publicKeyPEM)
+        let bodyHash = SHA256.hash(data: body)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let signedContent = Data("\(timestamp).\(externalURL).\(bodyHash)".utf8)
 
         var error: Unmanaged<CFError>?
         let result = SecKeyVerifySignature(
             key,
             .rsaSignatureMessagePKCS1v15SHA256,
-            body as CFData,
+            signedContent as CFData,
             sigData as CFData,
             &error
         )
-        if let err = error?.takeRetainedValue() {
-            IslandLogger.webhook.error("Signature verification error: \(err)")
+        if error?.takeRetainedValue() != nil {
+            IslandLogger.webhook.error("Webhook signature verification failed")
             throw VerificationError.verificationFailed
         }
         return result
+    }
+
+    static func canImportPublicKey(_ pem: String) -> Bool {
+        (try? importPublicKey(pem: pem)) != nil
     }
 
     private static func importPublicKey(pem: String) throws -> SecKey {
@@ -63,7 +103,8 @@ enum WebhookSignature {
         ]
         var cfError: Unmanaged<CFError>?
         guard let key = SecKeyCreateWithData(keyData as CFData, attributes as CFDictionary, &cfError) else {
-            IslandLogger.webhook.error("Failed to import public key: \(String(describing: cfError?.takeRetainedValue()))")
+            _ = cfError?.takeRetainedValue()
+            IslandLogger.webhook.error("Failed to import webhook signature public key")
             throw VerificationError.invalidPublicKey
         }
         return key

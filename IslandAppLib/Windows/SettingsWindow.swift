@@ -24,7 +24,7 @@ public final class SettingsWindow: NSWindow {
     public init(onDidClose: @escaping @MainActor () -> Void = {}) {
         self.onDidClose = onDidClose
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 520),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -36,7 +36,7 @@ public final class SettingsWindow: NSWindow {
         backgroundColor = NSColor(
             calibratedRed: 10 / 255,
             green: 10 / 255,
-            blue: 9 / 255,
+            blue: 10 / 255,
             alpha: 1
         )
         isReleasedWhenClosed = false
@@ -47,7 +47,11 @@ public final class SettingsWindow: NSWindow {
         // need to follow the user across Spaces. Default behaviors.
         collectionBehavior = [.fullScreenAuxiliary]
 
-        let host = NSHostingView(rootView: SettingsView())
+        let host = NSHostingView(
+            rootView: LocalizedAppRoot {
+                SettingsView()
+            }
+        )
         host.translatesAutoresizingMaskIntoConstraints = true
         contentView = host
 

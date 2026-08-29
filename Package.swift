@@ -24,6 +24,7 @@ let coreSettings: [SwiftSetting] = [
 
 let package = Package(
     name: "Island",
+    defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "IslandApp",     targets: ["IslandApp"]),
@@ -34,6 +35,15 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
         .package(url: "https://github.com/stephencelis/SQLite.swift.git",        from: "0.15.0"),
+        // Exact pin: Kimi Code stores Hooks in a user-authored TOML file.
+        // Dev Island uses this spec-compliant parser only to validate the
+        // complete document before and after byte-preserving managed-block
+        // edits; parser changes are part of the config-safety boundary.
+        .package(url: "https://github.com/mattt/swift-toml.git", exact: "2.0.0"),
+        // Exact pin: Sparkle is part of the app's update trust boundary.
+        // Version changes must be reviewed together with the framework-copy,
+        // signing, appcast-generation, and security-invariant checks.
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.9.6"),
     ],
     targets: [
         // ── C 侧：前端 App ────────────────────────────────────────────
@@ -57,8 +67,14 @@ let package = Package(
         ),
         .target(
             name: "IslandAppLib",
-            dependencies: ["IslandCore"],
+            dependencies: [
+                "IslandCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "IslandAppLib",
+            resources: [
+                .process("Resources"),
+            ],
             swiftSettings: appSettings
         ),
 
@@ -77,6 +93,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "SQLite",      package: "SQLite.swift"),
+                .product(name: "TOML",        package: "swift-toml"),
             ],
             path: "IslandCore/Sources/IslandCore",
             swiftSettings: coreSettings
@@ -92,7 +109,10 @@ let package = Package(
         // ── S 侧：单元测试 ────────────────────────────────────────────
         .testTarget(
             name: "IslandCoreTests",
-            dependencies: ["IslandCore"],
+            dependencies: [
+                "IslandCore",
+                .product(name: "SQLite", package: "SQLite.swift"),
+            ],
             path: "IslandCoreTests/Sources/IslandCoreTests"
         ),
         .testTarget(

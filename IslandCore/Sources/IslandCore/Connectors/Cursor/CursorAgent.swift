@@ -22,7 +22,7 @@ extension LocalAgentDescriptor {
     public static let cursor = LocalAgentDescriptor(
         source: "cursor",
         displayName: "Cursor",
-        settingsSubtitle: "Track Cursor agent sessions in the island",
+        settingsSubtitle: "Track Cursor agent lifecycle and results in the island",
         configPath: "~/.cursor/hooks.json",
         hookEvents: [
             "sessionStart", "beforeSubmitPrompt", "stop", "sessionEnd",
@@ -30,6 +30,7 @@ extension LocalAgentDescriptor {
         hookEntryStyle: .flatVersioned,
         appCandidates: ["com.todesktop.230313mzl4w4u92"],  // Cursor.app
         usesTerminalFallback: false,
+        capabilities: .lifecycleOnly,
         decodeEvent: { data in
             (Self.decodePayload(data) as CursorEvent?)?.normalized
         }

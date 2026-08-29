@@ -1,11 +1,7 @@
+import AppKit
 import IslandCore
-import OSLog
 import UserNotifications
 
-private let taskNotifierLog = Logger(
-    subsystem: "app.devisland.Island",
-    category: "notifier"
-)
 private let taskNotificationSourceKey = "taskSource"
 private let taskNotificationIDKey = "taskID"
 
@@ -21,11 +17,13 @@ public extension Notification.Name {
 public enum TaskNotificationPreferences {
     public static let attentionRequiredKey = "island.notifications.attentionRequired"
     public static let completionsKey = "island.notifications.completions"
+    public static let signalSoundsKey = "island.notifications.signalSounds"
 
     public static func registerDefaults(in defaults: UserDefaults = .standard) {
         defaults.register(defaults: [
             attentionRequiredKey: true,
             completionsKey: false,
+            signalSoundsKey: true,
         ])
     }
 }
@@ -58,12 +56,14 @@ enum TaskNotificationKind: Equatable {
         }
     }
 
-    var title: String {
+    func title(language: DevIslandLanguage = .current) -> String {
+        let key: String
         switch self {
-        case .waiting:   return "Task Needs Input"
-        case .failed:    return "Task Failed"
-        case .completed: return "Task Completed"
+        case .waiting:   key = "Task Needs Input"
+        case .failed:    key = "Task Failed"
+        case .completed: key = "Task Completed"
         }
+        return L10n.string(key, language: language)
     }
 
     var identifierComponent: String {
@@ -71,6 +71,25 @@ enum TaskNotificationKind: Equatable {
         case .waiting:   return "waiting"
         case .failed:    return "failed"
         case .completed: return "completed"
+        }
+    }
+
+    /// Short, product-specific cues bundled with the app. Keeping the mapping
+    /// beside the transition policy prevents a generic system sound from
+    /// erasing the semantic difference between waiting, failure and completion.
+    var signalSoundFileName: String {
+        switch self {
+        case .waiting:   return "DevIsland-Attention.wav"
+        case .failed:    return "DevIsland-Failure.wav"
+        case .completed: return "DevIsland-Completed.wav"
+        }
+    }
+
+    fileprivate var signalPriority: Int {
+        switch self {
+        case .completed: return 1
+        case .waiting:   return 2
+        case .failed:    return 3
         }
     }
 
@@ -84,6 +103,35 @@ enum TaskNotificationKind: Equatable {
     }
 }
 
+/// Prevents several agents changing state together from becoming a stack of
+/// overlapping sounds. A stronger attention signal can still cut through a
+/// recent completion cue, while peers inside the quiet window stay visual.
+struct TaskSignalSoundGate {
+    static let quietWindow: TimeInterval = 1.2
+
+    private var lastEmission: (date: Date, priority: Int)?
+
+    mutating func shouldEmit(
+        _ kind: TaskNotificationKind,
+        at date: Date,
+        enabled: Bool
+    ) -> Bool {
+        guard enabled else { return false }
+        guard let lastEmission else {
+            self.lastEmission = (date, kind.signalPriority)
+            return true
+        }
+
+        let elapsed = date.timeIntervalSince(lastEmission.date)
+        let quietWindowElapsed = elapsed < 0 || elapsed >= Self.quietWindow
+        let deservesInterruption = kind.signalPriority > lastEmission.priority
+        guard quietWindowElapsed || deservesInterruption else { return false }
+
+        self.lastEmission = (date, kind.signalPriority)
+        return true
+    }
+}
+
 /// Turns `TaskStore.onTaskTransition` events into macOS notifications and
 /// routes notification clicks back into the in-app task list.
 @MainActor
@@ -91,6 +139,8 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
     public static let shared = TaskNotifier()
 
     private var started = false
+    private var signalSoundGate = TaskSignalSoundGate()
+    private var activePreviewSound: NSSound?
     public private(set) var authorizationIssue: String?
 
     private override init() {
@@ -117,7 +167,7 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
         }
 
         guard Self.hasNotificationSupport else {
-            taskNotifierLog.info("Skipping notification setup because the host is not an app bundle")
+            AppLogger.notifier.info("Skipping notification setup because the host is not an app bundle")
             return
         }
 
@@ -149,14 +199,18 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
         do {
             let granted = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .sound])
-            taskNotifierLog.info("Notification authorization granted=\(granted)")
+            AppLogger.notifier.info("Notification authorization granted=\(granted)")
             publishAuthorizationIssue(
                 granted ? nil : "Notifications are disabled in System Settings."
             )
         } catch {
             let nsError = error as NSError
-            taskNotifierLog.error("Notification authorization failed: domain=\(nsError.domain, privacy: .public) code=\(nsError.code) description=\(nsError.localizedDescription, privacy: .public)")
-            publishAuthorizationIssue(nsError.localizedDescription)
+            AppLogger.notifier.error(
+                "Notification authorization failed: code=\(nsError.code)"
+            )
+            publishAuthorizationIssue(
+                "Couldn't update notification permission. Open System Settings to review it."
+            )
         }
     }
 
@@ -178,6 +232,25 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
                 break
             }
         }
+    }
+
+    /// Settings owns this explicit audition, so it may play immediately. Live
+    /// task cues remain attached to macOS notifications and therefore inherit
+    /// the user's Focus, lock-screen and notification-sound policy.
+    @discardableResult
+    public func previewSignalSound() -> Bool {
+        guard let url = Bundle.main.url(
+            forResource: "DevIsland-Attention",
+            withExtension: "wav"
+        ), let sound = NSSound(contentsOf: url, byReference: false) else {
+            AppLogger.notifier.error("Bundled signal-sound preview is unavailable")
+            return false
+        }
+
+        activePreviewSound?.stop()
+        activePreviewSound = sound
+        sound.volume = 0.72
+        return sound.play()
     }
 
     private func publishAuthorizationIssue(_ issue: String?) {
@@ -204,15 +277,24 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     private func post(_ kind: TaskNotificationKind, for task: AgentTask) {
         guard Self.hasNotificationSupport else {
-            taskNotifierLog.debug("Skipping \(kind.identifierComponent) notification for \(task.source)/\(task.id)")
+            AppLogger.notifier.debug(
+                "Skipping \(kind.identifierComponent, privacy: .public) notification for \(task.source, privacy: .public)"
+            )
             return
         }
 
         let content = UNMutableNotificationContent()
-        content.title = kind.title
+        content.title = kind.title()
         content.subtitle = sourceDisplayName(task.source)
         content.body = body(for: kind, task: task)
-        content.sound = .default
+        let soundsEnabled = UserDefaults.standard.bool(
+            forKey: TaskNotificationPreferences.signalSoundsKey
+        )
+        if signalSoundGate.shouldEmit(kind, at: .now, enabled: soundsEnabled) {
+            content.sound = UNNotificationSound(
+                named: UNNotificationSoundName(rawValue: kind.signalSoundFileName)
+            )
+        }
         content.userInfo = [
             taskNotificationSourceKey: task.source,
             taskNotificationIDKey: task.id,
@@ -225,7 +307,9 @@ public final class TaskNotifier: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
                 let nsError = error as NSError
-                taskNotifierLog.error("Adding notification failed: domain=\(nsError.domain, privacy: .public) code=\(nsError.code) description=\(nsError.localizedDescription, privacy: .public)")
+                AppLogger.notifier.error(
+                    "Adding notification failed: code=\(nsError.code)"
+                )
             }
         }
     }

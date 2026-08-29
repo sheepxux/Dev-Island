@@ -12,14 +12,20 @@ struct IslandApp: App {
         // custom gear-button window. Replacing the scene's default command
         // prevents SwiftUI from creating a second, independently-owned
         // Settings window beside AppDelegate's window.
-        Settings { SettingsView() }
+        Settings {
+            LocalizedAppRoot {
+                SettingsView()
+            }
+        }
             .commands {
                 CommandGroup(replacing: .appSettings) {
-                    Button("Settings…") {
+                    Button {
                         NotificationCenter.default.post(
                             name: .islandOpenSettingsRequested,
                             object: nil
                         )
+                    } label: {
+                        Text(L10n.string("Settings…"))
                     }
                     .keyboardShortcut(",", modifiers: .command)
                 }
@@ -33,6 +39,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenChangeObserver: NSObjectProtocol?
     private var openSettingsObserver: NSObjectProtocol?
     private var openOnboardingObserver: NSObjectProtocol?
+
+    #if DEV_ISLAND_PERFORMANCE_QA
+    /// A recursive main-queue work item drives the isolated transition
+    /// fixture without bringing a timer or synthetic interaction path into
+    /// production. Each edge publishes a stable marker so retained app logs
+    /// can be aligned with Animation Hitches traces.
+    private var performanceTransitionWorkItem: DispatchWorkItem?
+    private var performanceTransitionIteration = 0
+    /// `xctrace --target-stdout` owns a pipe whose reader can pause while a
+    /// deferred trace is compressed. Never let evidence I/O block the main
+    /// actor and become the hitch the fixture is trying to measure.
+    private let performanceMarkerQueue = DispatchQueue(
+        label: "app.devisland.performance-markers",
+        qos: .utility
+    )
+    #endif
+
+    #if !DEV_ISLAND_PERFORMANCE_QA
+    /// Repository-owned CI can launch the real production executable without
+    /// touching user state. Normal Finder/LaunchServices starts have neither
+    /// half of the exact opt-in pair and therefore keep ordinary behavior.
+    private let isHermeticLaunchSmoke =
+        HermeticAppLaunchMode.isEnabledForCurrentProcess
+    private let hermeticLaunchMarkerQueue = DispatchQueue(
+        label: "app.devisland.hermetic-launch-markers",
+        qos: .utility
+    )
+    #endif
 
     /// `LSUIElement` keeps cold launch out of the Dock. Conventional windows
     /// acquire leases here and temporarily promote the process to `.regular`;
@@ -84,6 +118,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if !DEV_ISLAND_PERFORMANCE_QA
+        // Arm a local-only startup marker before constructing any UI. It is
+        // closed only after the island and menu-bar surfaces survive a short
+        // stability window; no crash report is inspected or uploaded, and the
+        // hermetic performance build never touches the marker.
+        if !isHermeticLaunchSmoke {
+            LaunchHealthTracker.shared.beginLaunch()
+        }
+        #endif
+
         let window = IslandWindow()
         window.makeKeyAndOrderFront(nil)
         self.islandWindow = window
@@ -92,6 +136,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // AFTER makeKeyAndOrderFront on the always-on island window,
         // otherwise nothing shows.
         dockVisibility.synchronize()
+        // The launch order above remains passive because IslandWindow starts
+        // with canBecomeKey=false. Arm keyboard focus only now: an intentional
+        // click can enter the approval/question surface, while automatic
+        // request expansion never steals focus from the user's editor.
+        window.enableKeyboardInteraction()
 
         #if DEBUG
         // Open the Debug Sandbox alongside the island so every dev launch
@@ -117,6 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             switch mode {
             case .collapsed:
+                self.islandWindow?.releaseKeyboardInteraction()
                 self.removePanelEventMonitors()
             case .expanded:
                 self.installPanelEventMonitors()
@@ -158,33 +208,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        #if !DEV_ISLAND_PERFORMANCE_QA
         // Banner notifications for task state transitions. This attaches the
         // observer but does not request permission; the Welcome Tour's final
         // action or an explicit Settings toggle owns that decision.
         // (running → completed, * → waiting). Owns its own
         // UNUserNotificationCenter delegate + observation re-arming
         // loop; we just kick it off once.
-        TaskNotifier.shared.start()
+        if !isHermeticLaunchSmoke {
+            TaskNotifier.shared.start()
+        }
+        #endif
 
         // Conventional status-bar presence: icon visible = backend running.
         statusItemController = StatusItemController()
+
+        #if DEV_ISLAND_PERFORMANCE_QA
+        // Emit one low-cardinality readiness timestamp only in the hermetic,
+        // never-publish performance bundle. The sampler subtracts the uptime
+        // captured immediately before process launch, giving us a reproducible
+        // launch-to-first-laid-out-island metric without touching user state.
+        signalPerformanceReadiness(afterLayingOut: window)
+        #endif
+
+        #if !DEV_ISLAND_PERFORMANCE_QA
+        if isHermeticLaunchSmoke {
+            signalHermeticLaunchReadiness(afterLayingOut: window)
+        }
+        #endif
+
+        #if !DEV_ISLAND_PERFORMANCE_QA
+        // Sparkle starts only when the signed release bundle contains the
+        // complete HTTPS + Ed25519 trust configuration. Local QA builds stay
+        // deliberately inert instead of touching an unsigned update feed.
+        if !isHermeticLaunchSmoke {
+            AppUpdateController.shared.start()
+        }
+        #endif
 
         // First launch is one composed experience: the island stays quiet
         // behind the Welcome Tour, then expands after the tour closes. The
         // old ordering expanded the panel first and opened onboarding on
         // top 200ms later, making two windows compete for attention during
         // the product's most important first impression.
-        let defaults = UserDefaults.standard
-        let needsOnboarding = !defaults.bool(forKey: OnboardingWindow.completionKey)
-        if needsOnboarding {
-            IslandCoordinator.shared.collapse()
-            DispatchQueue.main.async { [weak self] in
-                self?.openOnboarding()
+        #if DEV_ISLAND_PERFORMANCE_QA
+        // Dedicated QA builds are hermetic: no onboarding, notifications,
+        // Keychain, SQLite, Hook server, Manus, or update network. The
+        // compile-time marker prevents this path from entering production.
+        IslandCoordinator.shared.collapse()
+        if PerformanceFixture.shouldExpand {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                IslandCoordinator.shared.expand()
             }
+        } else if let interval = PerformanceFixture.transitionInterval {
+            scheduleNextPerformanceTransition(
+                after: PerformanceFixture.transitionInitialDelay,
+                interval: interval
+            )
         }
+        #else
+        if isHermeticLaunchSmoke {
+            IslandCoordinator.shared.collapse()
+        } else {
+            let defaults = UserDefaults.standard
+            let needsOnboarding = !defaults.bool(forKey: OnboardingWindow.completionKey)
+            if needsOnboarding {
+                IslandCoordinator.shared.collapse()
+                DispatchQueue.main.async { [weak self] in
+                    self?.openOnboarding()
+                }
+            }
+
+            scheduleStartupHealthMilestone(afterLayingOut: window)
+        }
+        #endif
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        #if DEV_ISLAND_PERFORMANCE_QA
+        performanceTransitionWorkItem?.cancel()
+        performanceTransitionWorkItem = nil
+        #endif
+
+        #if !DEV_ISLAND_PERFORMANCE_QA
+        // A deliberate Quit during the short stability window is not a launch
+        // loop. Close the marker before tearing down services so it cannot be
+        // mistaken for an interrupted startup on the next run.
+        if !isHermeticLaunchSmoke {
+            LaunchHealthTracker.shared.markStartupReady()
+        }
+        #endif
+        TaskStore.shared.shutdown()
         if let observer = screenChangeObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -196,6 +310,105 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         removePanelEventMonitors()
     }
+
+    #if DEV_ISLAND_PERFORMANCE_QA
+    private func signalPerformanceReadiness(afterLayingOut window: IslandWindow) {
+        // One main-runloop turn lets the initial SwiftUI/AppKit transaction
+        // settle after the window and status item are both installed.
+        DispatchQueue.main.async {
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.contentView?.displayIfNeeded()
+            let uptime = ProcessInfo.processInfo.systemUptime
+            self.writePerformanceMarker(
+                "DEV_ISLAND_PERFORMANCE_READY uptime=\(uptime)\n"
+            )
+        }
+    }
+
+    private func scheduleNextPerformanceTransition(
+        after delay: TimeInterval,
+        interval: TimeInterval
+    ) {
+        performanceTransitionWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+
+            self.performanceTransitionIteration += 1
+            let target: IslandCoordinator.Mode =
+                self.performanceTransitionIteration.isMultiple(of: 2)
+                ? .collapsed
+                : .expanded
+
+            switch target {
+            case .collapsed:
+                IslandCoordinator.shared.collapse()
+            case .expanded:
+                IslandCoordinator.shared.expand()
+            }
+
+            let uptime = ProcessInfo.processInfo.systemUptime
+            let targetName = target == .expanded ? "expanded" : "collapsed"
+            let line = "DEV_ISLAND_PERFORMANCE_TRANSITION iteration=\(self.performanceTransitionIteration) target=\(targetName) uptime=\(uptime)\n"
+            self.writePerformanceMarker(line)
+
+            self.scheduleNextPerformanceTransition(after: interval, interval: interval)
+        }
+        performanceTransitionWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func writePerformanceMarker(_ line: String) {
+        let data = Data(line.utf8)
+        performanceMarkerQueue.async {
+            FileHandle.standardOutput.write(data)
+        }
+    }
+    #endif
+
+    #if !DEV_ISLAND_PERFORMANCE_QA
+    private func signalHermeticLaunchReadiness(
+        afterLayingOut window: IslandWindow
+    ) {
+        // One main-runloop turn proves the real Production App constructed and
+        // laid out both the island and status item. Marker I/O stays off the
+        // main actor; the verifier continuously drains its private App log.
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self,
+                  let window,
+                  self.islandWindow === window,
+                  window.isVisible,
+                  self.statusItemController != nil else { return }
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.contentView?.displayIfNeeded()
+            let uptime = ProcessInfo.processInfo.systemUptime
+            let marker = "DEV_ISLAND_PRODUCTION_READY uptime=\(uptime)\n"
+            let data = Data(marker.utf8)
+            self.hermeticLaunchMarkerQueue.async {
+                FileHandle.standardOutput.write(data)
+            }
+        }
+    }
+
+    private func scheduleStartupHealthMilestone(afterLayingOut window: IslandWindow) {
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + LaunchHealthTracker.startupStabilityDelay
+        ) { [weak self, weak window] in
+            guard let self,
+                  let window,
+                  self.islandWindow === window,
+                  window.isVisible,
+                  self.statusItemController != nil else { return }
+
+            // Flush the first AppKit/SwiftUI layout before recording ready.
+            // If construction, rendering, or the first main-runloop work
+            // terminates the process, this closure never writes the marker.
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.contentView?.displayIfNeeded()
+            LaunchHealthTracker.shared.markStartupReady()
+        }
+    }
+    #endif
 
     /// Dev Island is a menu-bar utility. Closing its only conventional
     /// window (the borderless Welcome Tour) must never terminate the
@@ -454,9 +667,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Install Esc + click-outside monitors. CLAUDE_CLIENT.md §2 trigger
     /// spec: "点外部 / Esc 收起".
     ///
-    /// The click monitor is global: IslandWindow never becomes key, and
-    /// global monitors only fire for events targeted at OTHER apps, so
-    /// clicks on the visible shape itself don't trigger a collapse.
+    /// The click monitor is global: before direct engagement the editor stays
+    /// key, while clicking the island makes its borderless window key. Global
+    /// monitors only fire for events targeted at OTHER apps, so clicks on the
+    /// visible shape itself don't trigger a collapse in either phase.
     ///
     /// Esc needs both legs. The global one covers the normal case (the
     /// user's editor is still focused) but is inert until the app is

@@ -1,10 +1,10 @@
 #!/usr/bin/env swift
 // Render per-agent brand logos (SVG → template PNG) for the app bundle.
 //
-// Sources: scripts/assets/agent-logos/<source>.svg — vendored from
-// @lobehub/icons-static-svg (monochrome variants, MIT-licensed package;
-// the marks themselves belong to their respective owners and are used
-// nominatively to identify each service).
+// Sources: scripts/assets/agent-logos/<source>.svg — official vendor assets
+// or vendored monochrome marks from @lobehub/icons-static-svg. See repository
+// history and connector notes for each asset's pinned upstream source. Marks
+// belong to their respective owners and are used nominatively.
 //
 // Output: IslandApp/Resources/AgentLogo-<source>.png (+ @2x)
 //   - black shapes on transparent background, rendered from the 24×24
@@ -27,12 +27,28 @@ let root = URL(fileURLWithPath: #filePath)          // …/scripts/make-agent-lo
 let svgDir = root.appendingPathComponent("scripts/assets/agent-logos")
 let outDir = root.appendingPathComponent("IslandApp/Resources")
 
-/// Normalize a lobehub SVG so CoreSVG renders it correctly:
-/// `1em` sizes → explicit 24, `currentColor` → opaque black (template ink).
-func normalize(_ svg: String) -> String {
-    svg.replacingOccurrences(of: "height=\"1em\"", with: "height=\"24\"")
-       .replacingOccurrences(of: "width=\"1em\"", with: "width=\"24\"")
-       .replacingOccurrences(of: "currentColor", with: "#000000")
+/// Normalize an upstream SVG for deterministic CoreSVG template rendering.
+///
+/// Most marks already use `currentColor`. OpenCode's official square mark is
+/// intentionally two-tone, so its reviewed geometry stays byte-for-byte in
+/// `scripts/assets` while the rendered template maps the secondary fill to a
+/// lower alpha. AppKit can then tint both layers for light/dark contexts
+/// without collapsing the mark into an opaque block.
+func normalize(_ svg: String, source: String) -> String {
+    var normalized = svg
+        .replacingOccurrences(of: "height=\"1em\"", with: "height=\"24\"")
+        .replacingOccurrences(of: "width=\"1em\"", with: "width=\"24\"")
+        .replacingOccurrences(of: "currentColor", with: "#000000")
+
+    if source == "opencode" {
+        normalized = normalized
+            .replacingOccurrences(
+                of: "fill=\"#4B4646\"",
+                with: "fill=\"#000000\" fill-opacity=\"0.38\""
+            )
+            .replacingOccurrences(of: "fill=\"#F1ECEC\"", with: "fill=\"#000000\"")
+    }
+    return normalized
 }
 
 func render(_ image: NSImage, px: Int, to url: URL) throws {
@@ -64,7 +80,10 @@ guard !svgs.isEmpty else { fatalError("no SVGs in \(svgDir.path)") }
 
 for svgURL in svgs {
     let source = svgURL.deletingPathExtension().lastPathComponent  // e.g. claude-code
-    let svg = normalize(try String(contentsOf: svgURL, encoding: .utf8))
+    let svg = normalize(
+        try String(contentsOf: svgURL, encoding: .utf8),
+        source: source
+    )
     guard let image = NSImage(data: Data(svg.utf8)) else {
         fatalError("CoreSVG could not decode \(svgURL.lastPathComponent)")
     }

@@ -105,6 +105,53 @@ final class CodexHooksInstallerTests: XCTestCase {
         XCTAssertTrue(cmd.contains("/hooks/codex"))
     }
 
+    func testPermissionRequestCommandPreservesDecisionOutput() {
+        let installer = LocalHooksInstaller(.codex)
+        let command = installer.hookCommand(for: "PermissionRequest")
+
+        XCTAssertTrue(command.contains("--noproxy 127.0.0.1"))
+        XCTAssertTrue(command.contains("-m 95"))
+        XCTAssertFalse(command.contains("@- >/dev/null"))
+        XCTAssertTrue(command.contains("2>/dev/null"), "stderr stays quiet without swallowing stdout")
+        XCTAssertTrue(command.hasSuffix("|| true"))
+    }
+
+    func testPassiveEventsStayShortAndSilent() {
+        let installer = LocalHooksInstaller(.codex)
+        for event in CodexHooksInstaller.events where event != "PermissionRequest" {
+            let command = installer.hookCommand(for: event)
+            XCTAssertTrue(command.contains("-m 2"), event)
+            XCTAssertTrue(command.contains(">/dev/null"), event)
+        }
+    }
+
+    func testPermissionRequestWritesVendorTimeoutAndStatus() throws {
+        try CodexHooksInstaller.install(hooksURL: hooksURL)
+        let hooks = try XCTUnwrap(try readRoot()["hooks"] as? [String: Any])
+        let groups = try XCTUnwrap(hooks["PermissionRequest"] as? [[String: Any]])
+        let handlers = try XCTUnwrap(groups.first?["hooks"] as? [[String: Any]])
+        let handler = try XCTUnwrap(handlers.first)
+
+        XCTAssertEqual(handler["timeout"] as? Int, 100)
+        XCTAssertEqual(handler["statusMessage"] as? String, "Waiting for Dev Island")
+    }
+
+    func testOldPassivePermissionHookIsMarkedStale() throws {
+        try CodexHooksInstaller.install(hooksURL: hooksURL)
+        var root = try readRoot()
+        var hooks = try XCTUnwrap(root["hooks"] as? [String: Any])
+        var groups = try XCTUnwrap(hooks["PermissionRequest"] as? [[String: Any]])
+        var handlers = try XCTUnwrap(groups[0]["hooks"] as? [[String: Any]])
+        handlers[0]["command"] = LocalHooksInstaller(.codex).hookCommand()
+        groups[0]["hooks"] = handlers
+        hooks["PermissionRequest"] = groups
+        root["hooks"] = hooks
+        try JSONSerialization.data(withJSONObject: root).write(to: hooksURL)
+
+        XCTAssertFalse(CodexHooksInstaller.isInstalled(hooksURL: hooksURL))
+        XCTAssertTrue(LocalHooksInstaller(.codex).requiresUpdate(configURL: hooksURL))
+    }
+
     func testDistinctEndpointsFromClaude() {
         XCTAssertNotEqual(
             CodexHooksInstaller.hookCommand(),

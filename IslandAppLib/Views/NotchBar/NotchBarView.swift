@@ -13,7 +13,7 @@ import IslandCore
 struct NotchBarView: View {
     let state: BarState
     let summary: TaskStatusSummary
-    var title: String = "No tasks"
+    var title: String = "No sessions"
     let layout: NotchMetrics.Layout
     /// Whether to show the status dot + count inside the bar. Normal
     /// collapsed state keeps this on for both hardware-notch and
@@ -27,25 +27,13 @@ struct NotchBarView: View {
 
     var body: some View {
         if drawsBackdrop {
-            // Glow is keyed off the same `StatusPhase` time source as
-            // `StatusDot` so the bar's outer halo pulses in lockstep with
-            // the indicator dot. For idle/failed/completed the phase is
-            // static so we let the timeline pause; running/waiting need the
-            // per-frame tick.
-            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !needsTimeline)) { context in
-                let phase = StatusPhase.compute(state: state, at: context.date)
-                ZStack {
-                    backdrop
-                        .shadow(
-                            color: state.color.opacity(phase.glowOpacity * 0.55),
-                            radius: phase.glowRadius * 1.3
-                        )
-                        .animation(Motion.colorTransition, value: state)
-                    content
-                        .opacity(showsContent ? 1 : 0)
-                }
-                .frame(width: layout.totalWidth, height: layout.barHeight)
+            ZStack {
+                backdrop
+                    .animation(Motion.colorTransition, value: state)
+                content
+                    .opacity(showsContent ? 1 : 0)
             }
+            .frame(width: layout.totalWidth, height: layout.barHeight)
         } else {
             // Content-only mode: no shape, no glow. Caller composes its own
             // shared backdrop.
@@ -53,12 +41,6 @@ struct NotchBarView: View {
                 .opacity(showsContent ? 1 : 0)
                 .frame(width: layout.totalWidth, height: layout.barHeight)
         }
-    }
-
-    /// Whether the timeline should drive frames. Only running/waiting have
-    /// time-varying glow; the rest are static and the timeline can pause.
-    private var needsTimeline: Bool {
-        state == .running || state == .waiting
     }
 
     // MARK: - Backdrop (shape + color)
@@ -128,24 +110,24 @@ struct NotchBarView: View {
 
                 Text(title)
                     .font(Typo.barTitle)
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(.white.opacity(0.76))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                CompactTaskStatusSummary(summary: summary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.white.opacity(0.13))
-                    )
+                if summary.total > 0 {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 1, height: 12)
+
+                    CompactTaskStatusSummary(summary: summary)
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: min(28, layout.barHeight), alignment: .center)
             .frame(maxHeight: .infinity, alignment: .center)
             .padding(.leading, 18)
-            .padding(.trailing, 16)
+            .padding(.trailing, 18)
         }
     }
 }

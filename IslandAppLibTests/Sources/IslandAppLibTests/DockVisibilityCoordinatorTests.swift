@@ -72,113 +72,127 @@ final class DockVisibilityCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.desiredPolicy, .accessory)
     }
 
-    func testFailedPromotionRetriesAutomaticallyOnTheNextTurn() async {
+    func testFailedPromotionRetriesAutomaticallyOnTheNextTurn() {
         let recorder = PolicyRecorder(results: [true, false, true])
-        let coordinator = makeCoordinator(recorder)
+        let scheduler = RetrySchedulerRecorder()
+        let coordinator = makeCoordinator(recorder, scheduler: scheduler)
 
         coordinator.synchronize()
         _ = coordinator.acquire(.settings)
-        await settleScheduledRetry()
+        scheduler.drain()
 
         XCTAssertEqual(recorder.policies, [.accessory, .regular, .regular])
+        XCTAssertEqual(scheduler.delays, [16])
         XCTAssertEqual(coordinator.desiredPolicy, .regular)
     }
 
-    func testFailedDemotionRetriesAutomaticallyOnTheNextTurn() async {
+    func testFailedDemotionRetriesAutomaticallyOnTheNextTurn() {
         let recorder = PolicyRecorder(results: [true, true, false, true])
-        let coordinator = makeCoordinator(recorder)
+        let scheduler = RetrySchedulerRecorder()
+        let coordinator = makeCoordinator(recorder, scheduler: scheduler)
 
         coordinator.synchronize()
         let settings = coordinator.acquire(.settings)
         coordinator.release(settings)
-        await settleScheduledRetry()
+        scheduler.drain()
 
         XCTAssertEqual(
             recorder.policies,
             [.accessory, .regular, .accessory, .accessory]
         )
+        XCTAssertEqual(scheduler.delays, [16])
         XCTAssertEqual(coordinator.desiredPolicy, .accessory)
     }
 
-    func testRepeatedPromotionFailuresRemainBoundedAndCanRecover() async {
+    func testRepeatedPromotionFailuresRemainBoundedAndCanRecover() {
         let recorder = PolicyRecorder(
             results: [true, false, false, false, true]
         )
-        let coordinator = makeCoordinator(recorder)
+        let scheduler = RetrySchedulerRecorder()
+        let coordinator = makeCoordinator(recorder, scheduler: scheduler)
 
         coordinator.synchronize()
         _ = coordinator.acquire(.settings)
-        await settleScheduledRetry()
+        scheduler.drain()
 
         XCTAssertEqual(
             recorder.policies,
             [.accessory, .regular, .regular, .regular, .regular]
         )
+        XCTAssertEqual(scheduler.delays, [16, 32, 64])
         XCTAssertEqual(coordinator.desiredPolicy, .regular)
     }
 
-    func testAutomaticRetriesStopAfterTheBound() async {
+    func testAutomaticRetriesStopAfterTheBound() {
         let recorder = PolicyRecorder(
             results: [true, false, false, false, false, true]
         )
-        let coordinator = makeCoordinator(recorder)
+        let scheduler = RetrySchedulerRecorder()
+        let coordinator = makeCoordinator(recorder, scheduler: scheduler)
 
         coordinator.synchronize()
         _ = coordinator.acquire(.settings)
-        await settleScheduledRetry()
+        scheduler.drain()
 
         XCTAssertEqual(
             recorder.policies,
             [.accessory, .regular, .regular, .regular, .regular]
         )
+        XCTAssertEqual(scheduler.delays, [16, 32, 64])
         XCTAssertEqual(coordinator.desiredPolicy, .regular)
     }
 
-    func testPendingPromotionRetryUsesLatestStateAfterRelease() async {
+    func testPendingPromotionRetryUsesLatestStateAfterRelease() {
         let recorder = PolicyRecorder(results: [true, false])
-        let coordinator = makeCoordinator(recorder)
+        let scheduler = RetrySchedulerRecorder()
+        let coordinator = makeCoordinator(recorder, scheduler: scheduler)
 
         coordinator.synchronize()
         let settings = coordinator.acquire(.settings)
         coordinator.release(settings)
-        await settleScheduledRetry()
+        scheduler.drain()
 
         XCTAssertEqual(recorder.policies, [.accessory, .regular])
+        XCTAssertEqual(scheduler.delays, [16])
         XCTAssertEqual(coordinator.desiredPolicy, .accessory)
     }
 
-    func testPendingDemotionRetryUsesLatestStateAfterNewLease() async {
+    func testPendingDemotionRetryUsesLatestStateAfterNewLease() {
         let recorder = PolicyRecorder(results: [true, true, false])
-        let coordinator = makeCoordinator(recorder)
+        let scheduler = RetrySchedulerRecorder()
+        let coordinator = makeCoordinator(recorder, scheduler: scheduler)
 
         coordinator.synchronize()
         let first = coordinator.acquire(.settings)
         coordinator.release(first)
         _ = coordinator.acquire(.onboarding)
-        await settleScheduledRetry()
+        scheduler.drain()
 
         XCTAssertEqual(
             recorder.policies,
             [.accessory, .regular, .accessory]
         )
+        XCTAssertEqual(scheduler.delays, [16])
         XCTAssertEqual(coordinator.desiredPolicy, .regular)
     }
 
-    func testExplicitSynchronizeCanRecoverAfterRetryLimit() async {
+    func testExplicitSynchronizeCanRecoverAfterRetryLimit() {
         let recorder = PolicyRecorder(
             results: [true, false, false, false, false, true]
         )
-        let coordinator = makeCoordinator(recorder)
+        let scheduler = RetrySchedulerRecorder()
+        let coordinator = makeCoordinator(recorder, scheduler: scheduler)
 
         coordinator.synchronize()
         _ = coordinator.acquire(.settings)
-        await settleScheduledRetry()
+        scheduler.drain()
         coordinator.synchronize()
 
         XCTAssertEqual(
             recorder.policies,
             [.accessory, .regular, .regular, .regular, .regular, .regular]
         )
+        XCTAssertEqual(scheduler.delays, [16, 32, 64])
         XCTAssertEqual(coordinator.desiredPolicy, .regular)
     }
 
@@ -202,19 +216,46 @@ final class DockVisibilityCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.policies.last, .accessory)
     }
 
-    private func settleScheduledRetry() async {
-        // Production uses one-frame exponential backoff (16 + 32 + 64 ms)
-        // so retries cross real AppKit run-loop turns. Cover the full bounded
-        // sequence, then yield once so its final actor hop can finish.
-        try? await Task.sleep(for: .milliseconds(250))
-        await Task.yield()
+    private func makeCoordinator(
+        _ recorder: PolicyRecorder,
+        scheduler: RetrySchedulerRecorder? = nil
+    ) -> DockVisibilityCoordinator {
+        if let scheduler {
+            return DockVisibilityCoordinator(
+                applyPolicy: { policy in recorder.apply(policy) },
+                retryScheduler: scheduler.schedule
+            )
+        }
+        return DockVisibilityCoordinator { policy in
+            recorder.apply(policy)
+        }
+    }
+}
+
+@MainActor
+private final class RetrySchedulerRecorder {
+    private struct ScheduledRetry {
+        let operation: @MainActor () -> Void
     }
 
-    private func makeCoordinator(
-        _ recorder: PolicyRecorder
-    ) -> DockVisibilityCoordinator {
-        DockVisibilityCoordinator { policy in
-            recorder.apply(policy)
+    private var retries: [ScheduledRetry] = []
+    private(set) var delays: [Int] = []
+
+    func schedule(
+        delayMilliseconds: Int,
+        operation: @escaping @MainActor () -> Void
+    ) {
+        delays.append(delayMilliseconds)
+        retries.append(ScheduledRetry(operation: operation))
+    }
+
+    func drain() {
+        var executed = 0
+        while !retries.isEmpty {
+            precondition(executed < 16, "Retry scheduler did not converge")
+            let retry = retries.removeFirst()
+            retry.operation()
+            executed += 1
         }
     }
 }

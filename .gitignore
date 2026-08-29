@@ -8,7 +8,6 @@ CLAUDE_SERVER.md
 # Swift Package Manager
 .build/
 .swiftpm/
-Package.resolved
 
 # Xcode
 *.xcodeproj/

@@ -9,7 +9,7 @@ import IslandCore
 /// how brightness travels through the grid. The footprint never changes, so
 /// status transitions stay calm and nearby type remains perfectly stable.
 struct DotMatrixMark: View {
-    enum Pattern: Equatable {
+    enum Pattern: Hashable, Sendable {
         /// Nine quiet points with a slightly brighter centre.
         case field
         /// Nine visible points prepared for a clockwise perimeter signal.
@@ -22,7 +22,7 @@ struct DotMatrixMark: View {
         case cross
     }
 
-    enum MotionStyle: Equatable {
+    enum MotionStyle: Hashable, Sendable {
         case still
         case orbiting
         case attention
@@ -35,39 +35,57 @@ struct DotMatrixMark: View {
     var pattern: Pattern = .field
     var intensity: Double = 1
 
-    private var density: [Double] {
+    static func opacity(
+        pattern: Pattern,
+        motion: MotionStyle,
+        intensity: Double,
+        row: Int,
+        column: Int,
+        phase: CGFloat
+    ) -> Double {
+        let density: [Double]
         switch pattern {
         case .field:
-            return [
+            density = [
                 0.42, 0.50, 0.42,
                 0.50, 0.74, 0.50,
                 0.42, 0.50, 0.42,
             ]
         case .orbit:
-            return [
+            density = [
                 1.00, 1.00, 1.00,
                 1.00, 1.00, 1.00,
                 1.00, 1.00, 1.00,
             ]
         case .ring:
-            return [
+            density = [
                 0.56, 0.78, 0.56,
                 0.78, 1.00, 0.78,
                 0.56, 0.78, 0.56,
             ]
         case .plus:
-            return [
+            density = [
                 0.34, 0.94, 0.34,
                 0.94, 1.00, 0.94,
                 0.34, 0.94, 0.34,
             ]
         case .cross:
-            return [
+            density = [
                 0.96, 0.34, 0.96,
                 0.34, 1.00, 0.34,
                 0.96, 0.34, 0.96,
             ]
         }
+
+        let index = row * 3 + column
+        let signal = modulation(
+            motion: motion,
+            row: row,
+            column: column,
+            phase: phase
+        )
+        let response = opacityResponse(motion: motion, signal: signal)
+        return min(1, density[index] * response * intensity)
     }
 
     var body: some View {
@@ -77,9 +95,6 @@ struct DotMatrixMark: View {
 
             for row in 0..<3 {
                 for column in 0..<3 {
-                    let index = row * 3 + column
-                    let signal = modulation(row: row, column: column)
-                    let response = opacityResponse(signal: signal)
                     let center = CGPoint(
                         x: diameter / 2 + CGFloat(column) * pitch,
                         y: diameter / 2 + CGFloat(row) * pitch
@@ -90,12 +105,33 @@ struct DotMatrixMark: View {
                         width: diameter,
                         height: diameter
                     )
-                    let opacity = min(
-                        1,
-                        density[index] * response * intensity
+                    let opacity = Self.opacity(
+                        pattern: pattern,
+                        motion: motion,
+                        intensity: intensity,
+                        row: row,
+                        column: column,
+                        phase: phase
                     )
 
-                    context.fill(
+                    var pointContext = context
+                    if pattern != .field {
+                        // A point-sized bloom, not an island-sized glow. The
+                        // layer's own opacity scales the shadow, so the lit
+                        // head reads as emissive while resting points remain
+                        // visibly dimmer in the same fixed nine-dot grid.
+                        let bloomOpacity = max(0, opacity - 0.24) * 0.52
+                        pointContext.addFilter(
+                            .shadow(
+                                color: color.opacity(bloomOpacity),
+                                radius: max(0.65, diameter * 0.52),
+                                x: 0,
+                                y: 0
+                            )
+                        )
+                    }
+
+                    pointContext.fill(
                         Path(ellipseIn: rect),
                         with: .color(color.opacity(opacity))
                     )
@@ -108,7 +144,12 @@ struct DotMatrixMark: View {
 
     /// A restrained per-point light pattern. `phase` is a normalized 0…1
     /// cycle supplied by the shared status timeline.
-    private func modulation(row: Int, column: Int) -> Double {
+    private static func modulation(
+        motion: MotionStyle,
+        row: Int,
+        column: Int,
+        phase: CGFloat
+    ) -> Double {
         guard motion != .still else { return 1 }
 
         let normalizedPhase = Double(phase) * 2 * Double.pi
@@ -139,13 +180,13 @@ struct DotMatrixMark: View {
         }
     }
 
-    private func angularDistance(_ first: Double, _ second: Double) -> Double {
+    private static func angularDistance(_ first: Double, _ second: Double) -> Double {
         abs(atan2(sin(first - second), cos(first - second)))
     }
 
     /// Converts the animated signal to brightness only. Point diameter is
     /// deliberately absent: all nine dots stay geometrically identical.
-    private func opacityResponse(signal: Double) -> Double {
+    private static func opacityResponse(motion: MotionStyle, signal: Double) -> Double {
         switch motion {
         case .still:
             return 1
@@ -182,7 +223,7 @@ extension BarState {
 
     var matrixIntensity: Double {
         switch self {
-        case .idle:      return 0.78
+        case .idle:      return 0.88
         case .running:   return 0.97
         case .waiting:   return 1.00
         case .completed: return 0.94
@@ -236,7 +277,7 @@ extension TaskStatus {
 #if PREVIEWS
 #Preview("Dot matrix marks") {
     HStack(spacing: 22) {
-        DotMatrixMark(color: Palette.stateIdle, size: 14, intensity: 0.78)
+        DotMatrixMark(color: Palette.stateIdle, size: 14, intensity: 0.88)
         DotMatrixMark(color: Palette.stateRunning, size: 14, phase: 0.2, motion: .orbiting, pattern: .orbit, intensity: 0.97)
         DotMatrixMark(color: Palette.stateWaiting, size: 14, phase: 0.6, motion: .attention, pattern: .ring)
         DotMatrixMark(color: Palette.stateCompleted, size: 14, pattern: .plus, intensity: 0.94)

@@ -38,7 +38,9 @@ public final class DebugSandboxWindow: NSWindow {
         level = .floating
 
         let host = NSHostingView(
-            rootView: DebugSandboxView(onReposition: onReposition)
+            rootView: LocalizedAppRoot {
+                DebugSandboxView(onReposition: onReposition)
+            }
         )
         host.translatesAutoresizingMaskIntoConstraints = true
         contentView = host

@@ -1,3 +1,4 @@
+import Logging
 import os
 
 /// Centralized `os.Logger` instances. Subsystem matches the bundle
@@ -7,10 +8,18 @@ import os
 enum IslandLogger {
     private static let subsystem = "app.devisland.Island"
 
-    static let api     = Logger(subsystem: subsystem, category: "api")
-    static let webhook = Logger(subsystem: subsystem, category: "webhook")
-    static let tunnel  = Logger(subsystem: subsystem, category: "tunnel")
-    static let store   = Logger(subsystem: subsystem, category: "store")
-    static let sync    = Logger(subsystem: subsystem, category: "sync")
-    static let storage = Logger(subsystem: subsystem, category: "storage")
+    static let api     = os.Logger(subsystem: subsystem, category: "api")
+    static let webhook = os.Logger(subsystem: subsystem, category: "webhook")
+    static let tunnel  = os.Logger(subsystem: subsystem, category: "tunnel")
+    static let store   = os.Logger(subsystem: subsystem, category: "store")
+    static let sync    = os.Logger(subsystem: subsystem, category: "sync")
+    static let storage = os.Logger(subsystem: subsystem, category: "storage")
+
+    /// The hermetic transport fixture has a closed five-line CLI contract;
+    /// Hummingbird startup/cancellation details must not escape on stderr.
+    static let silentFramework = Logging.Logger(
+        label: "app.devisland.hermetic-listener"
+    ) { _ in
+        SwiftLogNoOpLogHandler()
+    }
 }

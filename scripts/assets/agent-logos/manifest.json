@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 3,
+  "assets": [
+    {
+      "id": "claude-code",
+      "displayName": "Claude Code",
+      "sourceFile": "claude-code.svg",
+      "sourceSHA256": "d7eb2d876b49e51cc16291a42b681d7cf4906e60e0150776dbfb353ec4ca3746",
+      "bundleFiles": [
+        {
+          "name": "AgentLogo-claude-code.png",
+          "sha256": "da04c092f547d8dcf80f40a8c05489b782c65499e2aeb537788a04832ec28966"
+        },
+        {
+          "name": "AgentLogo-claude-code@2x.png",
+          "sha256": "73e0fe03d1abb447c048e844db76be708b621f83ce0f9bff175dc658a7c03276"
+        }
+      ],
+      "upstream": {
+        "repository": "https://github.com/lobehub/lobe-icons",
+        "revision": "fbd2d56e3f734e889f1373e71c8368cc4e60e0d7",
+        "path": "packages/static-svg/icons/claudecode.svg",
+        "version": "1.94.0",
+        "sha256": "d7eb2d876b49e51cc16291a42b681d7cf4906e60e0150776dbfb353ec4ca3746",
+        "transform": "identity"
+      },
+      "assetLicense": "MIT",
+      "bundledNotice": "lobe-icons-MIT-LICENSE",
+      "bundledNoticeSHA256": "add9d7531d1b21646317a8958e38fc727506fa39d24bdecb44154d943c82753a",
+      "provenanceReview": "reviewed",
+      "trademarkReview": "required"
+    },
+    {
+      "id": "codex",
+      "displayName": "Codex",
+      "sourceFile": "codex.svg",
+      "sourceSHA256": "d08b4e824cd6727e89617f59e4737273ff53e44c1da849d016dd64dfd08b33e1",
+      "bundleFiles": [
+        {
+          "name": "AgentLogo-codex.png",
+          "sha256": "cdb6456355671df787378775b5024ac7724c23bcbe0489448d1fb51de43a0a6d"
+        },
+        {
+          "name": "AgentLogo-codex@2x.png",
+          "sha256": "5056af1a394772d6716b7b01df07de361757400ce48ae48b49546986d1cf5ec8"
+        }
+      ],
+      "upstream": {
+        "repository": "https://github.com/lobehub/lobe-icons",
+        "revision": "fbd2d56e3f734e889f1373e71c8368cc4e60e0d7",
+        "path": "packages/static-svg/icons/codex.svg",
+        "version": "1.94.0",
+        "sha256": "d08b4e824cd6727e89617f59e4737273ff53e44c1da849d016dd64dfd08b33e1",
+        "transform": "identity"
+      },
+      "assetLicense": "MIT",
+      "bundledNotice": "lobe-icons-MIT-LICENSE",
+      "bundledNoticeSHA256": "add9d7531d1b21646317a8958e38fc727506fa39d24bdecb44154d943c82753a",
+      "provenanceReview": "reviewed",
+      "trademarkReview": "required"
+    },
+    {
+      "id": "copilot-cli",
+      "displayName": "GitHub Copilot CLI",
+      "sourceFile": "copilot-cli.svg",
+      "sourceSHA256": "ade4289075b71fc444a16a324a506d88b86ae5cfd073ae777c47d20f8ecdc1d8",
+      "bundleFiles": [
+        {
+          "name": "AgentLogo-copilot-cli.png",
+          "sha256": "2a448992b749784b48d6276c65a23adb77e170f72062365b94ff153fec765545"
+        },
+        {
+          "name": "AgentLogo-copilot-cli@2x.png",
+          "sha256": "a16c6baed9534a0e40ad84bf6ae52460f5b7655e51d4b14f58f60e2af9cc18ba"
+        }
+      ],
+      "upstream": {
+        "repository": "https://github.com/primer/octicons",
+        "revision": "0e21a4c2d8449102f10e533d241f04797af0914c",
+        "path": "icons/copilot-24.svg",
+        "version": "NOASSERTION",
+        "sha256": "eeafb3c2f333e04ccf7d031ae215f7adafaed4c6352556b0bf79496e048bcdd7",
+        "transform": "octicons-template-v1"
+      },
+      "assetLicense": "MIT",
+      "bundledNotice": "primer-octicons-MIT-LICENSE",
+      "bundledNoticeSHA256": "da259c8bd0de62713ccdcf88910aebca810644f98c2c912bad814fc79ea778df",
+      "provenanceReview": "reviewed",
+      "trademarkReview": "required"
+    },
+    {
+      "id": "cursor",
+      "displayName": "Cursor",
+      "sourceFile": "cursor.svg",
+      "sourceSHA256": "0cb51bddf264ae108926fd554c063ef40fc1aac3c5c921ddb39ad184e4e5d0ef",
+      "bundleFiles": [
+        {
+          "name": "AgentLogo-cursor.png",
+          "sha256": "59ccf9a1ec1ac8e00475a02fe26948c5a84eb9218b4af0ad18c6454a3822a5dc"
+        },
+        {
+          "name": "AgentLogo-cursor@2x.png",
+          "sha256": "3f87106e2c0170ce816c6c26388100e72907ebf339e2b6692b0cd094050dd8b3"
+        }
+      ],
+      "upstream": {
+        "repository": "https://github.com/lobehub/lobe-icons",
+        "revision": "fbd2d56e3f734e889f1373e71c8368cc4e60e0d7",
+        "path": "packages/static-svg/icons/cursor.svg",
+        "version": "1.94.0",
+        "sha256": "0cb51bddf264ae108926fd554c063ef40fc1aac3c5c921ddb39ad184e4e5d0ef",
+        "transform": "identity"
+      },
+      "assetLicense": "MIT",
+      "bundledNotice": "lobe-icons-MIT-LICENSE",
+      "bundledNoticeSHA256": "add9d7531d1b21646317a8958e38fc727506fa39d24bdecb44154d943c82753a",
+      "provenanceReview": "reviewed",
+      "trademarkReview": "required"
+    },
+    {
+      "id": "gemini-cli",
+      "displayName": "Gemini CLI",
+      "sourceFile": "gemini-cli.svg",
+      "sourceSHA256": "ba6999b580b27468ebada1629ca2df5f44faf40fb38f2791a4cdec32f26d252f",
+      "bundleFiles": [
+        {
+          "name": "AgentLogo-gemini-cli.png",
+          "sha256": "f49db919926254f0bbe881155540ba7672e82f0b2d128fa09c3667a98f78a3d0"
+        },
+        {
+          "name": "AgentLogo-gemini-cli@2x.png",
+          "sha256": "ef54c478aa348ac00b4548c381f6d8071a9fde5463cb1ee844267516c68377a9"
+        }
+      ],
+      "upstream": {
+        "repository": "https://github.com/lobehub/lobe-icons",
+        "revision": "fbd2d56e3f734e889f1373e71c8368cc4e60e0d7",
+        "path": "packages/static-svg/icons/geminicli.svg",
+        "version": "1.94.0",
+        "sha256": "bc9b0199cb4c5deee25d6cf49d6e7d60a891171ccbc5520f657d3047b84e5d2e",
+        "transform": "append-trailing-lf"
+      },
+      "assetLicense": "MIT",
+      "bundledNotice": "lobe-icons-MIT-LICENSE",
+      "bundledNoticeSHA256": "add9d7531d1b21646317a8958e38fc727506fa39d24bdecb44154d943c82753a",
+      "provenanceReview": "reviewed",
+      "trademarkReview": "required"
+    },
+    {
+      "id": "kimi-code",
+      "displayName": "Kimi Code CLI",
+      "sourceFile": "kimi-code.svg",
+      "sourceSHA256": "60685e25b2db869030290485a35eed8ca77e535d2c6b7731374df49edbfa98c8",
+      "bundleFiles": [
+        {
+          "name": "AgentLogo-kimi-code.png",
+          "sha256": "bf7b0b9ce75f3986caaaa8360ca986eb3129ac42d23e420f72f6be3d5b9e825b"
+        },
+        {
+          "name": "AgentLogo-kimi-code@2x.png",
+          "sha256": "b24739d6a5c3e179da4fd71214e97a60d3681166566215cf7892dc9f925ca81e"
+        }
+      ],
+      "upstream": {
+        "repository": "https://github.com/MoonshotAI/kimi-code",
+        "revision": "0999454bdcb5ddd98f39bffee434dcf0a810f394",
+        "path": "apps/vscode/resources/kimi-icon.svg",
+        "version": "0.38.0",
+        "sha256": "60685e25b2db869030290485a35eed8ca77e535d2c6b7731374df49edbfa98c8",
+        "transform": "identity"
+      },
+      "assetLicense": "Apache-2.0",
+      "bundledNotice": "kimi-code-vscode-Apache-2.0-LICENSE",
+      "bundledNoticeSHA256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "provenanceReview": "reviewed",
+      "trademarkReview": "required"
+    },
+    {
+      "id": "manus",
+      "displayName": "Manus",
+      "sourceFile": "manus.svg",
+      "sourceSHA256": "8f70464df09b5b9e1643dcb7c0f2c6a2cfe3322b965b35d8e78b041f858b81b0",
+      "bundleFiles": [
+        {
+          "name": "AgentLogo-manus.png",
+          "sha256": "215b1980a92d99e23ea4ee7705b34f7de868ee8f94def9dc549b8583c3014d7e"
+        },
+        {
+          "name": "AgentLogo-manus@2x.png",
+          "sha256": "de52c1ed847ba0420b256d1f2a550434e91b618f62975ab7e81f43f27d497e4f"
+        }
+      ],
+      "upstream": {
+        "repository": "https://github.com/lobehub/lobe-icons",
+        "revision": "fbd2d56e3f734e889f1373e71c8368cc4e60e0d7",
+        "path": "packages/static-svg/icons/manus.svg",
+        "version": "1.94.0",
+        "sha256": "8f70464df09b5b9e1643dcb7c0f2c6a2cfe3322b965b35d8e78b041f858b81b0",
+        "transform": "identity"
+      },
+      "assetLicense": "MIT",
+      "bundledNotice": "lobe-icons-MIT-LICENSE",
+      "bundledNoticeSHA256": "add9d7531d1b21646317a8958e38fc727506fa39d24bdecb44154d943c82753a",
+      "provenanceReview": "reviewed",
+      "trademarkReview": "required"
+    },
+    {
+      "id": "opencode",
+      "displayName": "OpenCode",
+      "sourceFile": "opencode.svg",
+      "sourceSHA256": "d6a0e3b8a295f413543f41cb73957e670351b5cb088c8d9dbd186b9e9d633cca",
+      "bundleFiles": [
+        {
+          "name": "AgentLogo-opencode.png",
+          "sha256": "db619cabc3440e3937890bacdd7e2e6926ba6f3562df1ad1fb2553392967958d"
+        },
+        {
+          "name": "AgentLogo-opencode@2x.png",
+          "sha256": "27f9e182d4e4e8dfcf4e7fee7aea002b97e37fdcc0796b0653babe6e491bc4da"
+        }
+      ],
+      "upstream": {
+        "repository": "https://github.com/anomalyco/opencode",
+        "revision": "13c27598d35f6f91fa4763a0b61a220ab7fcb263",
+        "path": "packages/console/app/src/asset/brand/opencode-logo-dark-square.svg",
+        "version": "1.18.23",
+        "sha256": "d6a0e3b8a295f413543f41cb73957e670351b5cb088c8d9dbd186b9e9d633cca",
+        "transform": "identity"
+      },
+      "assetLicense": "MIT",
+      "bundledNotice": "opencode-MIT-LICENSE",
+      "bundledNoticeSHA256": "625f0f619133f89bbbb2abe37369613dfa1885eba1e50d02170deb62bb42cb6b",
+      "provenanceReview": "reviewed",
+      "trademarkReview": "required"
+    },
+    {
+      "id": "qwen-code",
+      "displayName": "Qwen Code",
+      "sourceFile": "qwen-code.svg",
+      "sourceSHA256": "7c7b987b0dba797addc54f59c16c1a74085b68c837f863f312c2521a4e165a03",
+      "bundleFiles": [
+        {
+          "name": "AgentLogo-qwen-code.png",
+          "sha256": "ba3b5b27e683a3e713a864d43901156043a1dd1f45ce12d56cb37f959a27a329"
+        },
+        {
+          "name": "AgentLogo-qwen-code@2x.png",
+          "sha256": "c77769a5c70b528cb7a6a4e7c73a23533aff63c8dfcf572d12e9d64ae6e64c91"
+        }
+      ],
+      "upstream": {
+        "repository": "https://github.com/QwenLM/qwen-code",
+        "revision": "e38665674e2978f98cd35e7c6f6eac057741647f",
+        "path": "packages/desktop-shell/bootstrap/qwen-code-logo.svg",
+        "version": "0.22.0",
+        "sha256": "f7e324607c3f657953977d2742fbb8a3a0a354a13736671d27bfb906e9d1f3f2",
+        "transform": "qwen-template-v1"
+      },
+      "assetLicense": "Apache-2.0",
+      "bundledNotice": "qwen-code-desktop-Apache-2.0-LICENSE-NOTICE",
+      "bundledNoticeSHA256": "fa668918263f754d5339c3fd84fb65123525e48db72cfbbb3fff250d3775afeb",
+      "provenanceReview": "reviewed",
+      "trademarkReview": "required"
+    }
+  ]
+}

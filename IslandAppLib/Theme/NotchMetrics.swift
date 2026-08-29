@@ -69,7 +69,10 @@ public enum NotchMetrics {
     public static let defaultNotchWidth: CGFloat = 200
 
     // No-notch fallback (per CLAUDE_CLIENT.md §6 task 7)
-    public static let fallbackWidth: CGFloat = 216
+    /// Synthetic island width on displays without a hardware notch. Keep
+    /// enough room for the current task and the all-session count to coexist
+    /// without turning ordinary status copy into ellipses.
+    public static let fallbackWidth: CGFloat = 260
     public static let fallbackBarHeight: CGFloat = 28
 
 

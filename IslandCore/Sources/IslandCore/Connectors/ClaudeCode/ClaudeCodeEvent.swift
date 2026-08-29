@@ -14,6 +14,7 @@ public struct ClaudeCodeEvent: Decodable, Sendable {
     public enum Kind: String, Decodable, Sendable {
         case sessionStart     = "SessionStart"
         case userPromptSubmit = "UserPromptSubmit"
+        case permissionRequest = "PermissionRequest"
         case notification     = "Notification"
         case stop             = "Stop"
         case stopFailure      = "StopFailure"
@@ -31,18 +32,22 @@ public struct ClaudeCodeEvent: Decodable, Sendable {
     /// `agent_needs_input`, `auth_success`, …). Missing on older Claude Code
     /// versions — treat absence as "needs attention".
     public let notificationType: String?
+    /// Tool asking for permission on a `PermissionRequest` event.
+    public let toolName: String?
 
     public init(
         hookEventName: Kind,
         sessionId: String,
         cwd: String? = nil,
         message: String? = nil,
-        notificationType: String? = nil
+        notificationType: String? = nil,
+        toolName: String? = nil
     ) {
         self.hookEventName = hookEventName
         self.sessionId = sessionId
         self.cwd = cwd
         self.message = message
         self.notificationType = notificationType
+        self.toolName = toolName
     }
 }

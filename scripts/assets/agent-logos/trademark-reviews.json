@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "usage": {
+    "purpose": "identify-user-selected-agent",
+    "affiliation": "no-affiliation-or-endorsement",
+    "surfaces": [
+      "island-panel",
+      "onboarding",
+      "session-history",
+      "settings"
+    ],
+    "treatment": "monochrome-template-on-neutral-badge"
+  },
+  "reviews": [
+    {
+      "id": "claude-code",
+      "assetFingerprintSHA256": "9b1af2d5010abade0fd1e5634f74f12915efd8884fe60bfb3586e1272b814d28",
+      "decision": "required",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "reviewerRole": null,
+      "authorityReference": null,
+      "evidenceReference": null,
+      "salesRegions": [],
+      "distributionChannels": [],
+      "conditions": null,
+      "expiresAt": null
+    },
+    {
+      "id": "codex",
+      "assetFingerprintSHA256": "64772f4d09f7b849bf24ba2e5a03529f6de7511ab26c3b2fd2d77a2e89b5b5d7",
+      "decision": "required",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "reviewerRole": null,
+      "authorityReference": null,
+      "evidenceReference": null,
+      "salesRegions": [],
+      "distributionChannels": [],
+      "conditions": null,
+      "expiresAt": null
+    },
+    {
+      "id": "copilot-cli",
+      "assetFingerprintSHA256": "5fb555641b1da4f12306b4eb90a5e07c132bf4d30d559c02083e9966462ec388",
+      "decision": "required",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "reviewerRole": null,
+      "authorityReference": null,
+      "evidenceReference": null,
+      "salesRegions": [],
+      "distributionChannels": [],
+      "conditions": null,
+      "expiresAt": null
+    },
+    {
+      "id": "cursor",
+      "assetFingerprintSHA256": "d009b16f07e5c8c6a1add7c974d89c6b2f0ac59b6cc89d8ad08e0bb6927c1a7a",
+      "decision": "required",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "reviewerRole": null,
+      "authorityReference": null,
+      "evidenceReference": null,
+      "salesRegions": [],
+      "distributionChannels": [],
+      "conditions": null,
+      "expiresAt": null
+    },
+    {
+      "id": "gemini-cli",
+      "assetFingerprintSHA256": "c41d7a191e56eddd4d25328f07db5bf3c17266648e43d3733c3e89e91daff64d",
+      "decision": "required",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "reviewerRole": null,
+      "authorityReference": null,
+      "evidenceReference": null,
+      "salesRegions": [],
+      "distributionChannels": [],
+      "conditions": null,
+      "expiresAt": null
+    },
+    {
+      "id": "kimi-code",
+      "assetFingerprintSHA256": "7a85979085be3f2a8a338d4bbcd7c6d50c9a89e4fe632c9726d3846d2fc68e6a",
+      "decision": "required",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "reviewerRole": null,
+      "authorityReference": null,
+      "evidenceReference": null,
+      "salesRegions": [],
+      "distributionChannels": [],
+      "conditions": null,
+      "expiresAt": null
+    },
+    {
+      "id": "manus",
+      "assetFingerprintSHA256": "8fcccb4c92fa52f32b4a1faacaf83419ee104fc0b923eeb67442633f88b781cd",
+      "decision": "required",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "reviewerRole": null,
+      "authorityReference": null,
+      "evidenceReference": null,
+      "salesRegions": [],
+      "distributionChannels": [],
+      "conditions": null,
+      "expiresAt": null
+    },
+    {
+      "id": "opencode",
+      "assetFingerprintSHA256": "61b894b483f2de7eb98395f144de1edc8a3b03c1f64989c26399d350909a9e48",
+      "decision": "required",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "reviewerRole": null,
+      "authorityReference": null,
+      "evidenceReference": null,
+      "salesRegions": [],
+      "distributionChannels": [],
+      "conditions": null,
+      "expiresAt": null
+    },
+    {
+      "id": "qwen-code",
+      "assetFingerprintSHA256": "b0af43689ff0d3c191b4fdd19690f2d92d19fb7871782f9c481e5a6b95da2d1a",
+      "decision": "required",
+      "reviewedAt": null,
+      "reviewedBy": null,
+      "reviewerRole": null,
+      "authorityReference": null,
+      "evidenceReference": null,
+      "salesRegions": [],
+      "distributionChannels": [],
+      "conditions": null,
+      "expiresAt": null
+    }
+  ]
+}

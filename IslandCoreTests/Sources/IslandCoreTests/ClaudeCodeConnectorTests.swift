@@ -30,6 +30,14 @@ final class ClaudeCodeConnectorTests: XCTestCase {
         XCTAssertEqual(event.message, "Claude needs permission to run Bash")
     }
 
+    func testDecodePermissionRequestWithToolName() throws {
+        let event = try decode("""
+        {"session_id":"s1","cwd":"/Users/dev/Proj","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"pwd"}}
+        """)
+        XCTAssertEqual(event.hookEventName, .permissionRequest)
+        XCTAssertEqual(event.toolName, "Bash")
+    }
+
     func testDecodeUnknownEventFails() {
         XCTAssertThrowsError(try decode("""
         {"session_id":"s1","hook_event_name":"PreToolUse"}
@@ -43,11 +51,12 @@ final class ClaudeCodeConnectorTests: XCTestCase {
         session: String = "s1",
         cwd: String? = "/Users/dev/Proj",
         message: String? = nil,
-        type: String? = nil
+        type: String? = nil,
+        toolName: String? = nil
     ) -> ClaudeCodeEvent {
         ClaudeCodeEvent(
             hookEventName: kind, sessionId: session, cwd: cwd,
-            message: message, notificationType: type)
+            message: message, notificationType: type, toolName: toolName)
     }
 
     func testSessionLifecycle() async {
@@ -60,6 +69,13 @@ final class ClaudeCodeConnectorTests: XCTestCase {
         XCTAssertEqual(tasks[0].status, .running)
         XCTAssertEqual(tasks[0].title, "Proj")
         XCTAssertEqual(tasks[0].taskURL, "file:///Users/dev/Proj/")
+
+        tasks = await connector.apply(event(.permissionRequest, toolName: "Bash"))
+        XCTAssertEqual(tasks[0].status, .waiting)
+        XCTAssertEqual(tasks[0].waitingMessage, "Approval needed: Bash")
+
+        tasks = await connector.apply(event(.userPromptSubmit))
+        XCTAssertEqual(tasks[0].status, .running)
 
         tasks = await connector.apply(
             event(.notification, message: "Needs permission", type: "permission_prompt"))

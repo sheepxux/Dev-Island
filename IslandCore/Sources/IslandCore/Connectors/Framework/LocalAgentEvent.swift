@@ -10,6 +10,14 @@ import Foundation
 /// a mapping — never another connector.
 public struct LocalAgentEvent: Sendable, Equatable {
 
+    public static let maximumSessionIDBytes = 256
+    public static let maximumGenerationIDBytes = 256
+    public static let maximumCWDBytes = 4_096
+    public static let maximumPhaseCharacters = 256
+    public static let maximumPhaseBytes = 1_024
+    public static let maximumMessageCharacters = 1_024
+    public static let maximumMessageBytes = 4_096
+
     /// What the event means for the session's task, in task vocabulary.
     public enum Action: Sendable, Equatable {
         /// The agent is working (session started / prompt submitted).
@@ -38,18 +46,33 @@ public struct LocalAgentEvent: Sendable, Equatable {
     /// agents with synchronous delivery leave it `nil` and every event
     /// applies directly.
     public let generationId: String?
+    /// Validated terminal host / tmux metadata attached by LocalHookServer.
+    /// Vendor payload decoders never read the process environment directly.
+    public let jumpContext: SessionJumpContext?
     public let action: Action
 
     public init(
         sessionId: String,
         cwd: String? = nil,
         generationId: String? = nil,
+        jumpContext: SessionJumpContext? = nil,
         action: Action
     ) {
         self.sessionId = sessionId
-        self.cwd = cwd
-        self.generationId = generationId
-        self.action = action
+        self.cwd = Self.validCWD(cwd)
+        self.generationId = Self.validGenerationID(generationId)
+        self.jumpContext = jumpContext
+        self.action = Self.bounded(action)
+    }
+
+    func withJumpContext(_ jumpContext: SessionJumpContext?) -> Self {
+        Self(
+            sessionId: sessionId,
+            cwd: cwd,
+            generationId: generationId,
+            jumpContext: jumpContext,
+            action: action
+        )
     }
 
     /// Session-id hygiene for payload mappings: a malformed local request
@@ -58,6 +81,75 @@ public struct LocalAgentEvent: Sendable, Equatable {
     public static func validSessionId(_ raw: String?) -> String? {
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard isBoundedNoncontrolText(
+            trimmed,
+            maximumUTF8Bytes: maximumSessionIDBytes
+        ) else { return nil }
+        return trimmed
+    }
+
+    private static func validGenerationID(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isBoundedNoncontrolText(
+            trimmed,
+            maximumUTF8Bytes: maximumGenerationIDBytes
+        ) else { return nil }
+        return trimmed
+    }
+
+    private static func validCWD(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/"),
+              isBoundedNoncontrolText(
+                trimmed,
+                maximumUTF8Bytes: maximumCWDBytes
+              ) else { return nil }
+        return trimmed
+    }
+
+    private static func isBoundedNoncontrolText(
+        _ value: String,
+        maximumUTF8Bytes: Int
+    ) -> Bool {
+        guard !value.isEmpty, value.utf8.count <= maximumUTF8Bytes else {
+            return false
+        }
+        return value.unicodeScalars.allSatisfy {
+            !CharacterSet.controlCharacters.contains($0)
+        }
+    }
+
+    private static func bounded(_ action: Action) -> Action {
+        switch action {
+        case .running, .sessionEnd, .ignored:
+            return action
+        case .waiting(let phase, let message):
+            return .waiting(
+                phase: boundedPhase(phase),
+                message: message.map(boundedMessage)
+            )
+        case .completed(let phase):
+            return .completed(phase: phase.map(boundedPhase))
+        case .failed(let phase):
+            return .failed(phase: boundedPhase(phase))
+        }
+    }
+
+    private static func boundedPhase(_ value: String) -> String {
+        AgentActionTextPolicy.bounded(
+            value,
+            maximumCharacters: maximumPhaseCharacters,
+            maximumUTF8Bytes: maximumPhaseBytes
+        )
+    }
+
+    private static func boundedMessage(_ value: String) -> String {
+        AgentActionTextPolicy.bounded(
+            value,
+            maximumCharacters: maximumMessageCharacters,
+            maximumUTF8Bytes: maximumMessageBytes
+        )
     }
 }

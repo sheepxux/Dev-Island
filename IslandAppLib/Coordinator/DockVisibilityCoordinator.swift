@@ -1,5 +1,4 @@
 import AppKit
-import os
 
 /// A semantic reason for keeping Dev Island in the Dock. Reasons are stored
 /// per lease rather than as a set so two independent windows of the same kind
@@ -29,16 +28,17 @@ public final class DockVisibilityCoordinator {
     public typealias PolicyApplier = @MainActor (
         NSApplication.ActivationPolicy
     ) -> Bool
+    typealias RetryScheduler = @MainActor (
+        _ delayMilliseconds: Int,
+        _ operation: @escaping @MainActor () -> Void
+    ) -> Void
 
     private let applyPolicy: PolicyApplier
+    private let scheduleRetry: RetryScheduler
     private var leases: [DockVisibilityLease: DockVisibilityReason] = [:]
     private var appliedPolicy: NSApplication.ActivationPolicy?
     private var retryID = UUID()
     private let maximumAutomaticRetries = 3
-    private let logger = Logger(
-        subsystem: "app.devisland.Island",
-        category: "DockVisibility"
-    )
 
     public init(
         applyPolicy: @escaping PolicyApplier = {
@@ -46,6 +46,17 @@ public final class DockVisibilityCoordinator {
         }
     ) {
         self.applyPolicy = applyPolicy
+        scheduleRetry = Self.scheduleRetryAfterDelay
+    }
+
+    /// Internal deterministic seam for tests. Production always uses the
+    /// real bounded 16/32/64 ms main-actor backoff above.
+    init(
+        applyPolicy: @escaping PolicyApplier,
+        retryScheduler: @escaping RetryScheduler
+    ) {
+        self.applyPolicy = applyPolicy
+        scheduleRetry = retryScheduler
     }
 
     public var desiredPolicy: NSApplication.ActivationPolicy {
@@ -74,17 +85,23 @@ public final class DockVisibilityCoordinator {
 
     private func reconcile(retryAttempt: Int = 0) {
         let policy = desiredPolicy
-        guard appliedPolicy != policy else { return }
+        guard appliedPolicy != policy else {
+            // A lease change may make a pending retry obsolete by returning
+            // to the already-applied policy. Invalidate its generation now so
+            // the delayed callback cannot create an unnecessary AppKit turn.
+            retryID = UUID()
+            return
+        }
 
         if applyPolicy(policy) {
             retryID = UUID()
             appliedPolicy = policy
         } else {
-            logger.error(
+            AppLogger.dock.error(
                 "Could not apply activation policy rawValue=\(policy.rawValue, privacy: .public)"
             )
             guard retryAttempt < maximumAutomaticRetries else {
-                logger.fault(
+                AppLogger.dock.fault(
                     "Activation policy remained unapplied after \(retryAttempt + 1, privacy: .public) attempts rawValue=\(policy.rawValue, privacy: .public)"
                 )
                 return
@@ -97,13 +114,21 @@ public final class DockVisibilityCoordinator {
             let scheduledRetryID = UUID()
             retryID = scheduledRetryID
             let delayMilliseconds = 16 << retryAttempt
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(
-                    for: .milliseconds(delayMilliseconds)
-                )
+            scheduleRetry(delayMilliseconds) { [weak self] in
                 guard let self, self.retryID == scheduledRetryID else { return }
                 self.reconcile(retryAttempt: retryAttempt + 1)
             }
+        }
+    }
+
+    private static func scheduleRetryAfterDelay(
+        _ delayMilliseconds: Int,
+        _ operation: @escaping @MainActor () -> Void
+    ) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(delayMilliseconds))
+            guard !Task.isCancelled else { return }
+            operation()
         }
     }
 }

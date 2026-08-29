@@ -1,5 +1,4 @@
 import AppKit
-import os
 
 // SkyLight (WindowServer) private connection property that lets a
 // NON-ACTIVE app set the mouse cursor.
@@ -41,8 +40,9 @@ enum BackgroundCursor {
             kCFBooleanTrue
         )
         if result != .success {
-            Logger(subsystem: "app.devisland.Island", category: "window")
-                .warning("SetsCursorInBackground failed (\(result.rawValue)) — hover cursor will stay an arrow")
+            AppLogger.window.warning(
+                "SetsCursorInBackground failed (\(result.rawValue)) — hover cursor will stay an arrow"
+            )
         }
     }
 }

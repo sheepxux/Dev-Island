@@ -1,11 +1,22 @@
 import Foundation
 
+protocol ManusServiceClientProtocol: ManusWebhookClientProtocol {
+    func listTasks() async throws -> [AgentTask]
+    func stopTask(id: String) async throws
+}
+
+extension ManusAPIClient: ManusServiceClientProtocol {}
+
 public final class ManusConnector: AgentConnector, Sendable {
     public let source = "manus"
-    let client: ManusAPIClient
+    let client: any ManusServiceClientProtocol
 
     public init(client: ManusAPIClient) {
         self.client = client
+    }
+
+    init(serviceClient: any ManusServiceClientProtocol) {
+        self.client = serviceClient
     }
 
     public func fetchTasks() async throws -> [AgentTask] {

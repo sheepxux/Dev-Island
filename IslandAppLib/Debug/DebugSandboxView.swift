@@ -71,6 +71,17 @@ struct DebugSandboxView: View {
                 Button("Seed 3 (preview set)") {
                     store.debugSetTasks(TaskStore.previewTasks)
                 }
+                Button("+ Codex Approval") {
+                    store.debugSpawnApprovalRequest()
+                }
+                Button("+ Claude Question") {
+                    store.debugSpawnQuestionRequest()
+                }
+            }
+            HStack(spacing: 6) {
+                Button("+ Claude Plan") {
+                    store.debugSpawnPlanReview()
+                }
                 Spacer()
                 Button("Clear all", role: .destructive) {
                     store.debugClearTasks()
@@ -124,6 +135,7 @@ struct DebugSandboxView: View {
             HStack(spacing: 16) {
                 statLabel("mode",       value: "\(coordinator.mode)")
                 statLabel("tasks",      value: "\(store.tasks.count)")
+                statLabel("requests",   value: "\(store.pendingActionRequests.count)")
                 statLabel("connection", value: connectionShortLabel)
             }
             .font(.system(size: 11, design: .monospaced))

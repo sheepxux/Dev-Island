@@ -19,7 +19,15 @@ enum AgentBrand {
     @MainActor
     static func logo(for source: String) -> NSImage? {
         if let cached = cache[source] { return cached }
-        let image = NSImage(named: "AgentLogo-\(source)")
+        var image = NSImage(named: "AgentLogo-\(source)")
+        #if DEBUG
+        if image == nil, let resourceDirectoryOverride {
+            image = NSImage(
+                contentsOf: resourceDirectoryOverride
+                    .appendingPathComponent("AgentLogo-\(source).png")
+            )
+        }
+        #endif
         image?.isTemplate = true
         cache[source] = image
         return image
@@ -33,12 +41,26 @@ enum AgentBrand {
         case "codex":       return "Cx"
         case "cursor":      return "Cu"
         case "gemini-cli":  return "G"
+        case "qwen-code":   return "Q"
+        case "copilot-cli": return "Co"
+        case "kimi-code":   return "K"
+        case "opencode":    return "O"
         default:            return String(source.prefix(1)).uppercased()
         }
     }
 
     @MainActor
     private static var cache: [String: NSImage?] = [:]
+
+    #if DEBUG
+    /// Explicit test/preview resource root. Production always resolves from
+    /// the signed app bundle; keeping this DEBUG-only prevents a runtime
+    /// environment variable or arbitrary path from influencing brand assets.
+    @MainActor
+    static var resourceDirectoryOverride: URL? {
+        didSet { cache.removeAll() }
+    }
+    #endif
 }
 
 /// Squircle-badged agent logo — the visual used in task cards and the
@@ -83,7 +105,11 @@ struct AgentLogoBadge: View {
     /// ink is the same accent used throughout Dev Island's tour and keeps the
     /// monochrome mark inside the product palette.
     private var glyphScale: CGFloat {
-        source == "codex" ? 0.72 : 0.62
+        switch source {
+        case "codex":    return 0.72
+        case "opencode": return 0.70
+        default:          return 0.62
+        }
     }
 
     private var resolvedInk: Color {
@@ -94,7 +120,7 @@ struct AgentLogoBadge: View {
 #if PREVIEWS && DEBUG
 #Preview("Agent logo badges") {
     HStack(spacing: 10) {
-        ForEach(["claude-code", "codex", "cursor", "gemini-cli", "manus", "opencode"], id: \.self) {
+        ForEach(["claude-code", "codex", "cursor", "gemini-cli", "qwen-code", "copilot-cli", "kimi-code", "manus", "opencode"], id: \.self) {
             AgentLogoBadge(source: $0)
         }
     }

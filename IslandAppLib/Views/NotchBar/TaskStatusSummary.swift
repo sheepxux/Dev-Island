@@ -18,10 +18,22 @@ struct TaskStatusSummary: Equatable {
     let completed: Int
 
     init(tasks: [AgentTask]) {
-        running = tasks.count(where: { $0.status == .running })
-        waiting = tasks.count(where: { $0.status == .waiting })
-        failed = tasks.count(where: { $0.status == .failed })
-        completed = tasks.count(where: { $0.status == .completed })
+        var running = 0
+        var waiting = 0
+        var failed = 0
+        var completed = 0
+        for task in tasks {
+            switch task.status {
+            case .running:   running += 1
+            case .waiting:   waiting += 1
+            case .failed:    failed += 1
+            case .completed: completed += 1
+            }
+        }
+        self.running = running
+        self.waiting = waiting
+        self.failed = failed
+        self.completed = completed
     }
 
     init(running: Int = 0, waiting: Int = 0, failed: Int = 0, completed: Int = 0) {
@@ -32,7 +44,9 @@ struct TaskStatusSummary: Equatable {
     }
 
     var total: Int { running + waiting + failed + completed }
-    var compactLabel: String { "\(total)个会话" }
+    func compactLabel(language: DevIslandLanguage = .current) -> String {
+        L10n.sessionCount(total, language: language)
+    }
 
     var foregroundSegment: Segment? {
         if waiting > 0 { return .init(status: .waiting, count: waiting) }
@@ -44,26 +58,40 @@ struct TaskStatusSummary: Equatable {
 
     var segments: [Segment] { foregroundSegment.map { [$0] } ?? [] }
 
-    var accessibilityLabel: String {
-        guard total > 0 else { return "No tasks" }
+    func accessibilityLabel(language: DevIslandLanguage = .current) -> String {
+        guard total > 0 else {
+            return L10n.string("No sessions", language: language)
+        }
         var parts: [String] = []
-        if waiting > 0 { parts.append("\(waiting) waiting") }
-        if failed > 0 { parts.append("\(failed) failed") }
-        if running > 0 { parts.append("\(running) running") }
-        if completed > 0 { parts.append("\(completed) completed") }
-        return parts.joined(separator: ", ")
+        if waiting > 0 {
+            parts.append(L10n.format("%lld waiting", language: language, Int64(waiting)))
+        }
+        if failed > 0 {
+            parts.append(L10n.format("%lld failed", language: language, Int64(failed)))
+        }
+        if running > 0 {
+            parts.append(L10n.format("%lld running", language: language, Int64(running)))
+        }
+        if completed > 0 {
+            parts.append(L10n.format("%lld completed", language: language, Int64(completed)))
+        }
+        return parts.joined(separator: L10n.string(", ", language: language))
     }
 }
 
 struct CompactTaskStatusSummary: View {
     let summary: TaskStatusSummary
+    @Environment(\.devIslandLanguage) private var language
 
+    @ViewBuilder
     var body: some View {
-        Text(summary.compactLabel)
-            .foregroundStyle(.white.opacity(summary.total > 0 ? 0.88 : 0.55))
-            .font(Typo.barBadge)
-            .monospacedDigit()
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(summary.accessibilityLabel)
+        if summary.total > 0 {
+            Text(summary.compactLabel(language: language))
+                .foregroundStyle(.white.opacity(0.82))
+                .font(Typo.barBadge)
+                .monospacedDigit()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(summary.accessibilityLabel(language: language))
+        }
     }
 }

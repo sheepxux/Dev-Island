@@ -83,6 +83,7 @@ final class StatusPhaseTests: XCTestCase {
     }
 
     func testSemanticStatesHaveDistinctMatrixSignatures() {
+        XCTAssertEqual(BarState.idle.matrixPattern, .field)
         XCTAssertEqual(BarState.running.matrixPattern, .orbit)
         XCTAssertEqual(BarState.waiting.matrixPattern, .ring)
         XCTAssertEqual(BarState.completed.matrixPattern, .plus)
@@ -99,5 +100,111 @@ final class StatusPhaseTests: XCTestCase {
         XCTAssertLessThan(BarState.completed.matrixIntensity, BarState.running.matrixIntensity)
         XCTAssertLessThan(BarState.running.matrixIntensity, BarState.failed.matrixIntensity)
         XCTAssertLessThan(BarState.failed.matrixIntensity, BarState.waiting.matrixIntensity)
+    }
+
+    func testIdleFieldKeepsAllNinePointsVisibleAtCompactSize() {
+        let opacities = (0..<3).flatMap { row in
+            (0..<3).map { column in
+                DotMatrixMark.opacity(
+                    pattern: BarState.idle.matrixPattern,
+                    motion: BarState.idle.matrixMotion,
+                    intensity: BarState.idle.matrixIntensity,
+                    row: row,
+                    column: column,
+                    phase: 0.5
+                )
+            }
+        }
+
+        XCTAssertEqual(opacities.count, 9)
+        XCTAssertGreaterThanOrEqual(opacities.min() ?? 0, 0.36)
+        XCTAssertGreaterThan(opacities[4], opacities[0])
+        XCTAssertLessThan(BarState.idle.matrixIntensity, BarState.completed.matrixIntensity)
+    }
+
+    func testCompositorOpacityCurvesAreBoundedAndLoopWithoutAJump() {
+        let animatedSignatures: [(
+            pattern: DotMatrixMark.Pattern,
+            motion: DotMatrixMark.MotionStyle,
+            intensity: Double
+        )] = [
+            (.orbit, .orbiting, BarState.running.matrixIntensity),
+            (.ring, .attention, BarState.waiting.matrixIntensity),
+        ]
+
+        for signature in animatedSignatures {
+            for row in 0..<3 {
+                for column in 0..<3 {
+                    let start = DotMatrixMark.opacity(
+                        pattern: signature.pattern,
+                        motion: signature.motion,
+                        intensity: signature.intensity,
+                        row: row,
+                        column: column,
+                        phase: 0
+                    )
+                    let end = DotMatrixMark.opacity(
+                        pattern: signature.pattern,
+                        motion: signature.motion,
+                        intensity: signature.intensity,
+                        row: row,
+                        column: column,
+                        phase: 1
+                    )
+                    XCTAssertEqual(start, end, accuracy: 0.000_001)
+
+                    for sample in 0...48 {
+                        let opacity = DotMatrixMark.opacity(
+                            pattern: signature.pattern,
+                            motion: signature.motion,
+                            intensity: signature.intensity,
+                            row: row,
+                            column: column,
+                            phase: CGFloat(sample) / 48
+                        )
+                        XCTAssertGreaterThanOrEqual(opacity, 0)
+                        XCTAssertLessThanOrEqual(opacity, 1)
+                    }
+                }
+            }
+        }
+    }
+
+    func testRunningOrbitMovesThePerimeterButKeepsItsCenterAnchored() {
+        let topAtStart = DotMatrixMark.opacity(
+            pattern: .orbit,
+            motion: .orbiting,
+            intensity: BarState.running.matrixIntensity,
+            row: 0,
+            column: 1,
+            phase: 0
+        )
+        let topQuarterCycleLater = DotMatrixMark.opacity(
+            pattern: .orbit,
+            motion: .orbiting,
+            intensity: BarState.running.matrixIntensity,
+            row: 0,
+            column: 1,
+            phase: 0.25
+        )
+        XCTAssertNotEqual(topAtStart, topQuarterCycleLater, accuracy: 0.01)
+
+        let centerAtStart = DotMatrixMark.opacity(
+            pattern: .orbit,
+            motion: .orbiting,
+            intensity: BarState.running.matrixIntensity,
+            row: 1,
+            column: 1,
+            phase: 0
+        )
+        let centerLater = DotMatrixMark.opacity(
+            pattern: .orbit,
+            motion: .orbiting,
+            intensity: BarState.running.matrixIntensity,
+            row: 1,
+            column: 1,
+            phase: 0.37
+        )
+        XCTAssertEqual(centerAtStart, centerLater, accuracy: 0.000_001)
     }
 }

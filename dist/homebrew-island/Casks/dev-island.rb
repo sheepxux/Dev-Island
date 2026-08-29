@@ -9,8 +9,8 @@
 # stays version-controlled alongside the app, but the actual brew tap
 # repository pulls (or copies) this file at release time.
 #
-# Quick local test (before publishing the tap):
-#   brew install --cask ./dist/homebrew-island/Casks/dev-island.rb
+# Quick local validation (before publishing the tap):
+#   ./scripts/ci/verify-homebrew-distribution.sh
 #
 # Why no `livecheck` block: livecheck auto-opens issues when version
 # detection breaks, and we publish releases manually for now. Add it
@@ -31,23 +31,15 @@ cask "dev-island" do
   url "https://github.com/sheepxux/Dev-Island/releases/download/v#{version}/Dev-Island.zip"
   name "Dev Island"
   desc "Live status bar for AI agents working in the background"
-  homepage "https://devisland.app"
+  homepage "https://devisland.app/"
 
   # Apple Silicon arm64 + Intel x86_64 universal binary. macOS 14+ for
   # the SwiftUI / Observation features Dev Island uses.
-  depends_on macos: ">= :sonoma"
-
-  # Realtime task updates rely on a cloudflared tunnel exposing a local
-  # webhook receiver to Manus. Without cloudflared the app still works
-  # via 60-second polling — see CloudflaredProcess.swift findCloudflaredBinary
-  # for the resolution order — so this is a soft preference, not a
-  # functional requirement.
-  #
-  # We use `depends_on cask:` rather than `depends_on formula:` because
-  # cloudflared ships as a Cask in homebrew-cask, not a formula.
-  depends_on cask: "cloudflared"
+  depends_on macos: :sonoma
 
   app "Dev Island.app"
+
+  uninstall quit: "app.devisland.Island"
 
   # `zap` is what `brew uninstall --zap dev-island` uses to wipe per-user
   # state. Listing every location Dev Island writes to means a clean
@@ -57,12 +49,13 @@ cask "dev-island" do
   #   the bundle identifier app.devisland.Island)
   # - Saved Application State frame data
   #
-  # The Keychain entry that holds the Manus API key is handled by macOS
-  # itself when the bundle is removed, no `zap` entry needed.
+  # Homebrew must not delete a generic-password Keychain item through a zap
+  # stanza. Users who want it removed should Disconnect Manus in the app
+  # before uninstalling; deleting an app does not delete its Keychain items.
   zap trash: [
-    "~/Library/Application Support/Dev Island",
-    "~/Library/Preferences/app.devisland.Island.plist",
+    "~/Library/Application Support/island-app",
     "~/Library/Caches/app.devisland.Island",
+    "~/Library/Preferences/app.devisland.Island.plist",
     "~/Library/Saved Application State/app.devisland.Island.savedState",
   ]
 end

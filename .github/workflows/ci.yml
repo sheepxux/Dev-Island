@@ -29,6 +29,11 @@ jobs:
         id: toolchain
         run: |
           set -euo pipefail
+          if ! command -v rg >/dev/null 2>&1; then
+            command -v brew >/dev/null 2>&1
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install ripgrep
+          fi
+          rg --version
           ./scripts/release/verify-workflow-run-shells.rb \
             --workflow .github/workflows/ci.yml
           ./scripts/release/verify-workflow-run-shells.rb \

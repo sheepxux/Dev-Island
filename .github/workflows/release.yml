@@ -92,6 +92,12 @@ jobs:
       # file at repo root.
       - name: Verify Xcode + Swift
         run: |
+          set -euo pipefail
+          if ! command -v rg >/dev/null 2>&1; then
+            command -v brew >/dev/null 2>&1
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install ripgrep
+          fi
+          rg --version
           xcodebuild -version
           swift --version
 

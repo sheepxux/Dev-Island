@@ -55,6 +55,14 @@ for observed_file in \
   fi
 done
 
+grep -Fq 'dev-island-sparkle-generator-supervisor' \
+  "$FEED_DIRECTORY/observed-parent.txt" \
+  || fail "Sparkle generator did not run below the clean parent supervisor"
+if grep -Fq 'run-sparkle-appcast-generator.sh' \
+  "$FEED_DIRECTORY/observed-parent.txt"; then
+  fail "Sparkle secret-bearing wrapper remained the generator direct parent"
+fi
+
 for forbidden_name in \
   APPLE_ID \
   APPLE_TEAM_ID \

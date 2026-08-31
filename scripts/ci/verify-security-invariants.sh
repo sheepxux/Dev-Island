@@ -989,6 +989,17 @@ rg -Fq 'unset \' "$SPARKLE_SECRET_RUNNER" \
   || fail "Sparkle runner must remove inherited release credential variables"
 rg -Fq 'env -i' "$SPARKLE_SECRET_RUNNER" \
   || fail "Sparkle generator must receive a minimal environment"
+for invariant in \
+  '/bin/sh -c' \
+  'dev-island-sparkle-generator-supervisor' \
+  '"$@" <&3 3<&- &' \
+  'generator_pid=$!' \
+  'exec 3<&-' \
+  '3<&0' \
+  'wait "$generator_pid"'; do
+  rg -Fq "$invariant" "$SPARKLE_SECRET_RUNNER" \
+    || fail "Sparkle clean-parent supervisor invariant missing: $invariant"
+done
 "$SPARKLE_SECRET_FIXTURES" >/dev/null \
   || fail "Sparkle release secret-isolation fixtures failed"
 rg -q 'sparkle-signatures:' "$RELEASE_WORKFLOW" \

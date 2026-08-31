@@ -226,6 +226,16 @@ rg -Fq './scripts/release/run-sparkle-appcast-generator.sh' "$RELEASE" \
 "$SPARKLE_SECRET_FIXTURES" >/dev/null \
   || fail "Sparkle private-key process-boundary fixtures failed"
 for invariant in \
+  'dev-island-sparkle-generator-supervisor' \
+  '"$@" <&3 3<&- &' \
+  'generator_pid=$!' \
+  'exec 3<&-' \
+  '3<&0' \
+  'wait "$generator_pid"'; do
+  rg -Fq "$invariant" "$SPARKLE_SECRET_RUNNER" \
+    || fail "Sparkle clean-parent supervisor invariant missing: $invariant"
+done
+for invariant in \
   'Required release credential is missing:' \
   'APPLE_TEAM_ID must be a 10-character Apple Team ID' \
   'KEYCHAIN_PASSWORD must contain at least 20 characters' \

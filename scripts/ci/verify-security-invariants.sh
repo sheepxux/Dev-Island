@@ -4497,6 +4497,8 @@ for regression in \
     || fail "Trusted single-instance regression missing: $regression"
 done
 
+rg -Fq 'export LC_ALL=C' scripts/ci/verify-localizations.sh \
+  || fail "Localization key-set comparison must use deterministic byte ordering"
 ./scripts/ci/verify-localizations.sh
 ./scripts/ci/verify-legal-data-flows.sh
 ./scripts/ci/verify-ci-diagnostics.sh

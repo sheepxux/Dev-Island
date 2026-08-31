@@ -10,9 +10,37 @@ public enum ManusError: Error, Sendable {
     case networkUnavailable
 }
 
+/// One account-owned Manus v2 webhook returned by the authenticated list API.
+/// Provider-authored fields cross the public boundary only after strict local
+/// validation, so recovery code never has to interpret an arbitrary URL or ID.
+public struct ManusWebhook: Equatable, Sendable {
+    public enum Status: String, Equatable, Sendable {
+        case active
+        case inactive
+    }
+
+    public let id: String
+    public let url: String
+    public let status: Status
+    public let createdAt: Int64
+
+    init(
+        id: String,
+        url: String,
+        status: Status,
+        createdAt: Int64
+    ) {
+        self.id = id
+        self.url = url
+        self.status = status
+        self.createdAt = createdAt
+    }
+}
+
 private enum ManusAPIOperation: String, Sendable {
     case listTasks = "list_tasks"
     case registerWebhook = "register_webhook"
+    case listWebhooks = "list_webhooks"
     case deleteWebhook = "delete_webhook"
     case webhookPublicKey = "webhook_public_key"
     case getTask = "get_task"
@@ -120,15 +148,50 @@ public actor ManusAPIClient {
             operation: .registerWebhook
         )
         guard response.ok,
-              ManusRemoteContentPolicy.isValidOpaqueIdentifier(response.webhook.id) else {
+              let webhook = response.webhook.validated(),
+              webhook.url == publicURL,
+              webhook.status == .active else {
             throw ManusError.invalidResponse
         }
-        return response.webhook.id
+        return webhook.id
+    }
+
+    /// Return the complete, bounded set exposed by Manus' authenticated
+    /// `webhook.list` endpoint. Duplicate IDs make the provider snapshot
+    /// ambiguous and therefore fail closed instead of being deduplicated.
+    public func listWebhooks() async throws -> [ManusWebhook] {
+        let req = try ManusEndpoints.listWebhooks(apiKey: apiKey)
+        let response: WebhookListResponse = try await execute(
+            req,
+            operation: .listWebhooks
+        )
+        guard response.ok,
+              let rows = response.data,
+              rows.count <= ManusWebhookPolicy.maximumWebhookCount else {
+            throw ManusError.invalidResponse
+        }
+
+        var identifiers = Set<String>()
+        var webhooks: [ManusWebhook] = []
+        webhooks.reserveCapacity(rows.count)
+        for row in rows {
+            guard let webhook = row.validated(),
+                  identifiers.insert(webhook.id).inserted else {
+                throw ManusError.invalidResponse
+            }
+            webhooks.append(webhook)
+        }
+        return webhooks
     }
 
     public func deleteWebhook(id: String) async throws {
         let req = try ManusEndpoints.deleteWebhook(apiKey: apiKey, webhookId: id)
-        try await executeVoid(req, operation: .deleteWebhook)
+        let response: WebhookDeletionResponse = try await execute(
+            req,
+            operation: .deleteWebhook,
+            idempotentNotFoundValue: WebhookDeletionResponse(ok: true)
+        )
+        guard response.ok else { throw ManusError.invalidResponse }
     }
 
     /// Fetch Manus' RSA verification key from its authenticated, hard-coded
@@ -195,7 +258,8 @@ public actor ManusAPIClient {
 
     private func execute<T: Decodable>(
         _ request: URLRequest,
-        operation: ManusAPIOperation
+        operation: ManusAPIOperation,
+        idempotentNotFoundValue: T? = nil
     ) async throws -> T {
         try checkRateLimit()
         IslandLogger.api.debug("Manus request started: \(operation.rawValue, privacy: .public)")
@@ -250,6 +314,25 @@ public actor ManusAPIClient {
             rateLimitedUntil = Date.now.addingTimeInterval(backoff)
             IslandLogger.api.warning("Rate limited — backing off \(backoff)s (attempt \(self.consecutive429Count))")
             throw ManusError.rateLimited(retryAfter: backoff)
+        case 404:
+            guard operation == .deleteWebhook,
+                  let idempotentNotFoundValue,
+                  let response = try? decoder.decode(ManusAPIErrorResponse.self, from: data),
+                  response.ok == false,
+                  response.error.code == "not_found" else {
+                throw ManusError.httpError(
+                    statusCode: http.statusCode,
+                    responseBytes: data.count
+                )
+            }
+            // A crash may occur after Manus deletes the webhook but before the
+            // local cleanup ledger is cleared. The official `not_found` error
+            // is therefore the only non-2xx response that confirms the desired
+            // delete postcondition. Treat it like a successful request for
+            // backoff accounting as well as for the caller's result.
+            consecutive429Count = 0
+            rateLimitedUntil = nil
+            return idempotentNotFoundValue
         default:
             throw ManusError.httpError(statusCode: http.statusCode, responseBytes: data.count)
         }
@@ -428,14 +511,83 @@ struct ManusTaskDTO: Decodable {
     }
 }
 
+private enum ManusWebhookPolicy {
+    static let maximumWebhookCount = 1_024
+    private static let maximumURLBytes = 2_048
+
+    static func isCanonicalHTTPSURL(_ value: String) -> Bool {
+        guard !value.isEmpty,
+              value.utf8.count <= maximumURLBytes,
+              let components = URLComponents(string: value),
+              components.scheme == "https",
+              components.user == nil,
+              components.password == nil,
+              components.fragment == nil,
+              let host = components.host,
+              !host.isEmpty,
+              host == host.lowercased(),
+              components.url?.absoluteString == value else {
+            return false
+        }
+        return true
+    }
+}
+
+/// Exact webhook object shared by the official create and list responses.
+/// The OpenAPI document does not mark its properties `required`, so ordinary
+/// decoding deliberately requires all four fields before validation begins.
+private struct ManusWebhookDTO: Decodable {
+    let id: String
+    let url: String
+    let status: String
+    let createdAt: Int64
+
+    func validated() -> ManusWebhook? {
+        guard ManusRemoteContentPolicy.isValidOpaqueIdentifier(id),
+              ManusWebhookPolicy.isCanonicalHTTPSURL(url),
+              let status = ManusWebhook.Status(rawValue: status),
+              createdAt >= 0 else {
+            return nil
+        }
+        return ManusWebhook(
+            id: id,
+            url: url,
+            status: status,
+            createdAt: createdAt
+        )
+    }
+}
+
 /// Official v2 webhook registration response.
 private struct WebhookRegistrationResponse: Decodable {
     let ok: Bool
-    let webhook: Webhook
+    let webhook: ManusWebhookDTO
+}
 
-    struct Webhook: Decodable {
-        let id: String
+/// Official v2 webhook list response. `data` is optional only so `ok:false`
+/// can be classified as an explicit invalid response instead of accidentally
+/// accepting a missing collection; successful calls require it below.
+private struct WebhookListResponse: Decodable {
+    let ok: Bool
+    let data: [ManusWebhookDTO]?
+}
+
+/// Official v2 webhook deletion response. A successful HTTP status alone does
+/// not confirm that Manus removed the remote webhook.
+private struct WebhookDeletionResponse: Decodable {
+    let ok: Bool
+}
+
+/// Minimal projection of Manus' official error envelope. The shared execute
+/// path bounds the response body before decoding; deletion recovery only
+/// inspects the exact machine-readable code and ignores human-facing text.
+private struct ManusAPIErrorResponse: Decodable {
+    struct Details: Decodable {
+        let code: String
     }
+
+    let ok: Bool
+    let error: Details
 }
 
 /// Official v2 authenticated public-key response.

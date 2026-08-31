@@ -1,6 +1,6 @@
 # Codex-Plan — Dev Island 当前目标与验收计划
 
-> 当前快照：2026-08-29 · 产品版本：v0.3.0 · 主分支基线：`42f8895`
+> 当前快照：2026-08-31 · 产品版本：v0.3.0 · 当前分支基线：`97e579e`
 >
 > 本文取代 2026-08-05 的 v0.2.2 旧快照。旧文档中的通知、跳回、审批、历史、
 > Sparkle、License、CI、状态音和新连接器等缺口已经完成，不再作为当前待办。
@@ -43,7 +43,7 @@ push、tag、发布 Release、部署官网或修改真实 Agent 配置。
 - 跟随系统 / English / 简体中文的应用级语言切换；Welcome、Settings、历史记录、
   状态菜单、系统通知、审批/问答与主岛状态已完成双语资源、无障碍摘要、格式化计数
   与最终 App Bundle 打包
-- 当前自动化基线：**677 tests，0 failures**；此前同一二进制完整套件连续十轮通过，另有
+- 当前自动化基线：**745 tests，0 failures**；最近一次核心运行时稳定性基线另有
   20 轮 / 240 个真实子进程版本探针、20 轮 tmux descendant cleanup 与 5 轮 Codex Hook
   trust 完整进程边界压力回归、20 轮 sleep/wake 生命周期回归，以及 10 轮零 Agent route 的
   hermetic listener CLI 回归；
@@ -140,7 +140,7 @@ push、tag、发布 Release、部署官网或修改真实 Agent 配置。
 - [x] Required tertiary metadata token 提升到 `#7F7D78`，在 `#111111` 表面为 4.59:1
 - [x] 本地 Hook 增加统一只读健康诊断；Welcome 区分已连接/需更新/未连接，Support 与 CLI 复用同一低敏状态且不改配置
 - [x] Production、Performance QA 与 Debug 使用三个独立 SwiftPM scratch；构建脚本在 lipo
-  后检查实际可执行文件的闭合 marker 矩阵，18 个逐标记负向夹具固定全部泄漏/缺失路径；
+  后检查实际可执行文件的闭合 marker 矩阵，21 个逐标记负向夹具固定全部泄漏/缺失路径；
   三套真实 Universal App 的 Bundle/plist、6 个 Mach-O、依赖闭包和深层签名均已复验
 - [x] 3×3 点阵连续动效保持 Core Animation 合成；相同语义状态共享上限 16 项的关键帧缓存，同尺寸重复布局不再重建 9 个 shadow path
 - [x] 根岛每次 SwiftUI 刷新建立单一 presentation snapshot：20 会话注意力排序从最多 5 次收敛为 1 次，面板/紧凑岛共享 primary state、标题与计数；状态计数由 4 次扫描收敛为单次 switch pass，3 项语义回归与性能 CI 固定
@@ -167,6 +167,8 @@ push、tag、发布 Release、部署官网或修改真实 Agent 配置。
   SQLite 连接前后核对 device+inode，schema/修剪/Clear History 不会被重定向到无关文件；
   6 项链接/文件类型/权限回归与 CI 门禁固定
 - [x] Welcome 通知开关统一右侧基线；岛内问答与 Plan Review 的模糊 “Use Claude” 改为明确 “Continue in Claude”
+- [x] Welcome Tour 三步统一为近黑 studio canvas 与单一功能舞台；标题尺度、18/14pt 层级圆角、
+  240ms 短行程页切换和 10pt 操作圆角完成收敛，Codex 配置状态不再在中英文连接矩阵中截断
 - [x] 面板连接点阵、连接 Agent 与 Settings 控件补齐明确 VoiceOver label / value / hint
 - [x] 审批、问题与 Plan Review 有待处理请求时改为单一聚焦决策面，不再重复堆叠可点击会话卡；安全 Session 指纹与会话标题仍保留
 - [x] 展开面板总数统一为 `session/sessions`；Settings 侧栏长标题保持单行，重复 Agent 更新说明收敛为低噪音状态
@@ -283,11 +285,12 @@ push、tag、发布 Release、部署官网或修改真实 Agent 配置。
   v6.26.0 再按 step > job defaults > workflow defaults 解析有效 shell，只允许精确 `bash` 或
   `/bin/bash`，拒绝参数/template、畸形 defaults 与非字符串 shell；攻击夹具从 8 类扩展为 20 类
 - [x] PR CI / tag Release 增加仓库脚本无执行语法闭包：真实证明 Bash 会在后置 syntax error
-  前执行前置副作用后，改为依赖解析/凭据加载前 descriptor-backed 枚举全部 43 Bash + 15 Ruby，
+  前执行前置副作用后，改为依赖解析/凭据加载前 descriptor-backed 枚举全部 49 Bash + 21 Ruby，
   以最小环境 stdin-only `bash -n` / `ruby -c` 完整解析；目录/文件 owner、type、mode、nlink、
   execute、size、UTF-8/NUL、mtime/ctime 与 symlink 边界固定；v6.28.0 再纳入 5 个 Swift，
   用 `/usr/bin/swiftc -parse -` 检查冻结 stdin 且不执行顶层副作用，Swift 无 shebang/精确
-  env-swift、后置语法和错误 shebang 由夹具固定，负向攻击从 11 类扩展为 13 类
+  env-swift、后置语法和错误 shebang 由夹具固定，负向攻击从 11 类扩展为 13 类；v6.69 的
+  CryptoKit 发布验证器自动进入闭包，当前为 49 Bash + 21 Ruby + 6 Swift
 - [x] 修复本地 CLI 版本探针的子进程完成竞态：移除依赖 Foundation callback/helper-thread 调度的成功路径，改为 `posix_spawn` 独立进程组 + 当前线程 nonblocking drain/`waitpid` + monotonic deadline，超时 TERM→KILL 整组清理；快速退出、非零退出、超限输出、挂起与忽略 TERM 回归覆盖
 - [x] Performance 采样证据升级为 CSV/日志/摘要整组 append-never；未知锁屏状态也 fail closed，摘要绑定 App 哈希与机器环境，并提供 CPU/RSS p50/p95、RSS 首尾增长及长时线性斜率
 - [x] PR CI 与 Release 从 `Package.resolved`、实际 App 许可目录、编译用 toml++ header、
@@ -461,7 +464,9 @@ push、tag、发布 Release、部署官网或修改真实 Agent 配置。
   资源、缩放和裁切，不替代真实 Settings/hover/VoiceOver 验收
 - [x] 5 项 AppKit 窗口级键盘事件契约通过；PR CI 安全门禁要求这些测试存在且全量测试执行
 - [x] 诊断文件导出 5 项安全回归通过；CI 固定大小、权限、`O_NOFOLLOW`、`fsync`、`lstat`、原子 `rename` 与无上传边界
-- [x] 发布门禁用虚构凭据验证：完整组合通过，缺失凭据、错误 Team ID、错误 Sparkle 公钥长度和非法证书 base64 均失败；无生产密钥进入本地测试
+- [x] 发布门禁使用公开 RFC 8032 fixture 验证真实 Sparkle keypair：完整组合会通过 pinned
+  `sign_update` 真签 + CryptoKit 验签；缺失凭据、错误 Team ID、公钥长度、公私钥错配和非法证书
+  base64 均失败；无生产密钥进入本地测试
 - [x] 更新契约 6 项聚焦回归与假公钥打包检查通过；其他 HTTPS 目的地、字段缺失、非每日调度、静默安装与画像均被拒绝，安全 keyless QA 包保持无更新元数据
 - [x] 状态菜单 8 项聚焦回归与 648 项全量回归通过：注意力优先、总会话数、中英文单复数、
   旧完成态让位与精确到期边沿、监听器全状态、Manus 原始 reason 隔离及 AX 聚合值隐私；
@@ -629,8 +634,16 @@ push、tag、发布 Release、部署官网或修改真实 Agent 配置。
 - [x] 性能脚本锁屏默认拒绝验收（exit 5）；四场景锁屏短烟雾仅用于排除启动崩溃，不作为性能结论
 - [x] 端口冲突耗尽 → 释放端口 → 模拟 wake → 恢复监听的确定性自动化测试
 - [x] Manus 注册失败、wake 失败、heartbeat replacement 失败与 late registration 竞态的确定性自动化测试
+- [x] Manus replay trust generation 绑定 exact callback URL + canonical ≥2,048-bit RSA identity；
+  等价 PKCS#1/SPKI 不清窗口，URL/真实 key 轮换重置，旧代已认证请求交错返回 401 且不污染新窗口
+- [x] 所有 accepted Webhook ID 立即持久化为集合；stop 先停止 attached process，并只在 bounded
+  grace 内等待 cancellation-unaware registration；仍未知则保留 credential、launch owner 与 durable
+  ambiguity marker 后 fail closed，晚到 accepted ID 先持久化再补偿删除。遗留/重叠 ID 在 provider
+  `ok:true` 前不清除、不允许 replacement；polling-only cleanup owner 继续恢复 ledger，cleanup 失败
+  保留旧 credential，并同时阻止 Disconnect 释放 credential 和 replacement key 覆盖
 - [x] Manus polling stop/restart 晚到 fetch、网络边沿合并与 401 停止的确定性自动化测试
-- [x] Manus 并发 Connect、验证中 Disconnect、换 key 晚到 snapshot、运行期 401 与 Keychain 删除失败的 TaskStore 级测试
+- [x] Manus 并发 Connect、验证中 Disconnect、换 key 晚到 snapshot、运行期 401、远端 cleanup
+  失败保留 Keychain 与 Keychain 删除失败不假报成功的 TaskStore 级测试
 - [ ] 用真实 Manus 账户完成 v2 公钥、signed test delivery、task_created、task_stopped(finish/ask)、删除和失败清理验收；通过前 Release gate 固定关闭
 - [x] 解锁后的真实窗口连续开合夹具与 Animation Hitches 分层验收
 - [x] 解锁后的真实审批/问答窗口验收：DEBUG-only Sandbox 通过生产
@@ -638,17 +651,18 @@ push、tag、发布 Release、部署官网或修改真实 Agent 配置。
   Back 草稿保持、两次 `⌘↩` 前进/提交及 waiting → running 恢复均通过。Debug Universal
   App 改用独立 `.build/app-debug`，不再与生产 bundle graph 共用 scratch
 - [ ] 解锁后的真实 sleep/wake、锁屏与网络切换恢复验收
-- [ ] VoiceOver 实机朗读顺序与完整键盘流程；当前已证明 AX 结构、点击后 key window、审批
-  `⌘↩`、问答第二题多选/返回保持/最终提交，尚未实际开启 VoiceOver
+- [ ] VoiceOver 实机朗读顺序与完整键盘流程；当前已在真实 VoiceOver 进程运行时确认审批 AX
+  顺序，并实测 `⌘D` 与 `⌘↩` 后回到 Working；但 spoken-output/focus 逐项记录、问答、Plan
+  Review、Save Panel 与全键盘漫游仍未完成，因此不把本轮 AX/操作员观察冒充完整朗读验收
 - [x] 解锁后实测 Save Panel 的 Escape 取消、同名覆盖确认后取消、T7 成功写入、只读目录
   失败反馈与零残留；导出文件保持 `0600`、单硬链接且仅含聚合状态
 - [ ] VoiceOver 下完成 Save Panel 取消、覆盖确认、成功/错误反馈与键盘流程
 - [x] Reduce Motion 代码契约补漏：bar↔panel 不再以短空间动画冒充淡入，收起岛 hover 不扩大
   capsule，复用任务/图标按钮及 Welcome 连接动作不再 press-scale；3 项策略回归与 645 项
   全量测试通过。当前屏幕锁定，因此仍不替代下一项系统开关实机目视验收
-- [ ] macOS Reduce Motion / Increase Contrast 实机视觉验收；v6.38.0 已完成产品级 Increase
-  Contrast 代码、自动化和 39 组离屏成对视觉回归，但当前显示会话锁定，尚未从系统设置切换后
-  观察真实窗口重绘、动画节奏与 VoiceOver
+- [ ] macOS Reduce Motion / Increase Contrast 实机视觉验收；本轮已从系统设置真实开启 Reduce
+  Motion，并在同一 Working 面板捕获相隔 250 ms 的逐字节相同帧；Increase Contrast 的 App 内
+  对照、VoiceOver spoken output 与更多交互状态仍未完成。三项系统设置和测试进程已恢复并进入门禁
 - [x] Settings 打开时真实进程切为 regular activation policy，关闭后回到 accessory；证明
   Dashboard/Settings 场景进入 Dock 且主岛独处时退出 Dock；v6.32.0 再将 16/32/64 ms
   生产重试抽成可注入 scheduler，测试不再 sleep 猜时序，租约回到已应用状态时立即废弃旧回调
@@ -657,26 +671,28 @@ push、tag、发布 Release、部署官网或修改真实 Agent 配置。
   默认分开，仍强制读取 PID 并验证 descendant 退出，完整进程边界连续 5 轮通过
 - [ ] 状态菜单、实际可闻声音、通知投递与 Focus Mode 实机验收；当前只证明试听动作不闪退，
   且系统通知关闭时设置页能给出明确入口
-- [ ] 真实 CLI 的审批、问答、失败、中断和配置 reload 验收
+- [ ] 真实 CLI 验收中，Codex Allow Once 与 Deny 已闭环；Claude 审批/问答/Plan Review、Codex
+  neutral timeout/native fallback，以及失败、中断和配置 reload 仍需逐项完成
 - [x] 解锁后完成重复 launch readiness、四场景 CPU/RSS、60 秒 Time Profiler、3 分钟
   Expanded Running ×20 泄漏趋势与真实场景截图；全部样本初末均为 unlocked
 - [ ] 当前机 Animation Hitches、30 分钟 RSS 与 Leaks 已完成；补充跨机器基线和 macOS 可用的
   直接能耗/电池证据后，再制定非 idle 场景 Release 阈值
 - [ ] 新真实 tag 后运行 `scripts/release/verify-published-release.sh` 验证精确资产、GitHub build provenance + 全部 DMG/ZIP SBOM attestation，再完成旧版到新版的 Sparkle 端到端更新
 
-当前真实环境预检（2026-08-29）：Claude Code `2.1.197` 与 Codex
-`0.149.0-alpha.4.3` 均为 verified，但本地 listener 未运行，两个 managed Hook 均为
-update-required，Codex activation 为 review-required，结果为 `ready-agents=0/2`；未自动修改
-真实 Agent 配置。远端 GitHub 只读审计确认当前 `main` 仍缺
+当前真实环境预检（2026-08-30）：Claude Code `2.1.197` 与 Codex
+`0.149.0-alpha.4.3` 均为 verified，本地 listener 为 listening；Claude managed Hook 为
+update-required，Codex Hook 为 configured 且 activation 为 review-required，结果仍是
+`ready-agents=0/2`；未自动修改真实 Agent 配置。远端 GitHub 只读审计确认当前 `main` 仍缺
 required CI、PR review、conversation resolution、Actions allowlist、SHA pin policy 与
 Dependabot security updates 六项控制；未经明确授权未修改远端设置。
 
 ## 四、下一批优化顺序
 
-1. 用户解锁并打开 Dev Island 后，在 Settings 更新 Claude/Codex managed Hook；Codex 再于
-   `/hooks` 完成人工信任确认，然后重跑 `local-live-readiness`
-2. 用真实 Claude/Codex 会话逐项完成 running → waiting → 岛内决策 → resumed/completed，
-   同时覆盖拒绝、超时与回原生 Agent 的中立回退
+1. 在 Settings 更新 Claude managed Hook，并在 Codex `/hooks` 完成人工信任确认，然后重跑
+   `local-live-readiness`；当前 listener/CLI 已验证，但这两项用户确认不能由自动化代替
+2. Codex 已真实完成 Allow Once 与 Deny 的 running → waiting → 岛内决策 →
+   resumed/completed；下一步用真实 Claude 会话覆盖审批、AskUserQuestion、Plan Review，并补
+   Codex neutral timeout/native fallback、失败、中断和配置 reload
 3. 有授权的真实 Manus 账户后，跑 v2 Webhook 端到端验收并决定是否打开 Release gate
 4. 已完成 Welcome、空闲主岛、Settings readiness、20 会话静态/连续开合、30 分钟、
    Leaks，以及隔离审批/问答/Plan Review 的截图、AX 与部分真实键盘路由；下一步补充
@@ -1435,3 +1451,930 @@ Dependabot security updates 六项控制；未经明确授权未修改远端设�
   截图。当前 8-sample harness 也记录 locked；其 readiness、CPU/RSS 不能作为丝滑度、视觉、能耗或
   完整交互结论。解锁后还需完成新旧同尺寸对照，并单独实测 VoiceOver、键盘焦点、Reduce Motion、
   Increase Contrast 与 Animation Hitches。
+
+## v6.61 Codex 任务卡 Logo 与状态点阵解耦
+
+- [x] 复现用户截图中的异常组合：任务卡使用 bottom-trailing `ZStack` 把九宫格状态点阵压在
+  Agent Logo 右下角；Codex 的高密度轮廓、模板底色和状态点阵因此被读成一个畸形图标。
+- [x] 改为固定的“状态点阵 → 7pt 间距 → Agent Logo”前导结构，Logo 不再使用任务卡小方形
+  badge；保留既有 3×3 状态语义、卡片层级、标题/元数据和点击行为。
+- [x] 新增 `TaskCardLeadingIdentityMetrics` 与几何回归，保证状态槽和 Logo 槽永不重叠；新增覆盖
+  全部已注册 Agent 的视觉快照，防止只修 Codex 却破坏其他品牌标记。
+- [x] 用户提供的 `codex.svg` 与仓库来源一致；未把 ChatGPT App 内的官方彩色资源直接复制进
+  商业包，现有 Codex 商标/再分发审核门禁继续保持 required。
+- [x] 静态多 Agent 快照与真实 Debug App 均通过；真实流程由 Debug Sandbox 创建 Codex 审批，
+  经生产审批面拒绝后检查恢复为 Running 的普通任务卡，状态点阵和 Codex Logo 清晰分离。
+- [x] 2 项定向测试 / 0 failures；最终源码 717 tests / 0 failures。20 轮版本探针、10 轮 hermetic
+  listener、20 轮 tmux、5 轮 Codex Hook trust、20 轮 sleep/wake，以及 Localization、Legal/Data
+  Flow、Performance、Workflow Shell、Repository Script、Release Foundation、Security 与
+  `git diff --check` 全部通过。
+- [x] Production 与 Debug App 均为 arm64+x86_64 Universal，并通过 strict deep 签名验证；Production
+  固定 8-sample hermetic smoke 保持产品服务隔离、屏幕解锁并以 AppKit status 0 正常退出。
+- [x] v6.61 Production App：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/task-card-logo-separation-v1-20260830/build-v6.61-final/Dev Island.app`
+- [x] v6.61 Debug App：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/task-card-logo-separation-v1-20260830/build-v6.61-debug/Dev Island.app`
+- [x] 主程序 SHA-256：
+  `84568374f5b87a26121428489d3a95af510edc359732c5f92a6ae67e43d4ba7f`
+- [x] v6.61 视觉与构建证据：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/experience/task-card-logo-separation-v1-20260830/TASK_CARD_LOGO_SEPARATION_EVIDENCE.md`
+- [ ] 以后若切换成官方多色 Codex 资源，必须先完成 OpenAI 品牌/商标与再分发许可确认；本轮只修复
+  现有已审计资源的布局呈现，不以视觉偏好绕过商业发布门禁。
+
+## v6.62 岛顶连接语义与真实 Codex 闭环证据
+
+- [x] 真实 Codex 审批链路暴露出岛顶连接状态误导：`TaskStore.connectionStatus` 只描述 Manus，旧
+  面板却把它标成全部 `Agent connections`，因此本地 Codex 正在工作时 VoiceOver 仍宣告“已断开”。
+- [x] 新增纯 `AgentConnectionIndicatorPresentation`，组合本地 Hook listener、Manus API key 与 Manus
+  transport 三类低基数状态；复用 Status Menu 的隐私安全文案，provider 原始 degraded reason 不进入
+  Help 或辅助功能树。
+- [x] 连接标记纳入统一 3×3 点阵语义：可用为绿色 plus、恢复中为蓝色周边旋转、需处理为琥珀色
+  呼吸 ring、完全未启用才显示灰色 field；Reduce Motion 下持续动效停用。
+- [x] 7 项新连接语义回归覆盖本地 listener、Manus-only、恢复、错误、未配置、中英文与私密 reason；
+  16 项定向测试 / 0 failures，最终源码 724 tests / 0 failures。
+- [x] 20 轮版本探针（240 子进程）、10 轮 hermetic listener、20 轮 tmux、5 轮 Codex Hook trust、
+  20 轮 sleep/wake，以及 Localization、Legal/Data Flow、Performance、Workflow Shell、Repository
+  Script、Release Foundation、Security 和 `git diff --check` 全部通过。
+- [x] 通过真实 macOS 界面启动 fresh v6.62.1 Production App；辅助功能树读为“本地 Agent：已就绪，
+  Manus：未连接”，旧的全局“Agent 已断开”消失。随后真实、ephemeral、read-only Codex 会话进入岛内
+  并显示“1 个运行中”，返回 `DEV_ISLAND_CONNECTION_PRESENTATION_FINAL_OK` 后正常退出且未修改文件。
+- [x] 另已完成真实 Codex `PermissionRequest` → 岛内“仅允许一次” → Running → Completed 闭环，CLI
+  返回 `APPROVAL_ROUND_TRIP_COMPLETE`、status 0，并以 proof 文件及三张状态截图固化证据；持久 Codex
+  Hook trust 未被 Dev Island 修改。
+- [x] Production 与 Debug App 均为 6 个 Mach-O、arm64+x86_64 Universal、完整依赖闭包与 strict deep
+  ad-hoc 签名；内部 v6.62.1 仍对应 shipping product version `0.3.0`，不冒充正式商业版本。
+- [x] v6.62.1 Production App：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/connection-semantics-v1-20260830/build-v6.62.1-final/Dev Island.app`
+- [x] v6.62.1 Debug App：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/connection-semantics-v1-20260830/build-v6.62.1-debug/Dev Island.app`
+- [x] Production 主程序 SHA-256：
+  `3800c4b823016b3a1515a7444b54d8260ecb8072e25f31ff49481cbcc57cdc16`
+- [x] 连接语义体验与构建证据：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/experience/connection-semantics-v1-20260830/CONNECTION_SEMANTICS_EVIDENCE.md`
+- [x] 真实 Codex 审批闭环证据：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/reliability/real-codex-approval-v1-20260830/REAL_CODEX_APPROVAL_EVIDENCE.md`
+- [ ] Manus 真实账号验收、GitHub 仓库管理员控制、Developer ID/公证、生产 Sparkle、商业 owner 决策与
+  品牌/商标 review 仍是商业发布外部门禁；本节不把 ad-hoc QA 构建称为可直接商用 Release。
+
+## v6.63 Codex 真实审批机器可验证证据门禁
+
+- [x] 将 v6.62 的真实 Codex `Allow once` 闭环从 Markdown 叙述升级为 append-never 私有证据包；原始
+  Codex session JSONL 与 Dev Island SQLite 仅通过 no-follow、owner/mode/nlink/size 稳定 descriptor
+  读取，均不复制进包。
+- [x] session 提取器证明同一 session ID 的精确外部 proof prompt、唯一 `require_escalated` 请求、
+  pending cell、同 cell 有界 wait、68 秒后 exit 0、精确 `APPROVAL_ROUND_TRIP_COMPLETE` 与
+  task-complete 顺序；SQLite 同时证明该 session 的 `codex/completed` 记录与 UTC 边界一致。
+- [x] 包内只保留固定 11 行低基数 transcript、一条脱敏 task record、精确 proof、三张人工复核状态
+  JPEG、App/CLI/session/SQLite/artifact SHA-256、metadata、public receipt、`ACCEPTED` 和完整
+  `SHA256SUMS`；App 版本、Bundle ID 与 strict deep 签名也在生成前复核。
+- [x] T7 wrapper 强制在
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/codex-live-approval/`
+  下创建随机 `0700` 目录，并要求维护者逐字确认
+  `waiting,allow_once,running,completed`；该视觉确认保持显式人工断言，不冒充像素/VoiceOver 自动证明。
+- [x] 新增独立 packager/validator 与 Security gate：真实合成正向包以及 receipt/package/session 的
+  symlink、hard-link、unsafe mode、错误 final、proof、transcript、task、JPEG、checksum、extra file、
+  private-directory 和版本漂移攻击夹具全部通过；tag Release 通过既有 Security gate 强制执行。
+- [x] 脱敏可签入 receipt：`docs/CODEX_LIVE_APPROVAL_RECEIPT.txt`；它绑定 shipping `0.3.0`、baseline
+  commit、dirty 状态、session/app/CLI/database/transcript/task/proof/三图哈希和 accepted 结果，不含
+  原始消息、reasoning、无关数据库行、本机路径或凭据。
+- [x] packager、validator 与 T7 wrapper 自身也进入 metadata/receipt SHA-256；正式私有证据包：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/codex-live-approval/run-20260830T055749Z-99ZRth`
+- [x] Repository Script Syntax、Legal/Data Flow 与完整 Security 全部通过；最终权威图执行
+  724 tests / 0 failures，并完成 20 轮版本探针、10 轮 hermetic listener、20 轮 tmux、5 轮
+  Codex Hook trust 与 20 轮 sleep/wake 稳定性。
+- [x] 首次权威图在系统负载下暴露
+  `testImmediateExitFailsWithoutWaitingForTheFullTimeout` 误用产品 3 秒 timeout：测试子进程未及
+  获得首次调度即被读为 `.timedOut`。该 fixture 现统一使用独立 5 秒调度预算，产品默认
+  3 秒与 50 ms timeout 回归均未改；修复后定向测试、5 轮 Codex trust 及完整权威图通过。
+- [x] fresh Universal Production App 的 6 个 Mach-O 全部为 `arm64+x86_64`，strict deep
+  ad-hoc 签名、依赖闭包、法律资源回绑与品牌 inventory 通过；解锁 hermetic Production
+  smoke 在产品服务隔离、App 私有快照下采样 8 次，4,027.9 ms ready，并以 AppKit status 0
+  正常终止。
+- [x] v6.63 Production App：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/codex-live-evidence-gate-v1-20260830/build-v6.63-final/Dev Island.app`
+- [x] Production 主程序 SHA-256：
+  `435f46857e2e29efa3c494ddc5853ddb7bcba2c13c7718f256c93a3935148f37`
+- [x] 最终机器证据报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/reliability/codex-live-approval-machine-gate-v1-20260830/CODEX_LIVE_APPROVAL_MACHINE_GATE_EVIDENCE.md`
+- [ ] 该包只证明一个真实 Codex Allow Once session；Deny、timeout、native fallback、其他 Agent、
+  Manus 真实账号、VoiceOver/Reduce Motion 系统验收，以及 clean tag/Developer ID/公证/生产 Sparkle
+  仍是独立门禁。receipt 如实保留 `worktree_state=dirty`，不冒充 clean Release 可重现证据。
+
+## v6.64 系统辅助功能证据与环境恢复门禁
+
+- [x] 使用真实 macOS VoiceOver 进程复核 Codex 审批决策面：窗口摘要先读最高注意力与总会话数，
+  再读连接状态、连接/设置动作、最早待批请求、请求正文、拒绝与仅允许一次；任务卡保持在决策面后。
+- [x] 在真实 key window 分别执行 `⌘D` 与 `⌘↩`，两次都从 Waiting 返回 Working；本轮证据只记录
+  操作员确认与前后 AX/截图，不把它改写成 spoken-output 的机器证明。
+- [x] 从系统设置真实开启 Reduce Motion；同一 Working 面板相隔 250 ms 的两帧 SHA-256 均为
+  `c8cb85ae0736e7d9a27bbe977f52de10aa6eeaec43d25fd7d6f1d3199ee43694`，且逐字节相同。
+- [x] 修复验收流程本身的安全缺口：新 wrapper **只读**检查偏好与进程，绝不执行 `defaults write`、
+  `killall`、`pkill`、`launchctl` 或 AppleScript；Reduce Motion、Increase Contrast、Reduce
+  Transparency 未全部恢复 off，VoiceOver/Debug 未退出，或不是恰好一个指定 Production 进程时，
+  均不得生成 `ACCEPTED`。
+- [x] 原始 AX/截图以 no-follow、owner/mode/nlink/size 稳定描述符读取；私有 T7 包固定 18 个文件、
+  `0700` 目录、只读产物、完整 `SHA256SUMS`，并把实际 JPEG 字节规范化为 `.jpeg`，不继续沿用原始
+  捕获器误写的 `.png` 扩展名。
+- [x] checked-in receipt 只保留版本、commit、dirty 状态、有限时间、范围声明与哈希；真实任务正文、
+  AX 内容、截图、本机路径和进程命令不进入仓库。Security/Release gate 固定 receipt/package 的
+  symlink、hard-link、unsafe mode、字段伪造、CRLF、缺 LF、extra file、帧篡改、AX 缺动作及未恢复设置。
+- [x] 当前系统恢复状态已机器复核：Reduce Motion / Increase Contrast / Reduce Transparency 均为 off，
+  VoiceOver 与 v6.62.1 Debug 进程均为 0，且只运行 v6.63 Production。私有 accepted 包：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/system-accessibility/run-20260830T065649Z-7gNNo7`
+- [x] 脱敏 receipt：`docs/SYSTEM_ACCESSIBILITY_RECEIPT.txt`；独立 package validator 与 15 类正/负向
+  夹具通过。前两次失败包保留且没有 `ACCEPTED`，分别真实暴露 JPEG 扩展名误标与 Unicode AX 顺序
+  解析的 byte/character offset 错误，没有把失败改写成成功。
+- [x] 最终权威图执行 724 tests / 0 failures，并完成 20 轮版本探针、10 轮 hermetic listener、
+  20 轮 tmux、5 轮 Codex Hook trust 与 20 轮 sleep/wake；49 Bash + 21 Ruby + 5 Swift parse-only、
+  Legal/Data Flow 与完整 Security 全部通过。
+- [x] v6.64 不改变 App executable source，因此没有伪造新版本产物；重新验证 v6.63 Production
+  主程序 SHA-256 `435f46857e2e29efa3c494ddc5853ddb7bcba2c13c7718f256c93a3935148f37`，
+  strict deep ad-hoc 签名、6 个 `arm64+x86_64` Mach-O 与完整依赖闭包均通过。最终报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/reliability/system-accessibility-gate-v1-20260830/SYSTEM_ACCESSIBILITY_GATE_EVIDENCE.md`
+- [ ] 本轮范围仍不包含逐项 VoiceOver spoken-output/focus 记录、AskUserQuestion、Plan Review、
+  Save Panel、Increase Contrast App 内对照、通知/声音/Focus Mode 或跨 macOS 版本；以后只能在隔离
+  macOS 测试账户/VM 中切换系统辅助设置，日常用户会话只允许运行只读恢复门禁。
+
+## v6.65 Codex Deny / timeout 真实分类与证据门禁
+
+- [x] 新增独立 `package/validate/run-codex-live-decision-evidence` 与 Security 攻击门禁；既有
+  `Allow once` receipt/包格式保持不变，approval packager 仅增加可安全复用的 CLI main guard。
+- [x] session 结果严格分为 `explicit_island_deny`、`neutral_timeout_fallback`、
+  `sandbox_rejection` 与 `interrupted_attempt`；只有第一类且 1–89 秒内明确返回 Deny 才可能生成
+  `ACCEPTED`，后三类只能被识别和拒绝。
+- [x] 分类器同时支持 Codex 真实出现的 strict JSON 与受限 JavaScript object 参数记录；后者不执行
+  源码，只接受六个审核字段及 JSON string/规范整数。executable expression、重复字段、未知值类型
+  由负向夹具拒绝并证明无副作用。
+- [x] proof 必须位于 workspace 外、绝对且规范，父目录 device/inode 稳定，并在分类、打包及写入
+  accepted marker 前三次保持不存在；包内只保存路径 SHA-256 与 `result=absent`，不复制本机路径。
+- [x] 合成 package/receipt 正例与四分类、已有 proof、session symlink、artifact symlink/hardlink、
+  unsafe mode、extra file、classification/absence/JPEG/checksum/receipt 篡改攻击均通过；raw JSONL 与
+  SQLite 永不复制进包。
+- [x] 三条真实失败样本已由新分类器复核：非交互 session
+  `01a0517c-ff58-7a73-9876-2c5726861da8` 为 `sandbox_rejection`；被提前停止的非交互 session
+  `01a0517d-c574-74d1-83d1-0c51c33bb0c5` 与 TUI session
+  `01a0517e-5680-7643-b877-7573789c74d0` 均为 `interrupted_attempt`。三条 proof 全部不存在，但这
+  只证明失败安全，不能冒充岛内 Deny 或 neutral timeout 成功证据。
+- [x] 分类/打包脚本已进入总 Security gate；仓库脚本闭包同步为 49 Bash + 21 Ruby + 5 Swift，
+  Interface Contract、Data Flow、GitHub Controls 与 Legal verifier 的当前数字保持一致。
+- [x] Mac 解锁后新建真实 TUI session；在 90 秒前显示 Dev Island Waiting 决策面并从岛内点击
+  **拒绝**，40 秒后 Codex 正常返回 `DENIAL_ROUND_TRIP_COMPLETE` 与 task-complete。SQLite 同
+  session 行为 `codex/completed`，proof 在分类、打包和 accepted 前后始终不存在。
+- [x] 私有 append-never 包已经 accepted，脱敏 `docs/CODEX_LIVE_DECISION_RECEIPT.txt` 已签入；
+  receipt 如实绑定 shipping `0.3.0`、baseline、dirty worktree、真实 App/CLI/session/SQLite、两张
+  人工复核图和 proof absence，不把本轮 QA 证据冒充 clean 商业 Release。
+
+## v6.66 macOS 日常用户环境隔离门禁
+
+- [x] 将 v6.64 只覆盖 system-accessibility wrapper 的只读检查扩展到整个仓库可执行源码面；
+  `.sh`、`.rb`、`.swift`、workflow YAML 在 Security/Release gate 中以本地、有界 UTF-8 文本
+  静态扫描，不执行源码，也不读取已安装 App 或用户内容。
+- [x] 明确拒绝 `defaults` 写入/删除、`killall`/`pkill`、`launchctl` 状态修改、AppleScript、
+  `CFPreferencesSetAppValue` 与直接 universal-access preference 文件访问；避免 QA、CI、Release
+  或 App 源码再次把系统级验收副作用带进维护者的日常登录会话。
+- [x] 五类独立攻击夹具覆盖偏好写入、进程级终止、launch-service mutation、AppleScript 与全局
+  CFPreferences API；当前真实源码闭包及全部攻击夹具通过。该门禁是仓库防护，不冒充对外部
+  Computer Use 或人工操作的运行时沙箱。
+- [x] EXPERIENCE_QA、Data Flow 与中英文 Privacy 已同步边界；系统 Reduce Motion、Increase
+  Contrast、Reduce Transparency、grayscale 均保持 off，VoiceOver 未运行，本轮没有修改系统设置。
+- [x] 当前源码状态下 Repository Script Syntax、Legal/Data Flow、完整 Security、`git diff --check`
+  全部通过；权威图执行 724 tests / 0 failures，并完成 20 轮版本探针、10 轮 hermetic listener、
+  20 轮 tmux、5 轮 Codex Hook trust 与 20 轮 sleep/wake。
+- [x] 此后在已解锁日常会话完成真实 Codex 岛内 Deny；全过程没有切换系统辅助功能、修改 Hook
+  trust 或持久系统设置。以后需要切换系统辅助功能的验收仍只能在隔离 macOS 测试账户或 VM 中进行。
+
+## v6.67 Codex 岛内真实拒绝闭环与当前客户端证据兼容
+
+- [x] 真实 session `01a051ae-f825-7f03-9ec8-e9308d266362` 来自 Codex Desktop
+  `source=cli`；唯一外部写请求进入 pending cell，Dev Island 决策面真实显示 Waiting，岛内点击
+  **拒绝** 后回到 Running，Codex 最终只输出 `DENIAL_ROUND_TRIP_COMPLETE` 并正常 task-complete。
+- [x] 当前 Codex `0.149.0-alpha.4.3` 会省略 `workdir`，由工具语义继承 session workspace；分类器只
+  接受该省略形式或显式 realpath 等于 workspace 的非空绝对路径。空路径、其他目录继续失败关闭。
+- [x] 当前客户端的审核后参数固定为精确 T7 justification、`require_escalated`、10,000 ms yield 与
+  2,000 output token；历史已审核夹具的 1,000 token/旧 justification 仍兼容，其他值全部拒绝。
+- [x] 当前拒绝结果是数组型 tool output：失败正文必须逐字绑定同一 reviewed command、
+  `/bin/zsh -lc` 与 `CreateProcess { message: "Rejected(\"Denied in Dev Island.\")" }`；不再依赖宽泛
+  denied/rejected 关键词。篡改回执中的 command 即使保留同一拒绝文案也不能通过。
+- [x] 真实 decision wait 为 40 秒；SQLite 同 session 行状态为 completed，proof 三阶段不存在。
+  两张人工复核图固定 `waiting,deny,running`，原始 JSONL、SQLite、prompt、command、path 与 reasoning
+  均未复制入证据包。
+- [x] 私有只读 accepted 包：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/codex-live-decision/run-20260830T081420Z-X5ords`
+- [x] 脱敏公开回执：`docs/CODEX_LIVE_DECISION_RECEIPT.txt`。package validator、receipt validator 与
+  完整 `SHA256SUMS` 已独立复验；focused 正/负向分类、package 与攻击夹具全部通过。
+- [x] 聚合 Security/tag Release 路径现强制要求并验证上述真实 receipt；缺失、symlink、hard-link、
+  unsafe mode、timeout/rejected 伪装、版本/哈希漂移、CRLF 与缺末尾 LF 均由独立夹具失败关闭，
+  不再只验证合成 decision package。
+- [x] 当前源码已重新完成 49 Bash + 21 Ruby + 5 Swift Repository Script Syntax、Legal/Data Flow、
+  完整 Security 与 724 tests / 0 failures；同一权威测试图随后完成 20 轮版本探针、10 轮无副作用
+  listener、20 轮 tmux、5 轮 Codex Hook trust 与 20 轮 sleep/wake。全过程没有切换系统辅助功能或
+  改变全局 macOS 外观。
+- [x] 最终只读机器证据报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/reliability/codex-live-deny-machine-gate-v1-20260830/CODEX_LIVE_DENY_MACHINE_GATE_EVIDENCE.md`
+- [x] 报告 SHA-256：
+  `6b9f44530907129fa860ad8e1722d6ed9f521963b5e5cdcbeafbd2dfda1f5e13`
+
+## v6.68 商业发布缺口实证审计与真实 Deny receipt 强制门
+
+- [x] 重新运行只读 `local-live-readiness`：listener 为 listening，Claude/Codex CLI 版本均 verified；
+  Claude Hook 为 update-required，Codex Hook 为 configured 且 activation review-required，当前
+  `ready-agents=0/2`。未自动更新 Hook 或改变 Codex trust。
+- [x] 商业政策 descriptor/语义检查安全通过，但 `state=required, missing=36`；
+  `--require-approved` 按预期失败。9 个 Agent 资源的来源、license、notice 与哈希通过，9 个商标审批
+  全部仍是 Release blocker，没有把待审状态改成批准。
+- [x] 远端 GitHub GET-only 审计仍有 B01/B04/B09/A02/A06/S04 六项 finding；没有管理员授权时未修改
+  branch protection、Actions 或 Dependabot。Manus accepted 真实包为 0，
+  `liveV2AcceptanceComplete=false` 继续保持 Release-disabled。
+- [x] 本机存在有效 Developer ID Application identity，但本轮未签名/公证；GitHub 最新 `v0.3.0`
+  被仓库 verifier 正确拒绝为 legacy/incomplete，缺 SBOM、`SHA256SUMS`、`appcast.xml` 与 Homebrew
+  cask。当前 v6.63 QA App 刻意无 `SUPublicEDKey/SUFeedURL`，不能冒充生产更新证据。
+- [x] 审计中发现真实 Deny receipt 尚未进入聚合 gate；现已修复为 CI/tag Security 必须直接验证
+  `docs/CODEX_LIVE_DECISION_RECEIPT.txt`，并新增缺失与九类链接/权限/语义/编码篡改拒绝夹具。
+  修复后 Repository Script Syntax、Legal/Data Flow、focused decision gate、完整 Security 与
+  `git diff --check` 全部重跑通过；Swift 产品源码未在此后变化，权威 724 tests 与
+  20/10/20/5/20 结果继续绑定同一当前产品图。
+- [x] 最终只读商业缺口审计：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/release/commercial-release-gap-audit-v1-20260830/COMMERCIAL_RELEASE_GAP_AUDIT.md`
+- [x] 审计 SHA-256：
+  `c829869df95a26732a3e6dd7209bcc7260a64c1f666c38eee9b0fc153bcf7da7`
+- [ ] 下一步需要用户/owner/legal/管理员提供明确外部授权：先更新 Claude Hook 与 Codex `/hooks`
+  trust；再用真实 Manus 账号完成 v2 accepted 包；批准 36 项商业政策和 9 项商标记录；修复 6 项远端
+  GitHub 控制；最后创建 clean tag，完成 Developer ID/公证、生产 Sparkle 与旧版到新版更新验收。
+
+## v6.69 Sparkle Ed25519 密码学发布闭环
+
+- [x] 复现并修复发布链严重缺口：旧 `verify-release-assets.sh` 只要求 archive/feed 签名 Base64
+  解码为 64 bytes，旧正向夹具使用 64 个零字节仍能通过；credential preflight 也只验证 32-byte
+  公钥形态，没有证明配置的公私钥属于同一 keypair。
+- [x] 新增 `verify-sparkle-ed25519-signatures.swift`，使用
+  `CryptoKit.Curve25519.Signing.PublicKey.isValidSignature`；输入通过 owner/single-link/safe-mode
+  `O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC` descriptor、1 GiB 上限、exact read 与前后 metadata 复验，
+  不把长度或 Base64 形态冒充密码学成功。
+- [x] tag 凭证门在导入证书和构建产物前，先让 `SPARKLE_PRIVATE_ED_KEY` 经 pinned
+  `sign_update --ed-key-file -` stdin-only 通道签固定 `VERSION`，再由配置公钥真验签；私钥转入
+  非导出 shell buffer 后清除 inherited env，两个子进程均由 `env -i` 启动，错配 keypair 失败关闭。
+- [x] 完整 8 资产门从 versioned ZIP 的精确
+  `Dev Island.app/Contents/Info.plist` 有界提取交付 App 自己的 `SUPublicEDKey`，对 versioned ZIP
+  全部字节和 Sparkle terminal block 声明的精确 feed prefix 分别验签；不再信任 workflow 中另一份
+  公钥声明。
+- [x] RFC 8032 正向 fixture 通过；malformed signature、unrelated 64-byte archive/feed signature、
+  signed prefix 同长度篡改、App 内合法但错配公钥与 credential 公私钥错配全部失败，原有资产/
+  checksum/Cask/Appcast/SBOM/品牌/source-revision 攻击回归继续通过。
+- [x] 仓库脚本闭包同步为 49 Bash + 21 Ruby + 6 Swift；Interface Contract、Automatic Updates、
+  Data Flow、GitHub Controls、Legal verifier、Release Foundation 与 Security 静态断言全部更新。
+- [x] 当前源码重新完成 724 tests / 0 failures，以及 20 轮版本探针（240 子进程）、10 轮
+  hermetic listener、20 轮 tmux、5 轮 Codex trust、20 轮 sleep/wake；Repository Script Syntax、
+  Legal/Data Flow、Release Foundation、完整 Security 与 `git diff --check` 全部 PASS。
+- [x] 只读证据报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/release/sparkle-ed25519-cryptographic-gate-v1-20260830/SPARKLE_ED25519_CRYPTOGRAPHIC_GATE_EVIDENCE.md`
+- [x] 报告 SHA-256：
+  `64cced9f9995dfaf61f651c7e870b5a66807994ff66e8a34c0c565718034ada5`
+- [x] 前一轮遗留的 QA Debug Sandbox 已精确关闭；最终 Increase Contrast / Reduce Transparency /
+  Reduce Motion / grayscale 均为 off，VoiceOver 与 QA Debug 进程均为 0，本轮未写 macOS 外观设置。
+- [ ] 该门只闭合密码学一致性，不冒充 clean tag、Developer ID/公证、完整 GitHub Release 或
+  old-to-new updater 安装证据；Manus 真实账号、Hook trust、36 项商业政策、9 项商标审批和 6 项
+  远端 GitHub 控制仍保持原 blocker。
+
+## v6.70 Sparkle disposable old-to-new 真实更新闭环
+
+- [x] 不调用会在线解析开发依赖的 Sparkle Xcode 工程；直接从 `Package.resolved` 锁定的
+  `2.9.6 @ ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a` checkout 取官方
+  `sparkle-cli` 三个 Objective-C 源，并链接已解析、签名有效的 Universal XCFramework，离线构建
+  当前 runner 架构 CLI App。
+- [x] 使用 RFC 8032 非生产 Ed25519 fixture key、随机 `127.0.0.1:0` server 与一次性 v1/v2
+  `Dev Island.app`，真实完成 signed feed 下载、signed ZIP 下载、pre-extraction Ed25519 验签、
+  解压、App code-sign validity、原 bundle 替换，并复验 version `1 → 2`、新 executable marker、
+  strict code-sign 与 Sparkle `Installation Finished`。
+- [x] 四条独立负向链均保持旧 version/executable hash/signature 不变：wrong feed key 在 archive
+  下载前失败、wrong archive key 在解压前失败、old App embedded key 错配在 archive 下载前失败、
+  正确签名 archive 内的 App executable 在 codesign 后被改写则在安装前失败；pinned
+  `sign_update --verify` 交叉证明每份 feed/archive 的预期 key 归属。
+- [x] 取消“先写真实账号再清理”的方案：固定哈希覆盖层把 pinned Sparkle 源码复制到 macOS
+  私有临时根，移除无关远程 package 引用，把 cache 与 launch-job 环境硬路由至一次性 runtime
+  HOME；Xcode 构建使用另一私有 HOME，两个环境均设置 `__CFPREFERENCES_AVOID_DAEMON=1`，完全
+  不调用 `defaults write/delete`。保留 Sparkle 原生 ad-hoc helper identity；失败清理只对当前随机
+  临时根下精确匹配的 helper PID 做 TERM→KILL。loopback server 仍限 64 MiB/16 KiB headers/
+  allowlisted 文件，CLI 由 90 秒 bounded process group 执行。
+- [x] 按 Sparkle 2.9.6 源码与实际行为确认：旧 Ed25519 key 已认证 archive 时，Apple code-sign
+  identity rotation 是明确支持的安全策略，不能把“不同 signer 应失败”写成伪门禁；本轮测试
+  code-sign validity/corruption，生产 signer/Team 连续性仍由 Release 证书与最终真实更新验收负责。
+- [x] 新 gate 已加入 PR CI 独立 step、低基数 diagnostics 与 tag Release credential 前置门；Security、
+  Release Foundation、Automatic Updates、Data Flow、Legal、GitHub Controls 和 Interface Contract
+  同步更新，仓库脚本闭包为 50 Bash + 23 Ruby + 6 Swift。
+- [ ] 该 disposable gate 不冒充 clean tag、Developer ID/公证/Gatekeeper 或真实已安装旧 Release →
+  新 Release；仍需生产 Sparkle key custody、完整八资产 GitHub Release、真实旧版升级证据，以及
+  Manus 账号、Hook trust、商业政策、商标与远端 GitHub 控制闭合。
+
+## v6.71 普通测试图 Keychain 零副作用边界
+
+- [x] 独立 evaluator 在 T7 隔离 `HOME/CFFIXED_USER_HOME` 执行精确 `swift test` 时，真实捕获
+  `CommercialLicenseActivationTests.testLatestConcurrentActivationIsTheOnlyDocumentSaved`
+  从 `SecItemAdd` 进入登录 Keychain `AuthorizationCopyRights` 并等待；安全停止该精确 evaluator，
+  保留失败 run、evaluator 与 process sample，没有清理或修改真实 Keychain/登录状态。
+- [x] 明确修正旧假设：随机 service/account 只能避免 namespace 冲突，不能让 Keychain 测试
+  hermetic。`CommercialLicenseDocumentStore` 新增 module-internal storage backend，shipping
+  initializer 仍只装配 `CommercialLicenseKeychainBackend`；激活与文档存储测试统一注入线程安全的
+  进程内存 backend，生产 verify-before-save、generation/issuedAt 回滚边界与错误语义不变。
+- [x] `KeychainStore` 同样拆分 `KeychainStoreClient`、注入式 backend 与 shipping
+  `KeychainStoreSecurityBackend`；生产 service/account 不变，并显式固定
+  `WhenUnlockedThisDeviceOnly` 与 `synchronizable = false`。普通测试改用内存 backend，另以纯
+  query/attribute 断言固定 shipping 策略，不调用真实 `SecItem*`。
+- [x] Security gate 拒绝商业 License 普通测试直接使用 `SecItem*` 或旧 service/account test
+  initializer，并拒绝整个 `IslandCoreTests` / `IslandAppLibTests` Swift 图调用 Keychain
+  `SecItemAdd/Update/CopyMatching/Delete`；API-key 测试也不得直连生产静态 store。
+- [x] Interface Contract、CI Diagnostics、Data Flow Inventory 与中英文 Privacy 已同步：普通
+  `swift test` 只使用进程内存存储；真实 Keychain 验收只能是独立、显式、可处置 macOS 测试
+  账户或 VM 门禁，不能在维护者日常登录会话中运行。
+- [x] 修复后的完整权威测试、安全/法律/诊断门禁、当前源码 Universal Production App、严格签名、
+  依赖闭包与 8-sample hermetic launch smoke 已在全新 evidence root 中通过；权威图为
+  732 tests / 0 failures，20/10/20/5/20 稳定性全部通过，Production 主程序 SHA-256 为
+  `c6352f27e1b62b1ba5b2e9fc33279883819f3093e30b21ab58fe1d2abec92b79`。
+
+## v6.72 岛内决策面一体化与响应回执
+
+- [x] 以当前 Debug Universal App 真实捕获 Codex approval → Allow once → Running 流程；旧决策面
+  的内层圆角卡、整条琥珀竖线和常驻灰底次级按钮是最主要的模板感来源。
+- [x] 决策内容改为直接落在岛体上，仅用低对比底部分隔保持多会话层级；命令/计划仍保留唯一必要的
+  内嵌内容面。Deny/Reject 等次级动作静止时退为纯文字，hover 才出现轻底；主动作继续保持清晰、
+  足够大的安全点击目标和既有键盘契约。
+- [x] Allow/Deny、Plan approve/reject 与回答提交成功后增加 0.9 秒非阻塞响应回执；真实 Hook response
+  先同步送达 Agent，UI 才呈现“已允许一次 / 已拒绝请求 / 回答已送达”和“Agent 正在继续处理”，
+  然后以 opacity + smooth layout 自然回到 Running 行。第二个同会话请求仍优先显示，不会被回执遮挡。
+- [x] 回执文案完成 English / 简体中文与 VoiceOver 聚合标签；不包含原始 session ID。2 项新纯展示测试
+  固定 permission、plan、question 的不同语义与双语结果。
+- [x] Debug App 实际点击确认 AX 从审批按钮切换为“已允许一次，Codex 正在继续处理”，随后回到
+  Running；同尺寸 before/after、回执与最终 Running 截图保存在：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/current-interaction-audit-v1-20260830/screenshots/`
+- [x] 当前源码 **734 tests / 0 failures**；Localization、Performance analysis、18 项 build-flavor
+  isolation、完整 Security 与 `git diff --check` 全部通过。
+- [x] fresh Production App 的 6 个 Mach-O 全为 arm64+x86_64，依赖闭包、Production marker、
+  strict deep ad-hoc 签名通过；隔离 HOME/CFFIXED_USER_HOME 的 8-sample hermetic smoke 为
+  `normal_termination=true / app_exit_status=0 / product state absent`，主程序 SHA-256：
+  `f48febd028115602e4b3747b8b010d6c1f69a370901ac1dacc45d0771536d6c3`。
+- [x] 以同一份当前源码 Debug Universal App 完成决策节奏补验：Codex Deny 分别由 `⌘D` 与直接点击
+  触发，均保持展开并呈现“已拒绝请求 / Codex 正在继续处理”，随后切换为 Running；
+  AskUserQuestion 覆盖单选、第二题多选、Back/Next 双向草稿保留、Submit 回执与 Running；Plan Review
+  覆盖 Markdown 标题/列表/代码内容、Approve 与 Reject 两条独立回执。截图和审计报告保存在：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/decision-cadence-v1-20260830/`。
+- [x] 明确排除该 evidence root 的 `screenshots/01-deny-receipt.png`：它是在测试窗口菜单被 `Esc`
+  收起后，再由紧凑栏进入指针自动收起分支所得，只能证明 collapsed Running，不能作为 Deny 回执证据；
+  有效 Deny 证据从 `02-deny-keyboard-receipt.jpeg` 开始。
+- [ ] 下一轮补齐 Deny、AskUserQuestion 与 Plan Review 的真实视频/Animation Hitches，并在隔离 macOS
+  测试账户或 VM 完成完整 VoiceOver spoken-output；当前合成请求、截图与 AX 树不冒充真实 Claude CLI
+  round trip、完整朗读合规或帧级性能证据。
+
+## v6.73 Codex Hook 信任旁路实证与激活指引
+
+- [x] 收束上一条真实 timeout 尝试：session
+  `01a05346-e435-7f70-821a-439356fe4485` 在约 90 秒后真实回到 Codex 原生审批面，但操作员直接按
+  `Esc` 中断了整轮 turn；机器分类固定为 `interrupted_attempt`，`deny-v4-proof.txt` 不存在。该样本
+  只证明 native UI 接管与失败安全，不冒充 `neutral_timeout_fallback` 的正常拒绝回执。
+- [x] 以当前 Codex `0.151.0-alpha.7.2` 新建 session
+  `01a056d6-b417-7612-aa65-7725d14dd9cb`；CLI 明确提示 `[features].codex_hooks` 已废弃，并在 Hook
+  review 选择 **Continue without trusting (hooks won't run)** 后继续。该选择没有写入或信任 Dev Island
+  Hook，Production App 也未收到审批请求。
+- [x] 同一受控请求随后直接执行并创建 `deny-v5-proof.txt`，内容 SHA-256 为
+  `19371eb676d748e5afeeded5ff411a552bd0f58edf8f690a4a0583cc901f1135`。该 proof 故意保留为失败证据；
+  packager 因 proof 已存在而失败关闭，不能把 `DENIAL_UNEXPECTED_SUCCESS` 包装成岛内 Deny 或 timeout
+  通过。
+- [x] 启动新版 Codex TUI 后，vendor-owned `~/.codex/config.toml` 从既有基线哈希发生变化，当前为
+  `7f66e684a9d552294270f9d5d46390b0dee2adc3b21ebb63aa183cd3e0807ac8`；Dev Island 源码和本轮脚本没有
+  写该文件，也未尝试回滚未知的用户/CLI 配置。真实 Hook/CLI 验收以后必须把 vendor 配置漂移纳入前后
+  证据，而不能继续假设启动 TUI 完全只读。
+- [x] Settings 与 Live connection check 的中英文指引已改为：在 Codex `/hooks` 中审阅并仅信任
+  Dev Island 条目，并明确说明 **Continue without trusting** 会让审批留在 Codex、不会进入灵动岛；
+  避免把“configured”误读成双向审批已可用。
+- [x] 新增简体中文旁路风险回归，`LocalLiveReadinessPresentationTests` 当前 12 tests / 0 failures。
+- [x] 完整当前图为 735 tests / 0 failures；Localization、Legal/Data Flow、CI diagnostics、Manus
+  acceptance fixtures、Codex approval/decision evidence、system-accessibility isolation、GitHub controls、
+  Release Foundation、Performance、Sound、Log Privacy、完整 Security 与 `git diff --check` 全部通过。
+- [x] fresh Production App 为 `arm64+x86_64`，6 个 Mach-O 依赖闭包与 strict deep ad-hoc 签名通过；
+  主程序 SHA-256 为 `80ae7550675ea5759a6e5cf315d35d01083741ffdd4d9bf4de17386127e435f1`。
+  8-sample hermetic smoke 在 1,411.4 ms ready，正常 status 0 退出且 RSS 只增长 16 KiB。
+- [x] 审计报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/codex-hook-activation-guidance-v1-20260831/CODEX_HOOK_ACTIVATION_GUIDANCE_AUDIT.md`
+  （SHA-256 `03f7d05c1fc61ce743d42f7f35478ef2e5357ee78123d8d66f610cb61b742872`）。
+- [ ] 真正的 `neutral_timeout_fallback` 正常拒绝仍需用户在 Codex 中完成当前 Dev Island Hook 信任后
+  重跑；在此之前保持 readiness 未就绪，不自动修改 trust、`config.toml` 或 Hook feature flag。
+
+## v6.74 决策响应卡顿定位、修复与分段 Instruments 门禁
+
+- [x] 新增 `summarize-animation-hitches.rb`：严格解析 Animation Hitches、SwiftUI update 与
+  Potential Hangs 导出，分开统计 App-attributed frame、render/GPU-only frame、App update 与 hang；
+  startup/resolved/steady/recording-tail 独立输出，trace duration 外记录只计数不纳入结论。
+- [x] Performance action marker 同时记录 monotonic `uptime=` 与 `wallUnix=`；当前录制以 1 ms 声明
+  不确定度对齐，旧日志仍可用 250 ms fallback 复算但只能保留为诊断基线。分析器的 no-follow、
+  DTD/entity、missing-ref、symlink、重复 marker 与安全输出攻击夹具全部通过。
+- [x] 调用栈定位 Permission Deny 慢帧：`TaskStore` 请求先移除、回执后写入，导致 SwiftUI 在两者间
+  短暂构造并销毁完整 `TaskCard`，把品牌图、系统 glyph 与 AX tree 懒加载带到交互帧。现改为先无
+  动画预留回执、再调用 production response；stale response 无动画回滚，成功继续 0.9 秒回执。
+  Permission、Question、Plan 共用同一 sequencing。
+- [x] 修复前 Permission resolved App update 最大 132.257 ms，`>33/50/100 ms = 2/2/1`，并有
+  54.802 ms Potential Interaction Delay；修复后分别为 21.238 ms、`0/0/0` 与 0 hang。
+  App-attributed frame 最大仍为 34.722 ms，明确不宣称全部帧低于 33 ms。
+- [x] 样本分类固定：`traces-v7/approval-deny.trace` 为当前源码 accepted；`traces-v4` 三场景为
+  pre-fix partial diagnostic；v5 点击发生在 trace 外、v6 命中 idle 实例、v7 Question 锁屏未完成，
+  均 rejected/incomplete。修复后 Question Submit 与 Plan Review 继续待解锁补录。
+- [x] 当前源码权威图 735 tests / 0 failures，全部稳定性轮次通过；Performance、Localization、
+  Legal/Data Flow、CI diagnostics、Release Foundation、Sound、Log Privacy、完整 Security、
+  `git diff --check` 与 21 项 build-flavor 反例全部通过。Sparkle disposable old-to-new 四条负向链
+  同时通过。
+- [x] fresh Production App 的 6 个 Mach-O 全为 arm64+x86_64，依赖闭包、法律字节、品牌资源与
+  strict deep ad-hoc 通过；8-sample hermetic launch 正常 status 0 退出、服务与用户状态隔离。
+  主 executable SHA-256：`5d42723d904ac5b00c0caede9240bfc69decfd9aa6c6fc174b8d5acc900e5b9b`。
+  该 smoke 记录 `screen_locked=true`，不作为视觉、丝滑度、CPU/RSS 或能耗证据。
+- [x] 审计报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/decision-motion-v1-20260831/DECISION_MOTION_AUDIT.md`
+  （SHA-256 `7a7e1c67f88a16d076d50c4a60b846a435d4be3d2f91fb075eeb1d8bb628d9a3`）；
+  同目录 `SHA256SUMS` 与 `TRACE_TREE_SHA256.txt` 绑定关键产物和 accepted raw trace tree。
+- [ ] Mac 解锁后串行补录固定源码的 Question Submit 与 Plan Review，避免在 resolved window 频繁
+  AX 轮询；VoiceOver spoken-output 与系统辅助开关仍只允许在隔离测试账户或 VM 完成。
+
+## v6.75 商业激活 pre-provider 真实 loopback sandbox
+
+- [x] 在 `IslandCoreTests` 内新增测试专属 Hummingbird server 与 transport；每轮使用合成 Ed25519
+  key、合成隐私最小 License、随机 numeric `127.0.0.1` 端口和进程内存 document backend，通过
+  真实 TCP/HTTP `POST /v1/activate` 驱动 production `CommercialLicenseActivationService`、验签与
+  verify-before-save 路径，不访问维护者登录 Keychain。
+- [x] 正向闭环证明 bounded activation-code body 到达精确 path，签名文档激活并存入内存；未签名
+  response 固定为 `.licenseRejected` 且零存储。HTTPS、`localhost`、外部地址、userinfo、错误
+  path、query 与 fragment 全部在连接前拒绝；URLSession 禁用 proxy/cookie/cache/redirect。
+- [x] `CommercialActivationSandboxTests` 3 tests / 0 failures，随后以同一已构建测试目标重复 20 轮
+  全部通过；Security gate 已静态固定 test-only、内存存储、精确 loopback endpoint 与 shipping
+  source 零 sandbox 类型/ready route 边界。
+- [x] Interface Contract v6.75、Data Flow Inventory、Activation Threat Model、Legal Release
+  Checklist、CI Diagnostics 与法律/安全文档门禁同步，明确该闭环只证明 provider-neutral 客户端
+  wiring，不冒充 TLS、provider/checkout、一次性 code、重放/枚举/速率限制、退款/撤销、设备/恢复、
+  production key custody、真实 Keychain 或商业发布验收。
+- [x] 当前源码权威图为 738 tests / 0 failures，全部版本/listener/tmux/Codex trust/sleep-wake
+  稳定性轮次通过；完整 Security、Legal/Data Flow 与 `git diff --check` 通过。fresh Production App
+  的 6 个 Mach-O 均为 Universal，依赖闭包、production marker、test-only sandbox symbol/string
+  隔离、法律/品牌资源与 strict deep ad-hoc 签名通过；主 executable SHA-256 为
+  `07ac2b74f85ea63152f3b50eef4249c1e8f76bece4a5a5c7231b262cd99b04c2`。
+- [x] 8-sample hermetic Production launch 正常 status 0 退出、App/user home 与产品服务隔离；因
+  `screen_locked=true`，只作为存活证据，不用于视觉、丝滑度或性能结论。只读审计报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/commercial-activation-sandbox-v1-20260831/COMMERCIAL_ACTIVATION_SANDBOX_AUDIT.md`
+  （SHA-256 `93892fbeed18b68dcbb2cb562868647cb1e4b949888fa274a43be84b63f93c27`）；
+  `SHA256SUMS` 与 `SOURCE_SHA256.txt` 已逐项通过。商业 provider、36 项政策、9 项商标、Developer ID/
+  公证与远端 GitHub controls 继续保持独立 blocker。
+
+## v6.76 商业激活 transport 失败关闭矩阵
+
+- [x] 将 pre-provider sandbox 从签名/未签名两条链扩展到真实 HTTP 状态矩阵：400/401/404
+  统一为 `codeRejected`，429 为 `rateLimited`，500/503 为 `serviceUnavailable`；provider-private
+  fixture body 不进入 outcome 且所有拒绝路径零存储。
+- [x] 302 携带同 server numeric-loopback `Location` 时 delegate 明确不跟随，redirect target
+  计数保持 0；未知 418 与 32 KiB+1 的 200 body 均归一化为 `transportUnavailable` 且零存储。
+  endpoint 同时新增缺失显式端口与 port 0 反例。
+- [x] 明确不把测试 transport 当 production 模板：当前 synthetic local response 由便利 API 完整
+  缓冲后检查大小；未来 HTTPS provider transport 必须在读取期间限制 bytes，并独立完成 TLS/server
+  identity、timeout、retry、one-time code 与 abuse controls 评审。
+- [x] 5 项 focused tests 连续 20 轮、共 100 次全部通过；当前权威图 **740 tests / 0 failures**，
+  全部版本/listener/tmux/Codex trust/sleep-wake 稳定性轮次、完整 Security、Legal/Data Flow 与
+  `git diff --check` 通过。
+- [x] fresh Production App 的 6 个 Mach-O 均为 Universal；依赖闭包、production marker、test-only
+  type/route/body/code/test-name string 与 symbol 隔离、法律/品牌资源及 strict deep ad-hoc 通过。
+  主 executable SHA-256：`4d40902d86fe2cb6fb1acce1b8fa1f5ba04ab4dac3e2e1553bb7125421149efe`。
+- [x] 8-sample hermetic launch 正常 status 0 退出、产品服务与用户状态隔离；
+  `screen_locked=true`，不作为视觉/丝滑度/性能结论。只读报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/commercial-activation-failure-matrix-v1-20260831/COMMERCIAL_ACTIVATION_FAILURE_MATRIX_AUDIT.md`
+  （SHA-256 `1127e1f923610a007a7fdc9fec2d286007bf59a1fade50ed511b7014e8bca011`）；
+  `SHA256SUMS` 与 `SOURCE_SHA256.txt` 已逐项通过。
+- [ ] provider/seller、36 项商业政策、真实 sandbox/TLS/streaming transport、Developer ID/公证、
+  9 项商标、Manus 账号与远端 GitHub controls 仍保持独立 blocker；本阶段不改变免费 App 行为。
+
+## v6.77 商业激活真实 HTTP operation ownership
+
+- [x] 新增 cancellation-insensitive 攻击模式：test-only transport 将真实 URLSession 请求放入
+  detached task，但继续受 2 秒 request/resource timeout 约束；外层 activation task 被取消或
+  supersede 后，loopback server 的签名 response 仍真实返回，避免用合作式网络取消掩盖 actor
+  operation ownership 缺陷。该 detached 模式禁止进入 shipping source，也不作为生产网络模板。
+- [x] 显式 Cancel 在 server 已收到请求后发生；response recorder 证明晚到 response 确实返回，
+  activation 固定为 `.cancelled` 且 document storage 保持 empty。latest-operation-wins 同时证明旧、
+  新两个 request 与两个 response 都完成，旧 operation 为 `.superseded`，只有最新 operation 能
+  验签并写入唯一有效 document。
+- [x] 测试时序使用 actor-isolated request/response 计数与最长 1 秒 bounded wait，不依赖任意 client
+  sleep；合成 server delay 限制为 0...2,000 ms。7 项 focused suite 连续 20 轮、共 140 次全部通过。
+- [x] Interface Contract v6.77、Data Flow Inventory、Activation Threat Model、Legal Release
+  Checklist、CI Diagnostics 与法律/安全静态门禁同步；完整 Security、Legal/Data Flow、
+  `git diff --check` 通过，`Package.resolved` 未变化。
+- [x] 当前源码权威图 **742 tests / 0 failures**；版本探针 20 轮 / 240 子进程、hermetic listener
+  10 轮、tmux 20 轮、Codex trust 5 轮、sleep/wake 20 轮全部通过。
+- [x] fresh Production App 的 6 个 Mach-O 均为 arm64+x86_64；依赖闭包、Production marker、
+  strict deep ad-hoc、法律/品牌资源和 keyless Sparkle 隔离通过。sandbox 类型、取消不敏感 transport
+  标记、delay/route/code/test-name string 与 symbol 均未进入出货二进制。主 executable SHA-256：
+  `5f0988593bdf40478a51d056afc98e54d0a676ff758f34242bbb27a66fa26176`。
+- [x] 8-sample hermetic launch 正常 status 0 退出、产品网络服务与用户状态隔离；
+  `screen_locked=true`，不作为视觉、丝滑度、能耗或 Release 性能结论。只读报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/commercial-activation-operation-ownership-v1-20260831/COMMERCIAL_ACTIVATION_OPERATION_OWNERSHIP_AUDIT.md`
+  （SHA-256 `a57a12b6cd58de2b77c9fa593665e32fe1bdfe1ee73650a59185ead097e2a3f5`）；
+  `SHA256SUMS` 与 `SOURCE_SHA256.txt` 已逐项通过。
+- [ ] provider/seller、真实 provider sandbox/TLS/streaming/cancellation、36 项商业政策、9 项商标、
+  Developer ID/公证、production Sparkle、clean tag/Release、Manus 账号和 6 项远端 GitHub controls
+  仍保持独立 blocker；Codex timeout fallback 等用户 Hook trust，Question/Plan motion 等 Mac 解锁。
+
+## v6.78 商业激活 pre-cancelled zero ownership
+
+- [x] 审计发现已在进入 `activate` 前取消的 caller 仍可能先 supersede 有效 pending activation，
+  并创建 transport task；对于未来的一次性 activation code，这会让一个已经失效的 UI/调用方
+  消耗 code，且无故终止真正仍在进行的 owner。
+- [x] trusted-mode preflight 后新增 caller cancellation guard；pre-cancelled 调用直接返回
+  `.cancelled`，不得 invalidate 当前 operation、创建 transport task 或发送请求。显式 Cancel、
+  late-response 拒绝、latest-operation-wins 与 commit-time verify-before-save 语义保持不变。
+- [x] 受控 transport 回归证明第二个 pre-cancelled caller 的 request count 不增加，原 operation
+  后续仍可激活并成为唯一存储文档；真实 Hummingbird loopback 回归证明原 request 已到 server 后，
+  第二调用仍带来零新增 HTTP request，最终精确为 1 request / 1 response 且原签名 response 激活。
+- [x] 两个新 ownership 测试连续 20 轮、共 40 次全部通过；两个 focused suite 共 19 tests / 0
+  failures。Interface Contract v6.78、Data Flow、License Security、Activation Threat Model、Legal、
+  CI Diagnostics 与静态门禁同步。
+- [x] 完整 Security 通过；当前源码权威图 **744 tests / 0 failures**，版本探针 20 轮 / 240 子进程、
+  hermetic listener 10 轮、tmux 20 轮、Codex trust 5 轮与 sleep/wake 20 轮全部通过。
+- [x] fresh Production App 的 6 个 Mach-O 均为 arm64+x86_64；依赖闭包、Production marker、
+  strict deep ad-hoc、法律/品牌资源与 keyless Sparkle 通过。test server/transport、delay/route/code 和
+  两个新测试名均未进入出货二进制。主 executable SHA-256：
+  `c6a18a54b9a732d92e8680fa47784909a804cbe85fda4fd149ec438a6ecba5bc`。
+- [x] 8-sample hermetic launch 正常 status 0 退出、产品网络服务与用户状态隔离；
+  `screen_locked=true`，不作为视觉、丝滑度、能耗或 Release 性能结论。只读报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/commercial-activation-pre-cancelled-ownership-v1-20260831/COMMERCIAL_ACTIVATION_PRE_CANCELLED_OWNERSHIP_AUDIT.md`
+  （SHA-256 `d9a11695baeed7bc7c662fcbd1702e4882c5f5e2d67ff44e0175778d1e84dcad`）；
+  `SHA256SUMS` 与 `SOURCE_SHA256.txt` 已逐项通过。
+- [ ] provider/seller、真实 provider sandbox/TLS/streaming/cancellation、36 项商业政策、9 项商标、
+  Developer ID/公证、production Sparkle、clean tag/Release、Manus 账号和 6 项远端 GitHub controls
+  仍保持独立 blocker；Codex timeout fallback 等用户 Hook trust，Question/Plan motion 等 Mac 解锁。
+
+## v6.79 Welcome Tour studio polish
+
+- [x] 以本轮当前源码的 opt-in 离屏快照审计 Welcome 英文/简中三步；旧版主要缺口是 canvas、
+  stage 与 divider 值域过近导致层级偏平，以及连接矩阵中 Codex `Configured · review…` 可见截断。
+- [x] 保留近黑、低饱和产品语言，用极弱黑灰 canvas、统一 gradient-backed stage shell、方向性 rim
+  与克制阴影建立深度；window/stage 连续圆角提升为 18/14pt，主/次操作统一 10pt 圆角，标题由
+  34pt 收至 32pt，不增加装饰卡片、插画或状态色光晕。
+- [x] Welcome 页切换由 280ms、10/6pt 行程收至 240ms、6/3pt；Reduce Motion 继续 opacity-only。
+  该代码契约降低横向 carousel 感，但锁屏离屏证据不能代替解锁后的帧节奏验收。
+- [x] Codex 可见状态收敛为本地化 `Configured` / `已配置`，详细 Hook review 继续留在既有 AX 描述
+  与 Settings。新增纯 presentation 回归；focused onboarding 为 10 tests / 0 failures。
+- [x] English/简中六张 after 快照与三张同 viewport before/after 合图逐张检查，固定 760×500pt
+  几何无裁切、无异常换行、无截断；VisualSnapshotTests 17/17 通过。
+- [x] 当前源码权威图 **745 tests / 0 failures**；版本探针 20 轮 / 240 子进程、hermetic listener
+  10 轮、tmux 20 轮、Codex trust 5 轮与 sleep/wake 20 轮全部通过；完整 Security、Legal/Data
+  Flow、Localization、CI Diagnostics、Brand、Release Foundation 与 Performance Analysis 门禁通过。
+- [x] fresh Production App 的 6 个 Mach-O 均为 arm64+x86_64；依赖闭包、Production marker、
+  strict deep ad-hoc、双语法律/品牌资源与 keyless Sparkle 通过。主 executable SHA-256：
+  `6c91c6431723f5318b33f0baa31662b13d15dc03a73b1e53456344563fd51b79`。
+- [x] 8-sample hermetic launch 正常 status 0 退出、产品网络服务与用户状态隔离；
+  `screen_locked=true`，不作为视觉、丝滑度、VoiceOver、能耗或 Release 性能结论。只读报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/current-visual-audit-v1-20260831/CURRENT_VISUAL_AUDIT.md`
+  （SHA-256 `131b83dddc4705371c8d4ef1358310fe3235c8dfc5a241bcf385d9940f2ad22a`）；
+  before/after、同 viewport comparison、
+  `SOURCE_SHA256.txt` 与 Production smoke 均留在同一 T7 evidence root。
+- [ ] Welcome 真实窗口页切换、hover/press、键盘焦点与 VoiceOver 仍待 Mac 解锁验收；Developer ID/
+  公证、production Sparkle、商业 provider/36 项政策、9 项商标、Manus 账号和远端 GitHub controls
+  继续保持独立 blocker。本轮未 commit、push、tag 或创建 Release。
+
+## v6.80 Question 九宫格选择语言
+
+- [x] 以本轮当前源码重新捕获 compact island、priority panel、permission/question/plan decision、
+  20-session stress 与英文/简中核心界面；审计确认 Question 仍使用系统 `circle` / square selection
+  symbol，是“九宫格点阵替代普通圆形”产品语言中最直接的遗留缺口。
+- [x] Question 选项统一改为固定 15pt 的 3×3 点阵：未选是灰色 `.field`，单选已选是等待色
+  `.ring`，多选已选是等待色 `.plus`；两层固定几何只用 opacity cross-fade，Reduce Motion 下即时
+  切换，不发生 symbol geometry 跳变。选项连续圆角由 6pt 收敛到 9pt。
+- [x] 点阵保持 `accessibilityHidden`；现有 Button label/hint、Selected/Not selected value 与
+  `.isSelected` trait 全部保留，选择同时通过 pattern 与颜色表达。新增 pure presentation mapping
+  回归和单选/多选 selected-state 视觉证据。
+- [x] 同 viewport 英文/简中 Question before/after 合图逐张检查，无裁切、错位或异常换行。44 张
+  baseline 均有 after：42 张 byte-identical，仅两张预期 Question surface 变化；另新增 selection
+  gallery，VisualSnapshotTests 18 tests / 0 failures。
+- [x] 当前源码权威图 **747 tests / 0 failures**；版本探针 20 轮 / 240 子进程、hermetic listener
+  10 轮、tmux 20 轮、Codex trust 5 轮与 sleep/wake 20 轮全部通过；完整 Security、Localization、
+  Legal/Data Flow、CI Diagnostics、Brand、Homebrew、Release Foundation、Performance Analysis、
+  signal sound 与 runtime-log privacy 门禁通过。
+- [x] fresh Production App 的 6 个 Mach-O 均为 arm64+x86_64；依赖闭包、Production marker、
+  strict deep ad-hoc、双语法律/品牌资源与 keyless Sparkle 通过。主 executable SHA-256：
+  `2fa6e4a6c4a55f34c40be5b98328b37c01aad9bdaa05941831d7972ac9e4d257`。
+- [x] 8-sample hermetic launch 正常 status 0 退出、产品网络服务与用户状态隔离；
+  `screen_locked=true`，不作为视觉、丝滑度、VoiceOver、能耗或 Release 性能结论。只读报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/current-island-panel-audit-v1-20260831/CURRENT_ISLAND_PANEL_AUDIT.md`；
+  before/after、同 viewport comparison、selected-state gallery、`SOURCE_SHA256.txt` 与 smoke 证据
+  留在同一 T7 audit root。
+- [ ] Question hover/press、真实选择 transition、Reduce Motion、键盘焦点与 VoiceOver 仍待 Mac 解锁；
+  Developer ID/公证、production Sparkle、商业 provider/政策、商标、Manus、远端 GitHub controls 与
+  clean tagged Release 继续保持独立 blocker。本轮未 commit、push、tag 或创建 Release。
+
+## v6.81 商业激活 hardened HTTPS transport foundation
+
+- [x] 新增默认关闭、provider-neutral 的 `CommercialActivationHTTPSTransport`；只接受 public-DNS
+  HTTPS、精确 `/v1/activate`、默认或 443 端口，拒绝 userinfo/query/fragment、IP、single-label、
+  reserved/local suffix、非法 label 与 percent-encoded path 绕过。未来 provider 必须在 App 内硬编码
+  经评审 endpoint；当前 `IslandApp` / `IslandAppLib` 零实例化，免费产品行为不变。
+- [x] 默认 session 为 ephemeral，关闭 proxy/cookie/cache/ambient credentials/connectivity waiting，
+  request/resource timeout 固定 10 秒、每 host 单连接且 redirect 固定拒绝。bounded activation code
+  只进入 octet-stream POST body，不进入 URL/header；临时 body buffer 在请求交接后清零。
+- [x] 成功 response 必须为相同 final URL、HTTP 200 与
+  `application/vnd.devisland.license`；declared/unknown-length 都在读取期间限制为 32 KiB，空 body
+  失败关闭。400/401/404、429、5xx 只映射既有低基数状态，provider body、raw network error、
+  endpoint 与 activation code 不进入公开错误；caller cancellation 保持 `CancellationError`。
+- [x] 10 项 focused regression 覆盖 endpoint、session、redirect、精确 request、streaming、状态映射、
+  declared/unknown oversize、边界长度、错误脱敏与 cancellation，全部通过；完整 Legal/Data Flow 与
+  Security gate 通过。shipping source 静态禁止 URLProtocol/XCTest/private signing key/logging，App
+  接线门禁保持零 production activation transport 实例。
+- [x] 当前源码权威图 **757 tests / 0 failures**；版本探针 20 轮 / 240 子进程、hermetic listener
+  10 轮、tmux 20 轮、Codex trust 5 轮与 sleep/wake 20 轮全部通过；`git diff --check` 通过。
+- [x] fresh Production App 的 6 个 Mach-O 均为 arm64+x86_64；依赖闭包、Production marker、
+  strict deep ad-hoc、法律/品牌资源与 keyless Sparkle 通过。主 executable 不含 HTTPS test
+  URLProtocol/fixture、测试 host/code/body/test-name，SHA-256：
+  `d5fa4be7ee359534fffef8fc72239949a9f64c458923e5051a3412cf6da3e4b4`。
+- [x] 8-sample hermetic launch 正常 status 0 退出、产品网络服务与用户状态隔离；
+  `screen_locked=true`，不作为视觉、丝滑度、VoiceOver、能耗或 Release 性能结论。只读报告：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/commercial-activation-https-transport-v1-20260831/COMMERCIAL_ACTIVATION_HTTPS_TRANSPORT_AUDIT.md`
+  （SHA-256 `7698c14b30d895c05184be3a79f9c4bdebb948275749f7d35317fdc3a9ae427e`）。
+- [ ] provider/seller、固定 production endpoint 与真实 sandbox/TLS/cancellation、一次性 code/abuse
+  controls、36 项商业政策、9 项商标、Developer ID/公证、production Sparkle、Manus 账号、远端
+  GitHub controls 与 clean tagged Release 继续保持独立 blocker。本轮未 commit、push、tag 或发布。
+
+## v6.82 商业激活 endpoint capability seal
+
+- [x] `CommercialActivationHTTPSTransport` 的 endpoint initializer 从公开 API 收回为
+  `IslandCore` module-internal；未来 provider 接入只能新增经源码评审、无 URL 参数的 factory，
+  并把唯一 endpoint 固定在源码中，不允许从 UI、preferences、environment、remote config 或其他
+  runtime input 构造。`IslandApp` / `IslandAppLib` 仍禁止实例化该 transport，免费产品行为不变。
+- [x] Security gate 同时禁止 transport 暴露 public initializer/public static factory，并禁止 shipping
+  App 模块构造它；从 fresh arm64 Release module 提取的 Swift Symbol Graph 机器检查确认该类型
+  **0 个 public initializer、0 个 public type factory**，而协议的 public
+  `exchange(activationCode:)` requirement 保持 **1 个**。
+- [x] URLProtocol 测试夹具新增实例绑定的 `stopHandler`；caller cancellation 回归在确认 request 已
+  进入底层 loader 后取消 task，并等待 `URLProtocol.stopLoading()` 的真实证据，再断言外层保持
+  `CancellationError`。因此本轮不仅证明结果被丢弃，也证明 in-flight URLSession request 被停止。
+- [x] Focused HTTPS suite **10 tests / 0 failures**；完整 Legal/Data Flow 与 Security gate 通过。
+  当前源码权威图 **757 tests / 0 failures**；版本探针 20 轮 / 240 子进程、hermetic listener
+  10 轮、tmux cleanup 20 轮、Codex trust 5 轮与 sleep/wake 20 轮全部通过。
+- [x] fresh Production App 的 6 个 Mach-O 均为 arm64+x86_64；依赖闭包、Production marker、
+  双语法律/品牌资源、keyless Sparkle 与 strict deep ad-hoc 通过。测试 URLProtocol/fixture、测试
+  host/code/body/test-name 均未进入 Production executable。冻结副本与 fresh build 主 executable
+  SHA-256 一致：`fcd3ba6a9334f6683112eab734786020c1a6110848b5380ba6e8d51f7393a7fd`。
+- [x] 8-sample hermetic launch 在隔离 App/user state 与关闭产品服务的条件下正常 status 0 退出；
+  launch-ready 约 1.049 秒，平均 CPU 2.05%，RSS 增长 128 KB。采样时屏幕虽已解锁，但没有执行
+  真实视觉交互，因此该 smoke 只作为启动存活与隔离证据，不作为丝滑度、VoiceOver、能耗或
+  Release 性能结论。审计根目录：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/commercial-activation-endpoint-seal-v1-20260831/`。
+- [ ] provider/seller、经评审的唯一 production endpoint、真实 provider sandbox/TLS/certificate/
+  cancellation、一次性 code 与 abuse controls、36 项商业政策、9 项商标、Developer ID/公证、
+  production Sparkle、Manus 账号、远端 GitHub controls 与 clean tagged Release 继续保持独立
+  blocker。本轮未 commit、push、tag 或发布。
+
+## v6.83 同 Bundle 单实例接管与解锁 Welcome 实证
+
+- [x] 解锁真实验收确认 Welcome Tour 简中三页无裁切、异常换行或状态跳变；01→02→03 切换完成，
+  右上关闭能回到同一 Settings owner。系统 Reduce Motion、Increase Contrast、Reduce
+  Transparency 与 grayscale 均保持关闭。`AppleKeyboardUIMode=0` 时 Tab 不遍历全部按钮属于当前
+  macOS 键盘导航设置，本轮未擅自更改系统设置或触发最终通知授权。
+- [x] 验收同时发现 T7 当前副本与 `/Applications` 旧副本可因相同 Bundle ID 并行运行，造成两个
+  Island、两个 status owner 与窗口路由混淆。新增 `AppSingleInstanceGate`：普通启动在任何窗口、
+  TaskStore/service 与 LaunchHealth 写入前按同 Bundle ID 的最低正 live PID 选出唯一 owner。
+- [x] newcomer 只有在 AppKit 成功激活精确 winner 后才 status 0 退出；winner 竞态消失时 fail open，
+  当前实例继续启动。yield 实例的 termination callback 保持 no-op。精确双 opt-in 的 hermetic
+  Production smoke 明确绕过 gate，不会激活或退出用户已安装实例。
+- [x] 5 项纯策略回归覆盖唯一实例、旧实例胜出、当前实例最老、terminated/非法候选与非法 current
+  PID；Performance 静态门禁固定 `NSWorkspace` 最小读取、最低 PID、activation-before-exit、
+  LaunchHealth/IslandWindow 前置顺序、yield cleanup 与 hermetic bypass。
+- [x] 两个 byte-identical Production 副本真实运行：第一个 PID 64999 唯一监听 `127.0.0.1:7824`；
+  第二副本两次分别以 PID 68011/68456 启动，341/365 ms 内正常 status 0 退出。之后仍精确一个
+  PID、一个 listener，第一副本的 `Dev Island / 暂无会话` AX surface 前后可交互。
+- [x] 在第一普通实例仍运行时，额外 Production hermetic PID 69078 成功绕过 gate，8-sample
+  隔离 smoke 正常 status 0 退出；第一 PID 与唯一 listener 随后保持不变。一次并行 fingerprint
+  比较中第一实例 SQLite 正常变化，不能归因于 newcomer，因此明确排除，不作为验收证据。
+- [x] 当前源码权威图 **762 tests / 0 failures**；版本探针 20 轮 / 240 子进程、hermetic listener
+  10 轮、tmux cleanup 20 轮、Codex trust 5 轮与 sleep/wake 20 轮全部通过；完整 Security、
+  Legal/Data Flow、Performance、Localization、Release Foundation 等聚合门禁通过。
+- [x] fresh warning-free Production App 的 6 个 Mach-O 均为 arm64+x86_64；依赖闭包、Production
+  marker、双语法律/品牌资源、keyless Sparkle 与 strict deep ad-hoc 通过。冻结副本主 executable
+  SHA-256：`f8c143debec73a87206d4703c65a9fc20616c5f1a11042a037f670d4a6a2d6f4`。
+  审计根目录：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/single-instance-v1-20260831/`。
+- [ ] 旧版本自身不包含本 gate，用户在新版运行时主动再次启动一个旧副本仍需由旧进程升级/退出
+  解决；同 Bundle ID 也不是安全身份。本轮未替换 `/Applications` 安装版，未 commit、push、
+  tag、notarize 或发布 Release；外部商业、签名、商标、GitHub 管理与真实 Agent blocker 保持开放。
+
+## v6.84 可信代码身份单实例仲裁与 Security bridge 实证
+
+- [x] 将 v6.83 仅按 Bundle ID 的可靠性 gate 收紧为代码身份仲裁：同 Bundle ID 只用于筛出至多
+  32 个候选；当前进程与动态 PID 都必须由 Security.framework 解析出精确 code identifier。非
+  ad-hoc 身份必须通过 Apple-generic anchor、精确 identifier 与证书 OU/Team ID 要求；只有签名
+  flags 明确标记为 ad-hoc 时才允许使用非空且完全相同的 CDHash。Team/hash 混合、无 Team 的非
+  ad-hoc、字段缺失或身份不一致全部忽略，不读取候选 path、argv、environment、window、preference、
+  task/session、credential 或 IPC。
+- [x] 只选择最低的旧可信 live PID；激活前立即重新解析其完整身份，并要求首次与二次结果连
+  CDHash 都一致，以发现退出、PID reuse 或身份漂移。只有该精确 PID 的 AppKit activation 成功，
+  newcomer 才 yield；候选过多、签名/生命周期异常或激活失败均 fail open，避免误激活伪 App 或让
+  两个实例同时退出。Repository 的精确双 opt-in hermetic Production smoke 继续显式绕过本 gate。
+- [x] 首个 v2 Production artifact 在 gate 源码仍调整且 SwiftUI 根 `Settings` Scene 可能先构造
+  `SettingsView` / `TaskStore.shared` 的情况下生成，已整体标记 **rejected / non-authoritative**，
+  不用于完成结论。v3 将根 Scene 收敛为 inert placeholder，真实 Settings 仍由通过 gate 后的
+  AppDelegate 惰性拥有；因此 yielding newcomer 在 Island、status item、listener、SQLite、Hook
+  authorization 与其他产品服务创建前退出。v3 是本节唯一 authoritative artifact。
+- [x] 代码身份 focused suite **23 tests / 0 failures**；当前源码权威图 **780 tests / 0 failures**，
+  完整 Security、Legal/Data Flow、Performance Analysis 与 `git diff --check` 通过。v3 Production
+  App 的 6 个 Mach-O 均为 arm64+x86_64，依赖闭包、Production marker 与 strict deep ad-hoc
+  签名通过；主 executable SHA-256：
+  `0605763b23990ffe2094435fac895bbf104151e8661823c96a9ca409145ef1f3`。本机 native arm64 解析的
+  App CDHash 为 `70b870d790f6ccd809df3ce54144982a57177b3e`。
+- [x] 两个 App tree manifest 完全相同且 native CDHash 一致的 ad-hoc 副本完成 **20/20** 真实
+  LaunchServices 仲裁；每轮 duplicate PID 均在 gate 后消失，始终只保留一个 App owner 与一个
+  `127.0.0.1:7824` listener，逐轮检查 owner 没有其他 network socket，duplicate private user root
+  没有 `tasks.sqlite`、`local-hook-authorization.header` 或其他产品状态。进程级耗时
+  min / median / p95 / max 为 **231 / 235.5 / 302 / 1155 ms**；首轮冷路径离群值保留在统计中，
+  未用平均值掩盖。
+- [x] 同 Bundle ID、显式 ad-hoc 但不同 CDHash 的最小 AppKit impostor 先运行后，真实 v3 App 仍
+  启动并成为唯一 `127.0.0.1:7824` owner；impostor 全程存活、零 network socket，activation 回调
+  保持 **0→0**，且真实 App 启动没有向它发送 termination。该结果证明本机 native Security bridge
+  不把 Bundle ID 冒充者当可信 owner；它不等同于跨 Team、Developer ID 或恶意同用户进程的完整
+  平台安全认证。
+- [x] authoritative 只读证据位于
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/single-instance-identity-v3-20260831/live-identity-matrix-v6/`；
+  `SINGLE_INSTANCE_IDENTITY_AUDIT.txt`、20 轮 CSV 与 App tree manifest 的 SHA-256 均复验通过。
+  屏幕从 initial 到 final 均为 locked，因此本轮只证明进程/签名/listener/state 边界，不证明真实
+  Island、焦点、Dock、AX、丝滑度或视觉交互。普通 owner 的 `CFFIXED_USER_HOME` 不隔离 login
+  Keychain；harness 没有读取 key 内容且每次网络检查只看到 loopback listener，但该矩阵仍不能称为
+  hermetic。LaunchServices 启动的 App 真 exit code 不可观测，故结论严格写为 PID disappeared，
+  不把 launcher status 或进程消失虚构成 App `status 0`。
+- [ ] 当前实证是 owner 已 ready 后再启动 duplicate，不覆盖两个副本同时 cold launch 时的真实
+  LaunchServices 注册竞态；首轮 1155 ms 也只作为锁屏进程级样本。Universal 闭包虽已通过，本机
+  只实测 native arm64 CDHash，尚未在 Rosetta/x86_64 下复验同副本身份。相同 Team 跨版本仍必须用
+  两个真实 Developer ID artifact 验收，并继续等待公证/Gatekeeper。旧版本自身没有 gate，无法由
+  新版本安全强退；若它在新版后主动启动仍需升级或手动退出。本轮未替换 `/Applications`，未
+  commit、push、tag、notarize 或发布 Release；商业 provider、政策、商标、production Sparkle、
+  Manus、远端 GitHub controls 与 clean tagged Release 继续保持独立 blocker。
+
+## v6.85 Manus Webhook trust generation 与 cleanup transaction
+
+- [x] replay window 不再跨 callback/key 代际污染：trust tuple 固定为 exact external URL 与
+  Security.framework canonical RSA bytes 的 SHA-256。RSA key 必须至少 2,048-bit；同一 key 的
+  PKCS#1/SPKI PEM 等价表示保持窗口，URL 或真实 key 变化才以原 capacity 原子 reset。非法 URL、
+  非法/弱 key 全部在提交前失败，旧 authenticator、URL、generation 与 replay state 不变。
+- [x] 每次验签结果携带当时的 private generation UUID。真实 HTTP 请求若在 authentication 后暂停、
+  期间发生 trust rotation，恢复时返回 `staleTrustGeneration` / 401，零 delivery 且不把旧代
+  `event_id` 写入新窗口；随后相同 ID 经新 tuple 验证仍能首次 delivery。
+- [x] Webhook ID 从单值升级为 cleanup 集合：接受 registration 后立即持久化 authoritative
+  `webhookIds`，同时兼容 legacy `webhookId`；初始化恢复、去重，多个交错 accepted ID 均保留。
+  start/wake/replacement 必须先删除全部遗留 ID，失败时禁止建立新的公网 callback。
+- [x] 每个 ID 的 stop/wake/heartbeat/late-registration 删除共享一个 operation；process 先停止，
+  provider delete 只有 HTTP 2xx 且 JSON `ok == true` 才确认。`ok:false`、缺失/非法 JSON、HTTP 或
+  transport 失败保留 ID 并返回 `webhookCleanupFailed`；heartbeat 不重建，转为 polling-only。
+- [x] credential-releasing stop 先停止每个 launch 已附着的 process，并只在 bounded
+  `launchCancellationGrace` 内等待 in-flight registration；若 cancellation-unaware 请求仍无结果，则
+  保留 credential、retained launch owner 与 durable ambiguity marker 并返回 cleanup failure。晚到 ID
+  先持久化再 rollback；cleanup failure 优先于 lifecycle superseded 返回，单次 stop 不做无界重试，
+  后续 start/stop 可恢复。只有 credential release 成功时，registration/deletion cleanup operations、
+  authoritative ledger 与 ambiguity markers 才必须全部清空。
+  stop 在首个 await 前快照 entry-time deletion operations/attempt sequence，按 active transport →
+  入口删除 → registration → late deletion → 本轮未尝试 persisted sibling ID 的顺序 drain；
+  一个 joined ID 失败不会压制其他 ID，也不会跳过入口时已在进行的删除而提前
+  释放 credential。即使并发路径丢失具体 error，authoritative ledger 只要非空，stop 就必须
+  fail closed，绝不能成功释放 credential。
+- [x] `TaskStore.clearAPIKey()` 改为 delete-before-credential-release：先 detach/停 poller/移除 Manus
+  snapshot，在 Keychain credential 仍存在时 await tunnel cleanup。失败则 reattach cleanup owner、
+  保留 key 与原 API 状态，进入固定 `Remote callback cleanup pending; retry disconnect`；下一次
+  Disconnect 重试成功后才删除 Keychain 并显示 Not Configured。
+- [x] `configureAPIKey()` 会先 join 正在进行的 Disconnect removal；替换已有 key 时，candidate 只能
+  先验证，必须用旧 manager / credential 完成旧 Webhook cleanup 后才可 Keychain save。失败保留旧
+  key，candidate 零持久写入。realtime gate 关闭的 polling-only 生命周期也持有不开放 listener 的
+  cleanup-only manager，从 shipping preferences 恢复 ledger，供 Disconnect 或换 key 清理。
+- [x] 旧 callback cleanup 成功后，替换流程会先 detach 旧 tunnel/poller/connectors、移除 Manus
+  snapshot 并发布 disconnected，再保存 candidate。Keychain save 失败时 read back 真实持久
+  状态，不启动 candidate，也不 resurrect 旧服务；有 key/无 key/read-back 失败分别收敛到
+  valid/notConfigured/保守旧状态，后续 Configure/Disconnect 可确定性恢复。
+- [x] 正常 Quit 不再 fire-and-forget：`TaskStore.shutdown()` 先同步设 terminal flag、cancel/resume
+  action continuations、detach ingress/observers/services，再由一个 memoized task 按序 join existing
+  Disconnect、sleep suspension、poller、tunnel、local start/serve stop 与 retained bootstrap。每个
+  bootstrap/storage/provider await 后都有 terminal guard，Quit 后 Configure/Disconnect/Wake/retry/观察器不得
+  重启服务。并发调用及调用者 cancellation 均不会拆分/取消该 single-flight，结果只有
+  `completed` / `cleanupPending`。
+- [x] shutdown 也覆盖“Disconnect operation 已登记但 cleanup body 尚未运行”与“local retry
+  已入队但尚未执行”两个窗口：前者被 terminal generation supersede/join 且不得在 Quit 后
+  删 Keychain；后者被保留并先 join，再 stop 具体 local server，不得在 stop 后 restart。
+- [x] `PollingFallback.stop()` 现在 cancel 后 join cancellation-unaware poll；LocalHookServer 会 join
+  readiness + serve tasks，WebhookServer 会 join serve task。回归后原 loopback 端口可立即重绑，
+  晚到 poll snapshot 不能再发布。PollingFallback 对 current/retiring poll operations 使用 token 所有权，
+  LocalHookServer 对 current/retiring serve + readiness operations 使用同样边界；start/restart/
+  auto-retry 只能 retire 旧句柄，stop 必须 snapshot/cancel/await 全部当前与已退役 operations，
+  不再只 join 最新 generation。
+- [x] AppKit 普通 owner 使用 `.terminateLater` 和独立两秒 hard timeout；cleanup/timeout 竞争
+  同一 private token 并 finish-once，不会等待未响应的 task-group child。remote cleanup 失败或
+  超时都允许退出，但 credential + authoritative `webhookIds` ledger 继续保留供下次启动恢复。
+  yielded duplicate、Performance QA、hermetic Production smoke 直接 `.terminateNow`，不调度 cleanup/
+  timeout/reply，不因退出路径构造 `TaskStore.shared`；`applicationWillTerminate` 不二次 shutdown。
+- [x] 定向回归源码覆盖 canonical generation、弱 key、invalid candidate 原子性、旧代请求交错、
+  遗留/重叠多 ID、cleanup-only ledger、late registration、heartbeat failure、`ok:false`、credential
+  保留/重试、replacement key 零提前覆盖/save-failure read-back，sibling-ID 删除与 entry-time
+  deletion join，以及 shutdown single-flight/caller cancellation/Disconnect/sleep/bootstrap 顺序、joinable stop/端口
+  重绑、AppKit finish-once/三 bypass。所有 fixture 仅使用 loopback、合成 RSA、隔离 UserDefaults 与
+  进程内 Keychain backend。
+- [x] 本轮两次 focused 验证共 **146 checks PASS**：Quit/Manus/listener/poller/AppTermination 等
+  8 suites 为 118/118，ManusAPIClient + connection presentation 补充为 28/28；
+  `swift build --product IslandApp` 同时 PASS。这只是定向回归与开发构建证据，不等于
+  authoritative full suite、Universal Production artifact 或 Release 验收。
+- [x] v6.85 当时的 authoritative full suite **822 tests / 0 failures**；Security、Legal/Data Flow、
+  Performance Analysis 与 `git diff --check` 全部通过。版本探针 20 轮 / 240 子进程、hermetic
+  listener 10 轮、tmux cleanup 20 轮、Codex Hook trust 5 轮与 sleep/wake 20 轮均通过。
+- [x] fresh warning-free Universal Production App 的 6 个 Mach-O 均为 arm64+x86_64；依赖闭包、
+  Production marker、双语法律/品牌资源、keyless Sparkle、全闭包无 `get-task-allow` 与 strict deep
+  ad-hoc 签名通过。主 executable SHA-256：
+  `081a1c123897f167327e0d1a6cf33ae5d28cf9f40d56dd75ccd4cc517f30cca9`。
+- [x] 8-sample hermetic Production launch 在隔离 App/user state、关闭产品服务的条件下正常
+  status 0 退出；冻结副本与所选 executable SHA-256 一致，launch-ready 约 1.446 秒。全程
+  `locked → locked`，因此仅作为启动、隔离与正常退出证据，不作为视觉、焦点、VoiceOver、动画
+  丝滑度、能耗或真实性能结论。审计根目录：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/v6.85-quit-20260831/`。
+- [x] 上述 v6.85 的 **822 tests / 0 failures**、Universal Production artifact、主 executable
+  SHA-256 与审计根只对应当时的源码快照；后续 strict-join 源码改动已经 supersede 这些证据，
+  不得把它们当作当前 working tree 的 full-suite、artifact 或 build-hash 验收。
+
+## 2026-08-31 Tunnel / Local Hook strict-join follow-up
+
+- [x] Tunnel heartbeat 改为 tokenized current/retiring ownership；stop、suspend、wake 与 successor
+  start 都先 retire current heartbeat、cancel/stop launch，再 strict join retiring heartbeat，之后才
+  drain 可能由 heartbeat 晚到发布的 retained lifecycle callbacks。successor 在这些 callback 完成前
+  不得启动或提升新 transport。
+- [x] lifecycle callback 自身也成为 retained operation。TaskLocal callback token 只切断 callback
+  调用 `stop()` 时的自等待边；外部 `stop()` 无论 cleanup 成功或抛错，都必须先 strict join callback
+  才返回，因此 callback ↔ stop single-flight 不形成环，也不会把 error path 变成提前返回路径。
+- [x] retained launch operation 在 `process.start()` 前持有局部 cloudflared process。registration
+  阻塞时 stop 可立即停止该 process，仅在 bounded `launchCancellationGrace` 内等待；超时则保留
+  credential、launch owner 与 ambiguity marker，fail closed 返回 cleanup failure。若晚到 accepted
+  ID，则先持久化 authoritative ID，再执行 compensating delete，绝不把 obsolete transport 提升为
+  active；只有成功 credential release 才要求 registration/deletion cleanup operations、ledger 与
+  marker 全部清空。
+- [x] registration 请求跨网络前先持久化 ambiguity marker。409 Conflict 与 429/rate-limit 均按
+  outcome unknown 保守处理；marker 跨重启保留，阻止 credential release 与重叠 registration，直到
+  结果可被证明并完成补偿清理。
+- [x] Local Hook delivery 对每个 source 使用 tokenized current/retiring drain ownership。stop 先停止
+  接收，清空队列并让 queued action barrier 返回 `false`，再 cancel/join 所有 cancellation-unaware
+  drains；superseded generation 也不能被遗忘或在 stop 后发布事件。
+- [x] delivery callback 内部 stop 通过 TaskLocal identity 精确 self-exclude；真实 Hummingbird listener
+  使用 graceful shutdown，让当前 action HTTP 请求仍可返回 `{}` 并释放端口。被 self-exclude 的
+  callback、delivery 与 server generation 继续 retained，后续外部 stop 必须全部 strict join。
+  TaskStore 的生产 App-Quit listener cleanup 来自 callback 之外的独立清理任务，因此走 external
+  strict-join 路径。
+- [x] 该 strict-join 阶段的初始验证证据仅为：`TunnelManagerTests` **32/32 PASS**；同一 suite 的 `--skip-build`
+  **连续 10/10 轮 PASS（每轮 32/32）**；`TaskStoreManusLifecycleTests` **24/24 PASS**；Local Hook
+  scoped suites **69 tests / 0 failures**；5 条 ownership/self-stop 竞态测试 **连续 20 轮 PASS**；
+  Tunnel 与 Local Hook 两边 scoped `git diff --check` 均 PASS。
+- [x] 该 strict-join 阶段当时的 working tree 已完成新的 authoritative wrapper：**836 tests / 0 failures**；
+  local version probe 20 轮 / 240 子进程、hermetic listener 10 轮、tmux cleanup 20 轮、Codex Hook
+  trust 5 轮与 sleep/wake 20 轮全部 PASS。Security、Legal/Data Flow、Performance Analysis、
+  Localization、Release Foundation、Repository Script Syntax 与全仓 `git diff --check` 也全部通过。
+- [x] 以独立 T7 SwiftPM scratch 重新构建 fresh warning-free Universal Production App。6 个 Mach-O
+  均精确为 arm64+x86_64；依赖闭包、Production marker、双语法律/本地化/品牌资源、34 份 license、
+  keyless Sparkle、全闭包无 `get-task-allow` 与 strict deep ad-hoc 签名通过。主 executable SHA-256：
+  `1f94620c17c9387c09711bc9c4681a1971094e4c48daf671a195da81a263c609`。
+- [x] 精确 `production-launch-smoke` 完成 8 样本：冻结副本与所选 executable hash 一致，产品服务、
+  App snapshot 与 user home 隔离，AppKit 正常 `status 0` 退出；launch-ready 约 1.550 秒。屏幕全程
+  `locked → locked`，因此该结果只证明启动、隔离与正常退出，不作为视觉、焦点、VoiceOver、动画
+  丝滑度、能耗或真实性能结论。当前审计根目录：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/v6.85-strict-join-20260831/`。
+- [ ] `ManusRealtimeTrust.liveV2AcceptanceComplete` 继续固定为 `false`。官方
+  `GET /v2/webhook.list` 已接入恢复路径：只有 active、精确 callback digest、
+  `startedAt ± 300s` 且本地 marker 唯一可归属时才绑定 ID，并在首次删除前
+  原子持久化。空 inventory、枚举失败、多 marker 歧义、inactive/越界条目或损坏状态
+  都保留 durable marker 并 fail closed。由于尚无真实账号的 create → signed delivery →
+  list/delete 以及 read-after-create/read-after-delete 一致性证据，公网 realtime 仍不得
+  宣称商用或生成 `ACCEPTED` 证据。Developer ID/公证、production Sparkle、商业/商标与
+  clean tagged Release 仍是独立 blocker。本轮未替换 `/Applications`，未 commit、push、tag、
+  notarize 或发布。
+
+## 2026-08-31 webhook.list shared-waiter terminal-race follow-up
+
+- [x] 重复 Tunnel soak 在第 21 次独立进程重现了真实竞态：`start()` 与 credential-releasing
+  `stop()` 共享同一次 account-level list task，但不共享 list 返回后的“绑定 ID → 删除”
+  调用栈。当 start waiter 先恢复时，它会持久化 recovered ID 并创建 delete task；stop 的旧
+  unbound snapshot 正确拒绝重复归属，却在未 join 该 late delete 时进入 terminal gate，偶发
+  `persistedWebhookIDsRemain`。
+- [x] `performStop` 现在会在 reconciliation 后、server teardown 与 credential-release terminal gate 前，
+  动态 final-drain 并 join 当前仍保留的每个 `webhookDeletionOperations` token。它不再按旧
+  `attemptedWebhookIDs` 排除同 ID 的替代 token；同时只等待已经发布的 provider operation，
+  不遍历 `knownWebhookIDs` 发起第二次删除，因此不破坏“同一次 stop 不重试已失败 provider
+  call”的边界。
+- [x] 新回归用 inert test hook 精确编排：stop 已 join list → list 同时返回但暂停 stop
+  → start 先 bind 并创建 blocked delete → stop 跳过 stale unbound row → final drain 成为第二个
+  delete waiter → provider delete 仅执行一次。另一条独立回归先让 stop 删除 seeded known ID，
+  再让 stale list waiter 为相同 ID 发布替代 token；waiter token 精确为 `token1, token2, token2`，
+  provider delete 精确两次而不是三次，证明 final drain 是 join 新 ownership 而不是重试 ledger。
+- [x] 定向 Tunnel suite **49/49 PASS**；首次-ID race 与同-ID替代-token race 均完成独立 Swift
+  测试进程 **100/100 PASS**。Security gate 另固定 reconciliation → token drain → server teardown
+  顺序，并拒绝 final drain 出现 stale ID 过滤或 `deleteKnownWebhook` ledger 重试。
+- [x] 修复后的 authoritative wrapper 已重跑为 **885 tests / 0 failures**；
+  local version probe 20 轮 / 240 子进程、hermetic listener 10 轮、tmux cleanup 20 轮、
+  Codex Hook trust 5 轮与 sleep/wake 20 轮全部 PASS。
+- [x] 从最终源码使用独立 T7 SwiftPM scratch 全新构建 keyless Universal Production App；6 个
+  Mach-O 均为 arm64+x86_64，依赖闭包、Production marker、双语法律/品牌资源、34 份 license、
+  全闭包无 `get-task-allow` 与 strict deep ad-hoc 通过。主 executable SHA-256：
+  `aff6003ea8e14935144a9d69935e5dd8168b922b3e0240881c4352902ab0781f`。
+- [x] 锁屏 `production-launch-smoke` 完成 8/8 样本、产品服务与用户状态隔离、AppKit 正常
+  status 0 退出，冻结副本与所选 executable hash 一致；`locked → locked` 只证明 loader、存活、
+  隔离与正常退出，不作为视觉、焦点、VoiceOver、动效丝滑度、能耗或真实性能结论。最终证据根：
+  `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/v6.86-final-20260831/`。
+- [ ] `ManusRealtimeTrust.liveV2AcceptanceComplete=false` 继续保持。真实 Manus 账号 create →
+  signed delivery → list/delete 及 read-after-create/read-after-delete 一致性、当前 Codex Allow Once /
+  Deny 精确候选、Developer ID/公证/stapling、production Sparkle、商业/商标审批、远端 GitHub
+  controls 与 clean tagged Release 仍是独立 blocker；锁屏也未完成视觉、焦点、VoiceOver 和动效
+  实机验收。本轮未替换 `/Applications`，未 commit、push、tag、notarize 或发布。

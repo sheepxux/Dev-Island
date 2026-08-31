@@ -167,11 +167,14 @@ final class CodexHookTrustProbeTests: XCTestCase {
         XCTAssertEqual(
             CodexHookTrustProbe(executableURL: executable).probeCurrentInstall(
                 cwd: temporaryDirectory,
-                timeout: 3
+                timeout: processFixtureSchedulingBudget
             ),
             .invalidResponse
         )
-        XCTAssertLessThan(Date().timeIntervalSince(started), 2.5)
+        XCTAssertLessThan(
+            Date().timeIntervalSince(started),
+            processFixtureSchedulingBudget + 0.5
+        )
     }
 
     func testClosedChildStdinCannotTerminateTheProbeWithSIGPIPE() throws {

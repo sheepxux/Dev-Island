@@ -13,13 +13,33 @@ fail() {
 VERIFIER="$ROOT/scripts/release/verify-release-assets.sh"
 METADATA_VALIDATOR="$ROOT/scripts/release/validate-published-release-metadata.rb"
 INTEGRITY_GENERATOR="$ROOT/scripts/release/generate-release-integrity-manifest.sh"
+SPARKLE_SIGN_TOOL="$ROOT/.build/artifacts/sparkle/Sparkle/bin/sign_update"
+SPARKLE_SIGNATURE_VERIFIER="$ROOT/scripts/release/verify-sparkle-ed25519-signatures.swift"
 VERSION="$(cat VERSION)"
 TAG="v${VERSION}"
 SOURCE_REVISION="$(printf 'a%.0s' {1..40})"
 
+# RFC 8032 test-vector seed/public keys. These are public fixture material,
+# never production credentials. The second public key is intentionally
+# unrelated so the extracted-App trust binding can be attacked deterministically.
+FIXTURE_PRIVATE_KEY="$(
+  printf '%s' '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60' \
+    | xxd -r -p | base64 | tr -d '\n'
+)"
+FIXTURE_PUBLIC_KEY='11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo='
+MISMATCHED_PUBLIC_KEY='PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw='
+UNRELATED_SIGNATURE="$(
+  printf '%s' 'Dev Island deterministic unrelated Ed25519 signature fixture' \
+    | shasum -a 512 | awk '{print $1}' | xxd -r -p | base64 | tr -d '\n'
+)"
+
 test -x "$VERIFIER" || fail "Release asset verifier is missing or not executable"
 test -x "$METADATA_VALIDATOR" || fail "Published Release metadata validator is missing or not executable"
 test -x "$INTEGRITY_GENERATOR" || fail "Release integrity generator is missing or not executable"
+test -x "$SPARKLE_SIGN_TOOL" && test ! -L "$SPARKLE_SIGN_TOOL" \
+  || fail "Pinned Sparkle sign_update fixture dependency is missing or unsafe"
+test -f "$SPARKLE_SIGNATURE_VERIFIER" && test ! -L "$SPARKLE_SIGNATURE_VERIFIER" \
+  || fail "CryptoKit Sparkle verifier is missing or unsafe"
 
 TEMP_DIR="$(mktemp -d -t dev-island-release-verifier)"
 cleanup() {
@@ -30,21 +50,50 @@ cleanup() {
 }
 trap cleanup EXIT
 
-VALID="$TEMP_DIR/valid"
-mkdir -p "$VALID"
-printf 'notarized-dmg-fixture' >"$VALID/Dev-Island.dmg"
-cp "$VALID/Dev-Island.dmg" "$VALID/Dev-Island-${VERSION}.dmg"
-printf 'notarized-zip-fixture' >"$VALID/Dev-Island.zip"
-cp "$VALID/Dev-Island.zip" "$VALID/Dev-Island-${VERSION}.zip"
+write_fixture_archive() {
+  local output="$1"
+  local public_key="$2"
+  local fixture_root
+  fixture_root="$(mktemp -d "$TEMP_DIR/archive-app.XXXXXX")"
+  mkdir -p "$fixture_root/Dev Island.app/Contents/MacOS"
+  /usr/bin/plutil -create xml1 "$fixture_root/Dev Island.app/Contents/Info.plist"
+  /usr/bin/plutil -insert CFBundleIdentifier -string app.devisland.Island \
+    "$fixture_root/Dev Island.app/Contents/Info.plist"
+  /usr/bin/plutil -insert CFBundleShortVersionString -string "$VERSION" \
+    "$fixture_root/Dev Island.app/Contents/Info.plist"
+  /usr/bin/plutil -insert CFBundleVersion -string "$VERSION" \
+    "$fixture_root/Dev Island.app/Contents/Info.plist"
+  /usr/bin/plutil -insert SUPublicEDKey -string "$public_key" \
+    "$fixture_root/Dev Island.app/Contents/Info.plist"
+  printf 'fixture-executable' >"$fixture_root/Dev Island.app/Contents/MacOS/IslandApp"
+  chmod 0755 "$fixture_root/Dev Island.app/Contents/MacOS/IslandApp"
+  ditto -c -k --keepParent "$fixture_root/Dev Island.app" "$output"
+}
 
-ZIP_SIZE="$(stat -f '%z' "$VALID/Dev-Island.zip")"
-SIGNATURE="$(printf '0%.0s' {1..64} | base64 | tr -d '\n')"
-ruby - "$VALID/appcast.xml" "$VERSION" "$ZIP_SIZE" "$SIGNATURE" <<'RUBY'
+sign_fixture_file() {
+  local input="$1"
+  printf '%s' "$FIXTURE_PRIVATE_KEY" \
+    | env -i \
+        PATH='/usr/bin:/bin' \
+        LANG='C' \
+        LC_ALL='C' \
+        "$SPARKLE_SIGN_TOOL" \
+          --ed-key-file - \
+          -p \
+          "$input"
+}
+
+write_signed_appcast() {
+  local directory="$1"
+  local archive="$directory/Dev-Island-${VERSION}.zip"
+  local zip_size
+  local archive_signature
+  zip_size="$(stat -f '%z' "$archive")"
+  archive_signature="$(sign_fixture_file "$archive")"
+  ruby - "$directory/appcast.xml" "$VERSION" "$zip_size" "$archive_signature" <<'RUBY'
 path, version, zip_size, signature = ARGV
 payload = <<~XML
-  <?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
-  IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
-  --><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <?xml version="1.0" standalone="yes"?><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
       <channel>
           <title>Dev Island</title>
           <item>
@@ -58,9 +107,26 @@ payload = <<~XML
       </channel>
   </rss>
 XML
-feed_signature = "<!-- sparkle-signatures:\nedSignature: #{signature}\nlength: #{payload.bytesize}\n-->\n"
-File.binwrite(path, payload + feed_signature)
+File.binwrite(path, payload)
 RUBY
+  printf '%s' "$FIXTURE_PRIVATE_KEY" \
+    | env -i \
+        PATH='/usr/bin:/bin' \
+        LANG='C' \
+        LC_ALL='C' \
+        "$SPARKLE_SIGN_TOOL" \
+          --ed-key-file - \
+          "$directory/appcast.xml" \
+          >/dev/null
+}
+
+VALID="$TEMP_DIR/valid"
+mkdir -p "$VALID"
+printf 'notarized-dmg-fixture' >"$VALID/Dev-Island.dmg"
+cp "$VALID/Dev-Island.dmg" "$VALID/Dev-Island-${VERSION}.dmg"
+write_fixture_archive "$VALID/Dev-Island.zip" "$FIXTURE_PUBLIC_KEY"
+cp "$VALID/Dev-Island.zip" "$VALID/Dev-Island-${VERSION}.zip"
+write_signed_appcast "$VALID"
 
 ruby -r json -r uri - "$VALID/Dev-Island.spdx.json" "$VERSION" "$SOURCE_REVISION" \
   "$ROOT/scripts/assets/agent-logos/manifest.json" <<'RUBY'
@@ -271,8 +337,10 @@ expect_failure() {
     --source-revision "$SOURCE_REVISION" >"$output" 2>&1; then
     fail "Negative Release fixture unexpectedly passed: $name"
   fi
-  rg -Fq "$expected_message" "$output" \
-    || fail "Negative fixture '$name' failed for the wrong reason; expected: $expected_message"
+  if ! rg -Fq "$expected_message" "$output"; then
+    sed -n '1,8p' "$output" >&2
+    fail "Negative fixture '$name' failed for the wrong reason; expected: $expected_message"
+  fi
 }
 
 CASE_DIR="$(make_case missing-asset)"
@@ -353,6 +421,20 @@ repair_feed_length "$CASE_DIR/appcast.xml"
 refresh_manifest "$CASE_DIR"
 expect_failure appcast-archive-signature "archive Ed25519 signature is malformed" "$CASE_DIR"
 
+CASE_DIR="$(make_case unrelated-archive-signature)"
+ruby - "$CASE_DIR/appcast.xml" "$UNRELATED_SIGNATURE" <<'RUBY'
+path, signature = ARGV
+contents = File.binread(path).sub(
+  /sparkle:edSignature="[^"]+"/,
+  "sparkle:edSignature=\"#{signature}\""
+)
+File.binwrite(path, contents)
+RUBY
+refresh_manifest "$CASE_DIR"
+expect_failure unrelated-archive-signature \
+  "Sparkle archive Ed25519 signature verification failed" \
+  "$CASE_DIR"
+
 CASE_DIR="$(make_case appcast-feed-signature)"
 ruby - "$CASE_DIR/appcast.xml" <<'RUBY'
 path = ARGV.fetch(0)
@@ -361,6 +443,47 @@ File.binwrite(path, contents)
 RUBY
 refresh_manifest "$CASE_DIR"
 expect_failure appcast-feed-signature "signed-feed block is missing" "$CASE_DIR"
+
+CASE_DIR="$(make_case unrelated-feed-signature)"
+ruby - "$CASE_DIR/appcast.xml" "$UNRELATED_SIGNATURE" <<'RUBY'
+path, signature = ARGV
+contents = File.binread(path).sub(
+  /(<!-- sparkle-signatures:\nedSignature: )[A-Za-z0-9+\/=]+(\nlength:)/,
+  "\\1#{signature}\\2"
+)
+File.binwrite(path, contents)
+RUBY
+refresh_manifest "$CASE_DIR"
+expect_failure unrelated-feed-signature \
+  "Sparkle feed Ed25519 signature verification failed" \
+  "$CASE_DIR"
+
+CASE_DIR="$(make_case tampered-signed-feed-prefix)"
+ruby - "$CASE_DIR/appcast.xml" <<'RUBY'
+path = ARGV.fetch(0)
+contents = File.binread(path).sub(
+  "<link>https://devisland.app</link>",
+  "<link>https://devisland.apq</link>"
+)
+File.binwrite(path, contents)
+RUBY
+refresh_manifest "$CASE_DIR"
+expect_failure tampered-signed-feed-prefix \
+  "Sparkle feed Ed25519 signature verification failed" \
+  "$CASE_DIR"
+
+CASE_DIR="$(make_case mismatched-embedded-public-key)"
+rm -f "$CASE_DIR/Dev-Island.zip" "$CASE_DIR/Dev-Island-${VERSION}.zip"
+write_fixture_archive "$CASE_DIR/Dev-Island.zip" "$MISMATCHED_PUBLIC_KEY"
+cp "$CASE_DIR/Dev-Island.zip" "$CASE_DIR/Dev-Island-${VERSION}.zip"
+write_signed_appcast "$CASE_DIR"
+MISMATCHED_ZIP_SHA="$(shasum -a 256 "$CASE_DIR/Dev-Island.zip" | awk '{print $1}')"
+VERSION="$VERSION" SHA256="$MISMATCHED_ZIP_SHA" OUTPUT="$CASE_DIR/dev-island.rb" \
+  ./scripts/render-homebrew-cask.sh >/dev/null
+refresh_manifest "$CASE_DIR"
+expect_failure mismatched-embedded-public-key \
+  "Sparkle archive Ed25519 signature verification failed" \
+  "$CASE_DIR"
 
 CASE_DIR="$(make_case malformed-sbom)"
 printf '{not-json}\n' >"$CASE_DIR/Dev-Island.spdx.json"

@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BRAND_ASSET_MANIFEST="$ROOT/scripts/assets/agent-logos/manifest.json"
 VERSION_VALIDATOR="$ROOT/scripts/release/validate-product-version.rb"
+SPARKLE_SIGNATURE_VERIFIER="$ROOT/scripts/release/verify-sparkle-ed25519-signatures.swift"
 
 fail() {
   echo "error: $1" >&2
@@ -59,6 +60,8 @@ fi
   || fail "asset directory must be a regular non-symlink directory"
 [[ -f "$BRAND_ASSET_MANIFEST" && ! -L "$BRAND_ASSET_MANIFEST" ]] \
   || fail "reviewed brand asset manifest is missing or unsafe"
+[[ -f "$SPARKLE_SIGNATURE_VERIFIER" && ! -L "$SPARKLE_SIGNATURE_VERIFIER" ]] \
+  || fail "Sparkle Ed25519 signature verifier is missing or unsafe"
 ASSET_DIR="$(cd "$ASSET_DIR" && pwd -P)"
 
 EXPECTED_ASSETS=(
@@ -123,8 +126,46 @@ cmp -s "$ASSET_DIR/Dev-Island.dmg" "$ASSET_DIR/Dev-Island-${VERSION}.dmg" \
 cmp -s "$ASSET_DIR/Dev-Island.zip" "$ASSET_DIR/Dev-Island-${VERSION}.zip" \
   || fail "stable and versioned ZIP bytes differ"
 
+SIGNATURE_TEMP_ROOT="$(mktemp -d -t dev-island-release-signatures)"
+case "$SIGNATURE_TEMP_ROOT" in
+  /private/var/folders/*/T/dev-island-release-signatures.*|/var/folders/*/T/dev-island-release-signatures.*|/tmp/dev-island-release-signatures.*) ;;
+  *) fail "temporary signature-verification directory is unsafe" ;;
+esac
+chmod 0700 "$SIGNATURE_TEMP_ROOT"
+cleanup_signature_temp() {
+  case "$SIGNATURE_TEMP_ROOT" in
+    /private/var/folders/*/T/dev-island-release-signatures.*|/var/folders/*/T/dev-island-release-signatures.*|/tmp/dev-island-release-signatures.*)
+      rm -rf "$SIGNATURE_TEMP_ROOT"
+      ;;
+  esac
+}
+trap cleanup_signature_temp EXIT INT TERM
+
+# Bind verification to the key users will actually trust. Extract only the
+# exact Info.plist entry rather than expanding an untrusted archive tree; the
+# output is private and bounded before plutil reads SUPublicEDKey.
+APP_INFO_PLIST="$SIGNATURE_TEMP_ROOT/Info.plist"
+(
+  umask 077
+  ulimit -f 2048
+  /usr/bin/unzip -p \
+    "$ASSET_DIR/Dev-Island-${VERSION}.zip" \
+    'Dev Island.app/Contents/Info.plist' \
+    >"$APP_INFO_PLIST" 2>/dev/null
+) || fail "signed App Info.plist could not be extracted safely from the versioned ZIP"
+check_maximum_size "$APP_INFO_PLIST" 1048576
+if ! SPARKLE_PUBLIC_KEY="$(
+  /usr/bin/plutil -extract SUPublicEDKey raw -o - "$APP_INFO_PLIST" 2>/dev/null
+)"; then
+  fail "signed App does not contain a readable SUPublicEDKey"
+fi
+[[ "$SPARKLE_PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] \
+  || fail "signed App SUPublicEDKey is not canonical base64 for 32 bytes"
+
 ASSET_DIR="$ASSET_DIR" VERSION="$VERSION" SOURCE_REVISION="$SOURCE_REVISION" \
   BRAND_ASSET_MANIFEST="$BRAND_ASSET_MANIFEST" \
+  SPARKLE_SIGNATURE_VERIFIER="$SPARKLE_SIGNATURE_VERIFIER" \
+  SPARKLE_PUBLIC_KEY="$SPARKLE_PUBLIC_KEY" \
   ruby <<'RUBY'
 require "base64"
 require "digest"
@@ -141,6 +182,8 @@ directory = ENV.fetch("ASSET_DIR")
 version = ENV.fetch("VERSION")
 expected_source_revision = ENV.fetch("SOURCE_REVISION")
 brand_asset_manifest_path = ENV.fetch("BRAND_ASSET_MANIFEST")
+signature_verifier_path = ENV.fetch("SPARKLE_SIGNATURE_VERIFIER")
+sparkle_public_key = ENV.fetch("SPARKLE_PUBLIC_KEY")
 path = ->(name) { File.join(directory, name) }
 expected_artifacts = [
   "Dev-Island.dmg",
@@ -235,6 +278,22 @@ end
 fail("appcast feed Ed25519 signature must decode to 64 bytes") unless decoded_feed_signature.bytesize == 64
 feed_marker_offset = appcast.index("<!-- sparkle-signatures:")
 fail("appcast signed-feed length does not match the signed byte prefix") unless feed_marker_offset && feed_match[2].to_i == feed_marker_offset
+
+signature_verified = system(
+  { "PATH" => "/usr/bin:/bin", "LANG" => "C", "LC_ALL" => "C" },
+  "/usr/bin/swift",
+  signature_verifier_path,
+  "verify-sparkle",
+  "--public-key-base64", sparkle_public_key,
+  "--archive-file", path.call(expected_archive),
+  "--archive-signature-base64", archive_signature,
+  "--feed-file", path.call("appcast.xml"),
+  "--feed-signature-base64", feed_match[1],
+  "--feed-prefix-length", feed_match[2],
+  out: File::NULL,
+  unsetenv_others: true
+)
+fail("appcast Ed25519 cryptographic verification failed") unless signature_verified
 
 begin
   sbom = JSON.parse(File.binread(path.call("Dev-Island.spdx.json")))

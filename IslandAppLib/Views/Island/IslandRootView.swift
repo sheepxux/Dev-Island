@@ -189,7 +189,9 @@ struct IslandRootView: View {
             // Panel content — visible while expanded.
             NotchPanelView(
                 tasks: presentation.tasks,
-                connectionStatus: store.connectionStatus,
+                manusConnectionStatus: store.connectionStatus,
+                localAgentStatus: store.localHookServiceStatus,
+                apiKeyStatus: store.apiKeyStatus,
                 layout: baseLayout,
                 highlightedTask: coordinator.highlightedTask,
                 pendingActionRequests: store.pendingActionRequests,

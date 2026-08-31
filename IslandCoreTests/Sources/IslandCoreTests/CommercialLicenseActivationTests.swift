@@ -10,15 +10,13 @@ final class CommercialLicenseActivationTests: XCTestCase {
     private let secondLicenseID = "6aeb8ff8-51d1-4b25-8d87-ed83eac7409b"
 
     private var store: CommercialLicenseDocumentStore!
+    private var storage: InMemoryCommercialLicenseDocumentStorage!
     private var privateKey: Curve25519.Signing.PrivateKey!
     private var verifier: CommercialLicenseVerifier!
 
     override func setUpWithError() throws {
-        store = CommercialLicenseDocumentStore(
-            service: "app.devisland.Island.activation-tests.\(UUID().uuidString.lowercased())",
-            account: "commercial-license-activation-test"
-        )
-        try? store.delete()
+        storage = InMemoryCommercialLicenseDocumentStorage()
+        store = CommercialLicenseDocumentStore(backend: storage)
 
         privateKey = Curve25519.Signing.PrivateKey()
         verifier = try CommercialLicenseVerifier(
@@ -32,10 +30,10 @@ final class CommercialLicenseActivationTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        try? store.delete()
         verifier = nil
         privateKey = nil
         store = nil
+        storage = nil
     }
 
     func testActivationCodeUsesBoundedAlphabetAndAlwaysRedacts() throws {
@@ -123,7 +121,7 @@ final class CommercialLicenseActivationTests: XCTestCase {
         XCTAssertEqual(requestCount, 0)
     }
 
-    func testSuccessfulActivationVerifiesAndRoundTripsThroughKeychain() async throws {
+    func testSuccessfulActivationVerifiesAndRoundTripsThroughSecureStorage() async throws {
         let document = try makeDocument(licenseID: firstLicenseID)
         let transport = ImmediateActivationTransport(
             result: .success(.licenseDocument(document))
@@ -237,6 +235,49 @@ final class CommercialLicenseActivationTests: XCTestCase {
         XCTAssertEqual(
             try store.evaluateStored(using: verifier, now: evaluationDate),
             .valid(latestLicense)
+        )
+    }
+
+    func testPreCancelledActivationCannotSupersedePendingOperationOrCallTransport() async throws {
+        let firstCode = activationCode("first-owner")
+        let cancelledCode = activationCode("pre-cancelled")
+        let firstDocument = try makeDocument(licenseID: firstLicenseID)
+        let transport = ControlledActivationTransport()
+        let service = makeService(transport: transport)
+
+        let firstActivation = Task {
+            await service.activate(code: firstCode)
+        }
+        try await waitUntil { await transport.requestCount == 1 }
+
+        let preCancelledActivation = Task {
+            withUnsafeCurrentTask { task in
+                task?.cancel()
+            }
+            return await service.activate(code: cancelledCode)
+        }
+        let cancelledOutcome = await preCancelledActivation.value
+        let requestCountAfterCancellation = await transport.requestCount
+
+        XCTAssertEqual(cancelledOutcome, .cancelled)
+        XCTAssertEqual(requestCountAfterCancellation, 1)
+
+        await transport.complete(
+            code: firstCode,
+            with: .licenseDocument(firstDocument)
+        )
+        let firstOutcome = await firstActivation.value
+
+        guard case .activated(let license) = firstOutcome else {
+            return XCTFail("Expected original activation, got \(firstOutcome)")
+        }
+        XCTAssertEqual(
+            license.licenseID.uuidString.lowercased(),
+            firstLicenseID
+        )
+        XCTAssertEqual(
+            try store.evaluateStored(using: verifier, now: evaluationDate),
+            .valid(license)
         )
     }
 

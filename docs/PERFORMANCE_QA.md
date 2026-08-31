@@ -501,3 +501,169 @@ bounded outcome mapping, private permissions, atomic replacement, and symlink
 rejection. This is an architectural responsiveness result; a locked display
 cannot prove real slow-volume latency, Save Panel visual polish, frame pacing,
 or VoiceOver behavior.
+
+## Decision-response Instruments segmentation (v6.74.0)
+
+Decision recordings must use the `decision-approval`, `decision-question`, or
+`decision-plan-review` Performance QA scenario and export Animation Hitches,
+SwiftUI update events, Potential Hangs, and the trace TOC. The App log must
+contain exactly one queued and one resolved marker for the action. New markers
+carry both monotonic `uptime=` and epoch `wallUnix=`; `wallUnix` is the primary
+trace alignment, while uptime proves the action delta. Legacy logs may use the
+documented bounded fallback but must retain their larger uncertainty.
+
+Run `scripts/qa/summarize-animation-hitches.rb` over the four exports and App
+log. The JSON separates startup, the resolved interaction window, steady state,
+and the recording tail. App-attributed frame lifetimes, render/GPU-only frame
+lifetimes, App update events, root update rows, and potential hangs remain
+distinct metrics. Rows outside the trace duration are counted and excluded.
+Do not use whole-recording maxima to label the response transition when the
+event occurred in another segment.
+
+The analyzer accepts only bounded ordinary inputs and fails closed on links,
+DTD/entity input, missing table references, malformed/negative timing,
+duplicate markers, and unsafe output replacement. Its deterministic self-test
+and `verify-performance-analysis.sh` must pass before a summary is retained.
+
+The current permission-deny diagnosis and fix are recorded at:
+
+`/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/decision-motion-v1-20260831/DECISION_MOTION_AUDIT.md`
+
+The accepted fixed-source trace reports a resolved App-update maximum of
+21.238 ms, zero App updates over 33/50/100 ms, and zero resolved potential
+hangs. The pre-fix diagnostic baseline was 132.257 ms with a 54.802 ms
+Potential Interaction Delay. Fixed-source Question Submit and Plan Review
+remain pending because the Mac locked before they could be completed; the
+incomplete trace must not be promoted to acceptance evidence.
+
+## Trusted single-instance arbitration acceptance (v6.84.0)
+
+Unit tests and static gates can establish bounded candidate selection, signing
+policy, revalidation order, fail-open behavior, and pre-UI wiring. They do not
+prove that two real AppKit processes arbitrate without a duplicate Island,
+status item, listener, backend owner, or visible focus error. Real-process
+acceptance must use a fresh Universal Production App built after the source is
+stable. A build that overlaps later source edits is rejected even if it
+launches successfully; the retained report must bind the source manifest,
+executable SHA-256, signing identity class, display state, and exact commands.
+
+For ad-hoc dynamic code, CDHash is the identity of the Mach-O architecture
+slice selected by the running process, not a single architecture-neutral
+identity for the entire Universal bundle. The two trusted copies in a round
+must therefore use the same recorded runtime architecture. On Apple silicon,
+retain both the process architecture and translated/native state for every
+PID. A native arm64 process and a forced-Rosetta x86_64 process can resolve to
+different CDHashes and must not be expected to trust one another; cross-slice
+coexistence is a negative identity case, while arm64 and x86_64 trusted-copy
+acceptance must be run separately with two same-slice processes. Equal bundle
+or executable SHA-256 values alone do not override the dynamic CDHash result.
+
+The local ad-hoc bridge gate uses two byte-identical copies of that artifact.
+Before the first launch, verify that both executables have the same SHA-256,
+both signatures are explicitly ad-hoc, and both expose the same nonempty
+CDHash. Start one ordinary owner from a clean QA state and wait for its process,
+listener, and backend ownership to stabilize; when the display is unlocked,
+also confirm its Island and status item. Then launch the second copy in at
+least 20 consecutive rounds. Every round must retain both PIDs, monotonic
+launch-to-disappearance duration, an exit status when the harness owns a
+waitable child process, owner/process snapshots, listener/backend ownership,
+and any unexpected UI or LaunchHealth side effect. A direct-child run must exit
+normally with status 0 before constructing product UI or services. A real
+LaunchServices run may instead prove that its returned PID disappeared before
+product ownership, but because the harness cannot `wait()` that process it must
+record the exact exit status as not observable and must not infer status 0. In
+either mode, exactly one original owner must remain and stay responsive. Report
+the complete timing distribution; do not replace it with a selected best round
+or infer an unreviewed latency threshold.
+
+`CFFIXED_USER_HOME` redirects home-backed files and preferences but does not
+create or select a separate login Keychain. An ordinary Production owner run
+that uses this variable is therefore not hermetic and must not be described as
+isolated from the user's Keychain. Process-level acceptance must record a
+locked display and independently established Keychain-unavailable context, or
+run in a disposable login account/VM with its own Keychain. If Keychain
+unavailability is not proven without reading user secrets, record it as
+unknown and keep the run out of hermetic/isolation claims.
+
+For every one of the 20 rounds, retain an exact-PID socket snapshot. After the
+newcomer exits, the complete App-owned INET socket set must contain only the
+original owner's `127.0.0.1:7824` TCP listener; any additional loopback or
+remote socket invalidates the state-isolation result. The root SwiftUI
+`Settings` scene being inert is a required code-level precondition, not proof
+that a yielding process stayed side-effect-free. Before and after each round,
+the duplicate's private home must show no SQLite database or sidecars, no local
+Hook authorization file, no LaunchHealth preference keys/artifact, and no
+other product state. Reusing a private home is acceptable only when its empty
+pre- and post-round snapshots are retained and paired with the pre-UI static
+gate; a single final empty-directory snapshot is insufficient.
+
+The rejection gate uses a minimal AppKit impostor with the same Bundle ID but a
+different explicitly ad-hoc CDHash. Launch the impostor first, record its
+activation and termination state, and then launch the real current-source App.
+The real App must continue to readiness and own its expected product resources;
+the impostor must neither be activated nor terminated by Dev Island. This
+scenario is expected to leave two unrelated processes alive and proves only
+that a Bundle-ID collision is not trusted. Its helper source, both executable
+hashes, signing flags/CDHashes, PIDs, activation observations, and cleanup must
+be retained with the report.
+
+Same-Team cross-version arbitration remains unaccepted until two distinct
+Developer ID artifacts with the exact code identifier, an Apple-generic
+anchor, and the same certificate OU/Team ID are available for a real-process
+run. Ad-hoc copies, equal resources, or a shared Bundle ID cannot substitute
+for that evidence. The Developer ID run must bind both artifact hashes and
+prove the older trusted process remains the only owner when the newer version
+launches.
+
+Every run must record screen-lock state. A `locked` or `unknown` display may
+support only process-level facts such as signature resolution, PID lifetime,
+exit status, and listener/backend counts. It cannot establish visible winner
+activation, focus or window routing, launch smoothness, animation pacing,
+interaction latency, energy, first frame, or VoiceOver behavior; any reported
+timing from such a run is a harness fact rather than product-performance
+evidence. A complete interaction acceptance therefore requires a separate
+unlocked current-source run, and locked/incomplete samples must be labelled
+accordingly instead of being promoted into the v6.84 result.
+
+### Authoritative corrected-artifact result
+
+`single-instance-identity-v2-20260831` is rejected and non-authoritative. Its
+root Settings Scene could construct TaskStore-backed content before the gate,
+so its static/binary observations and any partial live samples remain diagnostic
+only and are excluded from accepted timing statistics.
+
+The corrected `single-instance-identity-v3-20260831` artifact passed the
+authoritative `live-identity-matrix-v6` process-level matrix on 2026-08-31. The
+source executable SHA-256 was
+`0605763b23990ffe2094435fac895bbf104151e8661823c96a9ca409145ef1f3` and the
+running arm64 ad-hoc CDHash was
+`70b870d790f6ccd809df3ce54144982a57177b3e`. All 20/20 byte-identical duplicate
+LaunchServices PIDs disappeared. The complete distribution was 231 ms minimum,
+235.5 ms median, 302 ms p95 and 1,155 ms maximum; rejected v1–v5 harness runs
+were not merged into those statistics.
+
+Every accepted round retained one App owner and that same PID as the sole
+`127.0.0.1:7824` listener owner. Exact-PID socket checks observed no other INET
+socket, and the duplicate private user root was empty before and after every
+round. In the different-CDHash impostor case, activation count remained
+`0 → 0`; the impostor was neither activated nor terminated, while the real App
+survived as the unique listener owner. Exact cleanup left no same-Bundle process
+or port-7824 listener. The checksum-bound evidence is retained at:
+
+`/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/single-instance-identity-v3-20260831/live-identity-matrix-v6/`
+
+This is authoritative only for locked, arm64, same-slice ad-hoc process
+arbitration, listener/socket ownership, duplicate-home state isolation and
+different-CDHash rejection. The ordinary owner was explicitly classified
+`not-hermetic-login-keychain-not-isolated`; the harness did not read Keychain
+content, but that is not proof that ordinary TaskStore bootstrap was isolated
+from the login Keychain.
+
+Same-Team cross-version behavior still requires two real Developer ID artifacts.
+Native arm64 and Rosetta x86_64 use different slice CDHashes and remain a
+fail-open cross-slice case, not trusted-copy evidence. Because the display was
+locked from start to finish, visible activation, focus/window routing, motion,
+first frame and VoiceOver remain unaccepted. LaunchServices exposed PID
+disappearance but no waitable child status, so the 20 rounds do not establish a
+real exit code or status 0; the separate hermetic smoke's status 0 cannot be
+substituted for that missing LaunchServices fact.

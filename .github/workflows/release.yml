@@ -112,6 +112,7 @@ jobs:
           test -f Package.resolved && test ! -L Package.resolved
           swift package resolve
           git diff --exit-code -- Package.resolved
+          ./scripts/ci/verify-sparkle-old-to-new-update.sh
           ./scripts/ci/verify-security-invariants.sh
           ./scripts/ci/verify-app-bundle-dependencies.sh
           ./scripts/release/verify-brand-assets.rb \
@@ -147,7 +148,8 @@ jobs:
 
       # Fail before importing a certificate or creating release artifacts if
       # any part of the production trust chain is missing. Values are never
-      # printed; this step checks only presence and non-secret structure.
+      # printed; the Sparkle keys must also complete a real sign/verify
+      # challenge so two individually well-formed but unrelated keys fail.
       - name: Validate release credentials
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}

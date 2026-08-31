@@ -1,7 +1,8 @@
 # Commercial license security foundation
 
-Status: verifier, device-local storage, provider-neutral activation core, and
-commercial-policy readiness gate implemented; commercial mode remains disabled.
+Status: verifier, device-local storage, provider-neutral activation core,
+disabled-by-default hardened HTTPS transport, and commercial-policy readiness
+gate implemented; commercial mode remains disabled.
 
 This document covers the offline license-document boundary and the disconnected
 client activation coordinator currently implemented in `IslandCore`. It does
@@ -31,20 +32,39 @@ repository's MIT license.
   Its injected transport has no URL, account, email, payment, device-ID, or
   retry field. The shipping app instantiates neither the service nor its
   dependencies.
+- `CommercialActivationHTTPSTransport` is a shipping-capable but unconfigured
+  provider-neutral network boundary. It accepts only a syntactically public DNS
+  HTTPS endpoint on exact `/v1/activate` with default/443 port and no userinfo,
+  query or fragment; platform TLS/hostname validation remains authoritative.
+  The type exposes no public initializer or factory: its endpoint constructor
+  is module-internal until a provider is approved, and no shipping `IslandCore`,
+  App, or AppLib source constructs it. A future integration must add a reviewed
+  no-URL provider factory with the exact endpoint fixed in source rather than
+  accepting UI, preferences, environment, remote configuration, or other
+  runtime input.
+  Its ephemeral session disables proxy, cookies, cache, ambient credentials,
+  connectivity waiting and redirects, uses one ten-second request/resource
+  budget, sends the code only as an octet-stream POST body, and accepts a 200
+  response only with `application/vnd.devisland.license`. Declared and unknown
+  lengths are both capped while streaming at the verifier/store 32 KiB bound.
+  No endpoint is hard-coded and neither the App nor AppLib constructs it.
 - Activation codes are 16–128 bytes, use a bounded ASCII alphabet, expose no
   reusable raw-value property, and redact normal/debug descriptions. Accepted
   bytes live in one dedicated immutable allocation shared by value copies; the
   final release erases it with `memset_s` before deallocation. A keyless verifier
   rejects before transport invocation, so an inert build cannot spend a
-  one-time code.
+  one-time code. After trusted-mode preflight, an already-cancelled caller also
+  returns before acquiring operation ownership or creating a transport task.
 - This control erases Dev Island's accepted internal copy; it cannot erase the
-  caller's original Swift `String` or copies deliberately created by a future
-  provider transport. A future activation UI must clear its input state as soon
-  as the bounded code is constructed, and provider-specific review must account
-  for unavoidable request-body lifetime without logging or retaining it.
+  caller's original Swift `String` or Foundation's unavoidable HTTPS request
+  body copy. A future activation UI must clear its input state as soon as the
+  bounded code is constructed, and provider-specific review must account for
+  request-body lifetime without logging or retaining it.
 - New activation attempts supersede older attempts; explicit cancellation and
   caller cancellation invalidate the current attempt. A cancellation-unaware
   transport may return late but cannot reach verify-before-save persistence.
+  A caller cancelled before entry cannot supersede an existing operation or
+  send another request; the existing owner remains eligible to commit.
   A still-current response is evaluated against a fresh commit-time clock,
   rather than the time at which a potentially long network exchange began.
 - Transport, verification, and Keychain failures are mapped to low-cardinality
@@ -107,8 +127,8 @@ license ID, generation, tier, feature order, and feature uniqueness are pinned.
 | Private issuer key | Out of scope and prohibited from app/runtime sources |
 | Paid entitlement result | Returned only from an authenticated, product-bound, time-valid payload |
 | Authenticated document → local persistence | Disconnected, bounded Keychain primitive with device-only accessibility and synchronization disabled; same-license generation replacement is monotonic and process-serialized |
-| Activation code → future provider transport | 16–128 byte bounded secret, one shared dedicated allocation, scoped byte access, `memset_s` erase on final release, redacted descriptions, no endpoint in the core |
-| Untrusted transport response → verifier/store | Configured-verifier preflight, latest-operation-wins, cancellation invalidation, commit-time validity evaluation, low-cardinality errors, verify-before-save only |
+| Activation code → disabled HTTPS transport foundation | 16–128 byte bounded secret, one shared dedicated allocation, scoped byte access, `memset_s` erase on final release, redacted descriptions, module-internal endpoint construction, exact HTTPS endpoint policy, body-only POST, no redirect/cookie/cache/ambient credentials, and no shipping instantiation; pre-cancelled callers create no transport task |
+| Untrusted streamed response → verifier/store | Exact final URL/status/media type, 32 KiB bound enforced during iteration, configured-verifier preflight, latest-operation-wins, cancellation invalidation, commit-time validity evaluation, low-cardinality errors and verify-before-save only |
 | Customer identity | Not represented in the license payload |
 
 ## Abuse paths and limitations
@@ -124,11 +144,12 @@ license ID, generation, tier, feature order, and feature uniqueness are pinned.
 | Roll the system clock backward | Medium | Offline wall-clock expiry cannot fully resist an administrator; a future grace/refresh policy must define behavior |
 | Refund, chargeback, or revocation while offline | Medium | No live revocation exists; future policy must choose signed denylist, periodic refresh, or an explicit offline grace window |
 | Replay an old but still-valid document | Low/Medium | Same-license rollback is rejected across launches by signed positive generation, byte-identical equal-generation semantics, and nondecreasing signed issuance time. Switching to a different license ID is an explicit entitlement replacement, so the issuer must preserve IDs for one entitlement lineage and define transfer/recovery behavior |
-| Spend a one-time code from an inert/keyless build | Medium | Service checks the configured verifier before invoking transport |
+| Spend a one-time code from an inert/keyless or already-cancelled call | Medium | Service checks the configured verifier, then rejects a pre-cancelled caller before operation ownership or transport invocation |
 | Late transport response overwrites newer/cancelled state | Medium | Actor owns one pending operation; superseded/cancelled operation state is checked before the synchronous verify-before-save boundary, and the response is time-validated only at commit |
 | Multiple client processes write the same Keychain account | Low/Medium | One process serializes read/authenticate/compare/write. Security.framework has no generic-password compare-and-swap, so any future second writer requires an explicit inter-process protocol before launch |
 | Raw activation or provider error leaks through diagnostics or stale process memory | Medium | Code and response descriptions redact; public outcomes contain only bounded enums and no underlying Error; accepted bytes share one allocation that is actively erased on final release |
 | Caller or future transport retains another activation-code copy | Medium | Internal storage is shared and erased, but cannot erase the caller's original Swift `String` or a provider-created request body; future UI/transport review must minimize those lifetimes and prohibit persistence/logging |
+| Redirect, oversized stream, wrong origin/media type, or raw network/provider error escapes the activation boundary | Medium | HTTPS transport refuses all redirects, rebinds the final response URL, validates media type, checks declared length and stops at 32 KiB while reading; raw errors collapse to bounded transport cases. Caller cancellation is regression-bound to the underlying URLSession request's `stopLoading`, not only the wrapper task's return value. Actual provider domain/certificate behavior still requires sandbox and production acceptance |
 | License document disclosure | Low | Payload has no PII or payment data, but it remains a bearer entitlement and should be stored as a secret |
 
 ## Required gates before enabling commercial mode
@@ -145,10 +166,12 @@ license ID, generation, tier, feature order, and feature uniqueness are pinned.
 4. Inject only a reviewed public key through a deliberate source/release change;
    the current CI guard must fail until that change is reviewed together with
    tests and documentation.
-5. Add a reviewed provider-specific transport around the existing activation
-   coordinator. Keep its code out of URLs/query/logs, preserve generic
-   rejections, and use the existing verify-before-save Keychain primitive with
-   its dedicated `ThisDeviceOnly`/non-synchronizing controls.
+5. Add a reviewed no-URL provider factory that binds the hardened HTTPS
+   transport to one exact source-controlled endpoint and complete real
+   certificate/domain, outage, cancellation,
+   one-time-code and abuse acceptance. Keep code out of URLs/query/logs,
+   preserve generic rejections, and use the verify-before-save Keychain
+   primitive with its dedicated `ThisDeviceOnly`/non-synchronizing controls.
 6. Complete sandbox purchase, activation, restart/offline, expiry, refund,
    revoke, key-rotation, corrupt-input, clock-change, migration, and recovery QA.
 7. Update `PRIVACY.md`, `TERMS.md`, the live website, support material, and the
@@ -167,6 +190,10 @@ license ID, generation, tier, feature order, and feature uniqueness are pinned.
   `IslandCore/Sources/IslandCore/Commerce/CommercialLicenseActivation.swift`
 - Activation attack/concurrency tests:
   `IslandCoreTests/Sources/IslandCoreTests/CommercialLicenseActivationTests.swift`
+- Hardened HTTPS transport foundation:
+  `IslandCore/Sources/IslandCore/Commerce/CommercialActivationHTTPSTransport.swift`
+- HTTPS endpoint/streaming/redirect/cancellation tests:
+  `IslandCoreTests/Sources/IslandCoreTests/CommercialActivationHTTPSTransportTests.swift`
 - Provider-neutral commercial flow model:
   `docs/COMMERCIAL_ACTIVATION_THREAT_MODEL.md`
 - CI invariants: `scripts/ci/verify-security-invariants.sh`

@@ -49,6 +49,12 @@ jobs:
           swift package resolve
           git diff --exit-code -- Package.resolved
 
+      - name: Verify disposable Sparkle old-to-new update
+        id: sparkle_update
+        run: |
+          set -euo pipefail
+          ./scripts/ci/verify-sparkle-old-to-new-update.sh
+
       - name: Security and privacy invariants
         id: security
         run: |
@@ -247,6 +253,7 @@ jobs:
             --test-log "${TEST_LOG}" \
             --step 'toolchain=${{ steps.toolchain.outcome }}' \
             --step 'dependencies=${{ steps.dependencies.outcome }}' \
+            --step 'sparkle-update=${{ steps.sparkle_update.outcome }}' \
             --step 'security=${{ steps.security.outcome }}' \
             --step 'tests=${{ steps.tests.outcome }}' \
             --step 'performance-build=${{ steps.performance_build.outcome }}' \

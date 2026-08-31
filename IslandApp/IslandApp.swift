@@ -8,14 +8,18 @@ struct IslandApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // Keep the native Command-, entry point useful as well as the island's
-        // custom gear-button window. Replacing the scene's default command
-        // prevents SwiftUI from creating a second, independently-owned
-        // Settings window beside AppDelegate's window.
+        // Keep this SwiftUI-owned scene deliberately inert. `SettingsView`
+        // binds to `TaskStore.shared`; constructing it while SwiftUI evaluates
+        // the root Scene could bootstrap SQLite, Keychain and the local
+        // listener before AppDelegate's single-instance gate runs. The real
+        // Settings surface is created lazily by the AppDelegate-owned
+        // `SettingsWindow` after launch arbitration succeeds.
+        //
+        // Replacing the scene's default Command-, entry keeps the native
+        // shortcut useful without letting SwiftUI create a second settings
+        // window beside that explicitly-owned surface.
         Settings {
-            LocalizedAppRoot {
-                SettingsView()
-            }
+            EmptyView()
         }
             .commands {
                 CommandGroup(replacing: .appSettings) {
@@ -35,6 +39,10 @@ struct IslandApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// A duplicate copy exits before constructing windows, services or launch
+    /// health state. Its termination callback must therefore remain a no-op.
+    private var yieldedToExistingInstance = false
+    private let terminationCoordinator = AppTerminationCoordinator()
     private var islandWindow: IslandWindow?
     private var screenChangeObserver: NSObjectProtocol?
     private var openSettingsObserver: NSObjectProtocol?
@@ -119,6 +127,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if !DEV_ISLAND_PERFORMANCE_QA
+        // Finder, a mounted DMG and a development build can otherwise run
+        // separate processes with the same bundle ID. Keep hermetic smoke
+        // explicitly exempt so repository QA can inspect a Production artifact
+        // without disturbing the user's installed App.
+        if !isHermeticLaunchSmoke,
+           AppSingleInstanceGate.activateExistingInstanceIfNeeded() {
+            yieldedToExistingInstance = true
+            NSApp.terminate(nil)
+            return
+        }
+
         // Arm a local-only startup marker before constructing any UI. It is
         // closed only after the island and menu-bar surfaces survive a short
         // stability window; no crash report is inspected or uploaded, and the
@@ -284,7 +303,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
+    func applicationShouldTerminate(
+        _ sender: NSApplication
+    ) -> NSApplication.TerminateReply {
+        #if DEV_ISLAND_PERFORMANCE_QA
+        let mode = AppTerminationMode.performanceQA
+        #else
+        let mode: AppTerminationMode
+        if yieldedToExistingInstance {
+            mode = .yieldedDuplicate
+        } else if isHermeticLaunchSmoke {
+            mode = .hermeticLaunchSmoke
+        } else {
+            mode = .owner
+        }
+        #endif
+
+        let decision = terminationCoordinator.requestTermination(
+            mode: mode,
+            cleanup: {
+                _ = await TaskStore.shared.shutdown()
+            },
+            reply: {
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+        )
+
+        switch decision {
+        case .terminateNow:
+            return .terminateNow
+        case .terminateLater:
+            return .terminateLater
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        guard !yieldedToExistingInstance else { return }
+
         #if DEV_ISLAND_PERFORMANCE_QA
         performanceTransitionWorkItem?.cancel()
         performanceTransitionWorkItem = nil
@@ -298,7 +353,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             LaunchHealthTracker.shared.markStartupReady()
         }
         #endif
-        TaskStore.shared.shutdown()
         if let observer = screenChangeObserver {
             NotificationCenter.default.removeObserver(observer)
         }

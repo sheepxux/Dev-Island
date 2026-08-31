@@ -10,6 +10,132 @@ fail() {
   exit 1
 }
 
+# Extract one Swift brace-delimited declaration from a stable declaration
+# prefix. This keeps ordering checks local to the reviewed function without
+# snapshotting an entire implementation or depending on exact line numbers.
+extract_braced_region() {
+  local file="$1"
+  local declaration_prefix="$2"
+  local output_mode="${3:-source}"
+  awk -v declaration_prefix="$declaration_prefix" -v output_mode="$output_mode" '
+    function swift_code_line(line, output, index_in_line, character, pair, triple) {
+      output = ""
+      index_in_line = 1
+      while (index_in_line <= length(line)) {
+        pair = substr(line, index_in_line, 2)
+        triple = substr(line, index_in_line, 3)
+
+        if (block_comment_depth > 0) {
+          if (pair == "/*") {
+            block_comment_depth += 1
+            index_in_line += 2
+          } else if (pair == "*/") {
+            block_comment_depth -= 1
+            index_in_line += 2
+          } else {
+            index_in_line += 1
+          }
+          continue
+        }
+
+        if (string_mode == 3) {
+          if (triple == "\"\"\"") {
+            string_mode = 0
+            index_in_line += 3
+          } else {
+            index_in_line += 1
+          }
+          continue
+        }
+
+        if (string_mode == 1) {
+          character = substr(line, index_in_line, 1)
+          if (character == "\\") {
+            index_in_line += 2
+          } else {
+            if (character == "\"") {
+              string_mode = 0
+            }
+            index_in_line += 1
+          }
+          continue
+        }
+
+        if (pair == "//") {
+          break
+        }
+        if (pair == "/*") {
+          block_comment_depth = 1
+          index_in_line += 2
+          continue
+        }
+        if (triple == "\"\"\"") {
+          string_mode = 3
+          index_in_line += 3
+          continue
+        }
+
+        character = substr(line, index_in_line, 1)
+        if (character == "\"") {
+          string_mode = 1
+          index_in_line += 1
+          continue
+        }
+        output = output character
+        index_in_line += 1
+      }
+      return output
+    }
+
+    {
+      code_line = swift_code_line($0)
+    }
+    !capturing && index(code_line, declaration_prefix) {
+      capturing = 1
+    }
+    capturing {
+      if (output_mode == "code") {
+        print code_line
+      } else {
+        print
+      }
+      open_line = code_line
+      close_line = code_line
+      opens = gsub(/\{/, "", open_line)
+      closes = gsub(/\}/, "", close_line)
+      depth += opens - closes
+      if (opens > 0) {
+        opened = 1
+      }
+      if (opened && depth == 0) {
+        exit
+      }
+    }
+  ' "$file"
+}
+
+require_fixed_order() {
+  local content="$1"
+  local first="$2"
+  local second="$3"
+  local label="$4"
+  local ordered
+  ordered="$(printf '%s\n' "$content" | awk -v first="$first" -v second="$second" '
+    first_line == 0 && index($0, first) {
+      first_line = NR
+    }
+    second_line == 0 && index($0, second) {
+      second_line = NR
+    }
+    END {
+      if (first_line > 0 && second_line > first_line) {
+        print first_line ":" second_line
+      }
+    }
+  ')"
+  [[ -n "$ordered" ]] || fail "$label"
+}
+
 TRUST_FILE="IslandCore/Sources/IslandCore/Manus/ManusRealtimeTrust.swift"
 MANUS_ENDPOINTS="IslandCore/Sources/IslandCore/Manus/ManusEndpoints.swift"
 MANUS_CLIENT="IslandCore/Sources/IslandCore/Manus/ManusAPIClient.swift"
@@ -36,12 +162,25 @@ APP_BUILD_OUTPUT_FIXTURES="scripts/ci/verify-app-build-output-boundary.sh"
 RELEASE_WORKFLOW=".github/workflows/release.yml"
 SPARKLE_SECRET_RUNNER="scripts/release/run-sparkle-appcast-generator.sh"
 SPARKLE_SECRET_FIXTURES="scripts/ci/verify-sparkle-secret-isolation.sh"
+SPARKLE_CREDENTIAL_VALIDATOR="scripts/ci/validate-release-credentials.sh"
+SPARKLE_SIGNATURE_VERIFIER="scripts/release/verify-sparkle-ed25519-signatures.swift"
+SPARKLE_OLD_TO_NEW_GATE="scripts/ci/verify-sparkle-old-to-new-update.sh"
+SPARKLE_LIVE_GATE_HELPER="scripts/qa/sparkle-live-gate-helper.rb"
+SPARKLE_DISPOSABLE_SOURCE_PREPARER="scripts/qa/prepare-sparkle-disposable-source.rb"
+RELEASE_ASSET_VERIFIER="scripts/release/verify-release-assets.sh"
+RELEASE_ASSET_FIXTURES="scripts/ci/verify-release-asset-verifier.sh"
 LICENSE_VERIFIER="IslandCore/Sources/IslandCore/Commerce/CommercialLicenseVerifier.swift"
 LICENSE_TESTS="IslandCoreTests/Sources/IslandCoreTests/CommercialLicenseVerifierTests.swift"
 LICENSE_STORE="IslandCore/Sources/IslandCore/Commerce/CommercialLicenseDocumentStore.swift"
 LICENSE_STORE_TESTS="IslandCoreTests/Sources/IslandCoreTests/CommercialLicenseDocumentStoreTests.swift"
+LICENSE_STORE_TEST_BACKEND="IslandCoreTests/Sources/IslandCoreTests/InMemoryCommercialLicenseDocumentStorage.swift"
 LICENSE_ACTIVATION="IslandCore/Sources/IslandCore/Commerce/CommercialLicenseActivation.swift"
 LICENSE_ACTIVATION_TESTS="IslandCoreTests/Sources/IslandCoreTests/CommercialLicenseActivationTests.swift"
+LICENSE_ACTIVATION_HTTPS="IslandCore/Sources/IslandCore/Commerce/CommercialActivationHTTPSTransport.swift"
+LICENSE_ACTIVATION_HTTPS_TESTS="IslandCoreTests/Sources/IslandCoreTests/CommercialActivationHTTPSTransportTests.swift"
+LICENSE_ACTIVATION_SANDBOX_TESTS="IslandCoreTests/Sources/IslandCoreTests/CommercialActivationSandboxTests.swift"
+KEYCHAIN_STORE="IslandCore/Sources/IslandCore/Storage/KeychainStore.swift"
+KEYCHAIN_STORE_TESTS="IslandCoreTests/Sources/IslandCoreTests/KeychainStoreTests.swift"
 LICENSE_SECURITY_DOC="docs/COMMERCIAL_LICENSE_SECURITY.md"
 LICENSE_THREAT_MODEL="docs/COMMERCIAL_ACTIVATION_THREAT_MODEL.md"
 COMMERCIAL_POLICY="scripts/commerce/commercial-policy.json"
@@ -56,6 +195,10 @@ LOCAL_HOOK_HEALTH_TESTS="IslandCoreTests/Sources/IslandCoreTests/LocalHookServer
 SQLITE_STORE="IslandCore/Sources/IslandCore/Storage/SQLiteStore.swift"
 SQLITE_FILE_BOUNDARY="IslandCore/Sources/IslandCore/Storage/SQLiteFileBoundary.swift"
 TASK_STORE="IslandCore/Sources/IslandCore/TaskStore.swift"
+SINGLE_INSTANCE_GATE="IslandAppLib/Support/AppSingleInstanceGate.swift"
+SINGLE_INSTANCE_TESTS="IslandAppLibTests/Sources/IslandAppLibTests/AppSingleInstanceGateTests.swift"
+APP_TERMINATION_COORDINATOR="IslandAppLib/Coordinator/AppTerminationCoordinator.swift"
+APP_TERMINATION_TESTS="IslandAppLibTests/Sources/IslandAppLibTests/AppTerminationCoordinatorTests.swift"
 ACTION_REQUEST_MODEL="IslandCore/Sources/IslandCore/Models/AgentActionRequest.swift"
 TASK_STORE_ACTION_TESTS="IslandCoreTests/Sources/IslandCoreTests/TaskStoreActionRequestTests.swift"
 CLAUDE_QUESTION_HOOK="IslandCore/Sources/IslandCore/Connectors/ClaudeCode/ClaudeQuestionHook.swift"
@@ -186,6 +329,7 @@ rg -q 'https://api\.manus\.ai' "$MANUS_ENDPOINTS" \
   || fail "Manus v2 webhook trust must use the hard-coded official HTTPS origin"
 for invariant in \
   'v2/webhook\.create' \
+  'v2/webhook\.list' \
   'v2/webhook\.delete' \
   'v2/webhook\.publicKey' \
   'x-manus-api-key'; do
@@ -210,6 +354,80 @@ done
 
 rg -q 'webhookPublicKeyTTL: TimeInterval = 3_600' "$MANUS_CLIENT" \
   || fail "Authenticated Manus webhook public-key cache must remain bounded to one hour"
+
+LIST_WEBHOOK_BODY="$(extract_braced_region "$MANUS_CLIENT" 'public func listWebhooks')"
+for invariant in \
+  'let req = try ManusEndpoints.listWebhooks(apiKey: apiKey)' \
+  'operation: .listWebhooks' \
+  'rows.count <= ManusWebhookPolicy.maximumWebhookCount' \
+  'identifiers.insert(webhook.id).inserted'; do
+  printf '%s\n' "$LIST_WEBHOOK_BODY" | rg -Fq "$invariant" \
+    || fail "Strict Manus webhook.list invariant missing: $invariant"
+done
+for invariant in \
+  'private struct ManusWebhookDTO: Decodable' \
+  'let createdAt: Int64' \
+  'ManusWebhookPolicy.isCanonicalHTTPSURL(url)' \
+  'let status = ManusWebhook.Status(rawValue: status)' \
+  'createdAt >= 0' \
+  'private struct WebhookListResponse: Decodable'; do
+  rg -Fq "$invariant" "$MANUS_CLIENT" \
+    || fail "Strict Manus webhook.list DTO invariant missing: $invariant"
+done
+for regression in \
+  'testListWebhooksUsesOfficialEndpointAndReturnsValidatedModels' \
+  'testListWebhooksRejectsRedirectWithoutFollowingCredential' \
+  'testListWebhooksRejectsOversizedBodyBeforeDecode' \
+  'testListWebhooksRejectsAmbiguousOrUnsafeProviderRows' \
+  'testListWebhooksRequiresAllOfficialFieldsWithExactTypes' \
+  'testListWebhooksRejectsMoreThan1024Rows'; do
+  rg -Fq "$regression" "$MANUS_CLIENT_TESTS" \
+    || fail "Strict Manus webhook.list regression missing: $regression"
+done
+
+DELETE_WEBHOOK_BODY="$(extract_braced_region "$MANUS_CLIENT" 'public func deleteWebhook')"
+for invariant in \
+  'let response: WebhookDeletionResponse = try await execute(' \
+  'operation: .deleteWebhook' \
+  'guard response.ok else { throw ManusError.invalidResponse }'; do
+  printf '%s\n' "$DELETE_WEBHOOK_BODY" | rg -Fq "$invariant" \
+    || fail "Manus webhook deletion confirmation invariant missing: $invariant"
+done
+if printf '%s\n' "$DELETE_WEBHOOK_BODY" | rg -q 'executeVoid'; then
+  fail "A successful HTTP status alone must not confirm Manus webhook deletion"
+fi
+[[ "$(rg -Fc 'private struct WebhookDeletionResponse: Decodable' "$MANUS_CLIENT")" -eq 1 ]] \
+  || fail "Manus webhook deletion must use exactly one explicit response DTO"
+WEBHOOK_DELETION_RESPONSE="$(
+  extract_braced_region "$MANUS_CLIENT" 'private struct WebhookDeletionResponse'
+)"
+printf '%s\n' "$WEBHOOK_DELETION_RESPONSE" | rg -Fq 'let ok: Bool' \
+  || fail "Manus webhook deletion confirmation must decode a Boolean ok field"
+for regression in \
+  'testDeleteWebhookUsesOfficialV2RPCShape' \
+  'testDeleteWebhookRejectsExplicitFailureResponse' \
+  'testDeleteWebhookRejectsNon2xxEvenWithSuccessJSON' \
+  'testDeleteWebhookTreatsOfficialNotFoundAsIdempotentSuccess' \
+  'testDeleteWebhookRejectsOrdinaryOrMalformedNotFoundResponses' \
+  'testDeleteWebhookRejectsNotFoundFromWrongOrigin' \
+  'testDeleteWebhookRejectsRedirectEvenWithNotFoundBody' \
+  'testDeleteWebhookRejectsOversizedNotFoundBeforeDecode' \
+  'testDeleteWebhookRejectsMissingOrInvalidSuccessConfirmation' \
+  'testStopTaskStillAcceptsEmptySuccessfulResponse'; do
+  rg -Fq "$regression" "$MANUS_CLIENT_TESTS" \
+    || fail "Manus webhook deletion confirmation regression missing: $regression"
+done
+
+EXECUTE_BODY="$(extract_braced_region "$MANUS_CLIENT" 'private func execute<T: Decodable>')"
+for invariant in \
+  'case 404:' \
+  'operation == .deleteWebhook' \
+  'response.ok == false' \
+  'response.error.code == "not_found"' \
+  'return idempotentNotFoundValue'; do
+  printf '%s\n' "$EXECUTE_BODY" | rg -Fq "$invariant" \
+    || fail "Strict Manus delete not_found invariant missing: $invariant"
+done
 
 for invariant in \
   'URLSessionConfiguration\.ephemeral' \
@@ -340,6 +558,72 @@ rg -q 'public init\?\(port: Int = 7823, signaturePublicKeyPEM: String\)' "$SERVE
 rg -q 'guard let authentication = await self\.authenticate\(' "$SERVER_FILE" \
   || fail "Webhook requests must fail closed through WebhookRequestAuthenticator"
 
+WEBHOOK_KEY_IDENTITY_BODY="$(
+  extract_braced_region "$SERVER_FILE" 'private enum WebhookPublicKeyIdentity'
+)"
+rg -Fxq 'import Security' "$SERVER_FILE" \
+  || fail "Canonical Manus RSA trust identity must use Security.framework"
+for invariant in \
+  'SecKeyCopyAttributes(key)' \
+  'kSecAttrKeySizeInBits' \
+  'keySizeInBits >= 2_048' \
+  'SecKeyCopyExternalRepresentation(' \
+  'Data(SHA256.hash(data: canonicalBytes))'; do
+  printf '%s\n' "$WEBHOOK_KEY_IDENTITY_BODY" | rg -Fq "$invariant" \
+    || fail "Canonical Manus RSA trust identity invariant missing: $invariant"
+done
+rg -Fq 'let canonicalPublicKeyIdentity: Data' "$SERVER_FILE" \
+  || fail "Webhook authentication must retain the canonical RSA public-key identity"
+WEBHOOK_TRUST_CONFIGURATION="$(
+  extract_braced_region "$SERVER_FILE" 'private struct WebhookTrustConfiguration'
+)"
+for invariant in 'let externalURL: String' 'let publicKeyIdentity: Data'; do
+  printf '%s\n' "$WEBHOOK_TRUST_CONFIGURATION" | rg -Fq "$invariant" \
+    || fail "Webhook trust tuple invariant missing: $invariant"
+done
+
+WEBHOOK_CONFIGURE_BODY="$(
+  extract_braced_region "$SERVER_FILE" 'public func configure(externalURL:'
+)"
+for invariant in \
+  'let candidateConfiguration = WebhookTrustConfiguration(' \
+  'externalURL: externalURL' \
+  'publicKeyIdentity: authenticator.canonicalPublicKeyIdentity' \
+  'if trustConfiguration != candidateConfiguration {' \
+  'replayWindow = WebhookReplayWindow(capacity: replayWindow.capacity)' \
+  'trustGeneration = UUID()' \
+  'self.trustConfiguration = candidateConfiguration'; do
+  printf '%s\n' "$WEBHOOK_CONFIGURE_BODY" | rg -Fq "$invariant" \
+    || fail "Webhook trust-generation rotation invariant missing: $invariant"
+done
+require_fixed_order \
+  "$WEBHOOK_CONFIGURE_BODY" \
+  'let candidateConfiguration = WebhookTrustConfiguration(' \
+  'if trustConfiguration != candidateConfiguration {' \
+  "Webhook trust tuple must be validated before generation comparison"
+require_fixed_order \
+  "$WEBHOOK_CONFIGURE_BODY" \
+  'if trustConfiguration != candidateConfiguration {' \
+  'self.authenticator = authenticator' \
+  "Webhook trust generation must rotate before the candidate authenticator is committed"
+
+WEBHOOK_DELIVERY_BODY="$(
+  extract_braced_region "$SERVER_FILE" 'private func markEventForDelivery'
+)"
+for invariant in \
+  'authentication.trustGeneration == trustGeneration' \
+  'return .staleTrustGeneration'; do
+  printf '%s\n' "$WEBHOOK_DELIVERY_BODY" | rg -Fq "$invariant" \
+    || fail "Stale webhook trust-generation rejection invariant missing: $invariant"
+done
+for regression in \
+  'testRSAKeyBelow2048BitsCannotCreateAuthenticator' \
+  'testLiveHTTPReplayWindowTracksCanonicalTrustGeneration' \
+  'testLiveHTTPRequestAuthenticatedBeforeRotationCannotEnterNewTrustGeneration'; do
+  rg -Fq "$regression" "$WEBHOOK_AUTH_TESTS" \
+    || fail "Webhook trust-generation regression missing: $regression"
+done
+
 for invariant in \
   'expirationByEventID[eventID] = max(retainedExpiration, expiration)' \
   'guard expirationByEventID.count < capacity else { return .saturated }' \
@@ -359,6 +643,7 @@ for regression in \
     || fail "Webhook replay-window regression missing: $regression"
 done
 for invariant in \
+  'private static let replayCacheLimit = 1_024' \
   'replayCapacity: Int' \
   'self.replayWindow = WebhookReplayWindow(capacity: Self.replayCacheLimit)' \
   'self.replayWindow = WebhookReplayWindow(capacity: replayCapacity)'; do
@@ -418,7 +703,8 @@ for regression in \
     || fail "Tunnel/Webhook readiness regression missing: $regression"
 done
 
-if rg -n 'webhookPublicKeyPEM|WebhookServer\(\)' IslandCore IslandCoreCLI IslandCoreTests; then
+if rg -n 'webhookPublicKeyPEM|(^|[^[:alnum:]_])WebhookServer\(\)' \
+  IslandCore IslandCoreCLI IslandCoreTests; then
   fail "An optional or zero-argument WebhookServer signature bypass was reintroduced"
 fi
 
@@ -599,6 +885,98 @@ rg -q 'SPARKLE_PUBLIC_ED_KEY is required for release builds' "$RELEASE_WORKFLOW"
   || fail "Release builds must fail closed without the Sparkle public key"
 rg -q 'SPARKLE_PRIVATE_ED_KEY is required to sign updates' "$RELEASE_WORKFLOW" \
   || fail "Release builds must fail closed without the Sparkle private key"
+for file in \
+  "$SPARKLE_CREDENTIAL_VALIDATOR" \
+  "$SPARKLE_SIGNATURE_VERIFIER" \
+  "$SPARKLE_OLD_TO_NEW_GATE" \
+  "$SPARKLE_LIVE_GATE_HELPER" \
+  "$SPARKLE_DISPOSABLE_SOURCE_PREPARER" \
+  "$RELEASE_ASSET_VERIFIER" \
+  "$RELEASE_ASSET_FIXTURES"; do
+  test -s "$file" || fail "Sparkle cryptographic release artifact is missing: $file"
+done
+for invariant in \
+  'EXPECTED_HASHES' \
+  'remote package reference remained in disposable Sparkle project' \
+  'DevIslandDisposableEnvironment' \
+  '__CFPREFERENCES_AVOID_DAEMON' \
+  'private cache/home + launch-job environment'; do
+  rg -Fq "$invariant" "$SPARKLE_DISPOSABLE_SOURCE_PREPARER" \
+    || fail "Sparkle disposable-source invariant missing: $invariant"
+done
+test -x "$SPARKLE_OLD_TO_NEW_GATE" && test -x "$SPARKLE_LIVE_GATE_HELPER" \
+  || fail "Sparkle old-to-new live gate is not executable"
+for invariant in \
+  'ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a' \
+  'SPUCommandLineDriver.m' \
+  'SUVerifyUpdateBeforeExtraction' \
+  'SURequireSignedFeed' \
+  '--check-immediately' \
+  'feed-wrong-feed.xml' \
+  'feed-wrong-archive.xml' \
+  'feed-wrong-key.xml' \
+  'feed-corrupt-code-signature.xml' \
+  '__CFPREFERENCES_AVOID_DAEMON' \
+  'prepare-sparkle-disposable-source.rb' \
+  'mktemp -d -t dev-island-sparkle-old-to-new' \
+  'HOME="$BUILD_HOME"' \
+  'HOME="$DISPOSABLE_HOME"' \
+  '/bin/ps -wwaxo pid=,command=' \
+  '-disableAutomaticPackageResolution' \
+  'native Sparkle ad-hoc helper identities preserved' \
+  'signal_disposable_helpers TERM' \
+  'signal_disposable_helpers KILL' \
+  'env -i'; do
+  rg -Fq -- "$invariant" "$SPARKLE_OLD_TO_NEW_GATE" \
+    || fail "Sparkle old-to-new gate invariant missing: $invariant"
+done
+if rg -q '(?:/usr/bin/)?defaults[[:space:]]+(write|delete)' "$SPARKLE_OLD_TO_NEW_GATE"; then
+  fail "Disposable Sparkle gate must not mutate real-user preferences"
+fi
+if rg -q 'CODE_SIGNING_(ALLOWED|REQUIRED)=NO|inject_disposable_environment' \
+    "$SPARKLE_OLD_TO_NEW_GATE"; then
+  fail "Disposable Sparkle gate must preserve source-built helper identities"
+fi
+for invariant in \
+  'TCPServer.new("127.0.0.1", 0)' \
+  'File::RDONLY | File::NOFOLLOW | File::NONBLOCK' \
+  'Process.spawn(*command, pgroup: true' \
+  'Process.kill("TERM", -process_group)' \
+  'Process.kill("KILL", -process_group)'; do
+  rg -Fq "$invariant" "$SPARKLE_LIVE_GATE_HELPER" \
+    || fail "Sparkle live-gate helper invariant missing: $invariant"
+done
+if rg -q 'SPARKLE_(PUBLIC|PRIVATE)_ED_KEY' "$SPARKLE_OLD_TO_NEW_GATE"; then
+  fail "Disposable Sparkle gate must never read production update keys"
+fi
+[[ "$(rg -Fc './scripts/ci/verify-sparkle-old-to-new-update.sh' "$CI_WORKFLOW")" -eq 1 ]] \
+  || fail "PR CI must run the disposable Sparkle old-to-new gate exactly once"
+[[ "$(rg -Fc './scripts/ci/verify-sparkle-old-to-new-update.sh' "$RELEASE_WORKFLOW")" -eq 1 ]] \
+  || fail "Tagged Release must run the disposable Sparkle old-to-new gate exactly once"
+for invariant in \
+  'Curve25519.Signing.PublicKey' \
+  'publicKey.isValidSignature' \
+  'O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC' \
+  'Sparkle archive Ed25519 signature verification failed' \
+  'Sparkle feed Ed25519 signature verification failed'; do
+  rg -Fq "$invariant" "$SPARKLE_SIGNATURE_VERIFIER" \
+    || fail "Sparkle CryptoKit verification invariant missing: $invariant"
+done
+rg -Fq 'SPARKLE_PUBLIC_ED_KEY and SPARKLE_PRIVATE_ED_KEY must form one Ed25519 key pair' \
+  "$SPARKLE_CREDENTIAL_VALIDATOR" \
+  || fail "Release credentials must prove the Sparkle public/private key pairing"
+rg -Fq "'Dev Island.app/Contents/Info.plist'" "$RELEASE_ASSET_VERIFIER" \
+  || fail "Release verification must extract the public key from the shipped App"
+rg -Fq 'verify-sparkle' "$RELEASE_ASSET_VERIFIER" \
+  || fail "Release verification must cryptographically verify both Sparkle signatures"
+for regression in \
+  'unrelated-archive-signature' \
+  'unrelated-feed-signature' \
+  'tampered-signed-feed-prefix' \
+  'mismatched-embedded-public-key'; do
+  rg -Fq "$regression" "$RELEASE_ASSET_FIXTURES" \
+    || fail "Sparkle Ed25519 attack fixture is missing: $regression"
+done
 test -x "$SPARKLE_SECRET_RUNNER" \
   || fail "Repository-owned Sparkle secret-isolation runner is missing"
 test -x "$SPARKLE_SECRET_FIXTURES" \
@@ -661,7 +1039,7 @@ for invariant in \
   'Sandbox-injected waiting prompt' \
   'Release-shaped binary contains debug-only marker' \
   'Debug binary is missing debug-only marker' \
-  'Build-flavor marker fixtures: PASS (18 negative cases)'; do
+  'Build-flavor marker fixtures: PASS (21 negative cases)'; do
   rg -Fq "$invariant" "$BUILD_FLAVOR_FIXTURES" \
     || fail "Build-flavor artifact invariant missing: $invariant"
 done
@@ -1124,8 +1502,8 @@ for invariant in \
 done
 
 if rg -n 'Signing\.PrivateKey|ProcessInfo|UserDefaults|URLSession' \
-  IslandCore/Sources/IslandCore/Commerce --glob '*.swift'; then
-  fail "Commercial runtime trust must remain public-key-only, local, and code-reviewed"
+  "$LICENSE_VERIFIER" "$LICENSE_STORE" "$LICENSE_ACTIVATION"; then
+  fail "Commercial verifier, store, and activation coordinator must remain public-key-only, local, and endpoint-free"
 fi
 
 if rg -n 'CommercialLicenseVerifier\(trustedKeys:' \
@@ -1141,7 +1519,9 @@ for invariant in \
   'case rollbackRejected' \
   'case conflictingGeneration' \
   'guard case \.valid\(let incomingLicense\) = evaluation' \
-  'private func saveAuthenticated' \
+  'CommercialLicenseDocumentStorageBackend' \
+  'CommercialLicenseKeychainBackend' \
+  'private let backend: any CommercialLicenseDocumentStorageBackend' \
   'CommercialLicenseStoreMutationLock' \
   'incomingLicense\.generation' \
   'storedLicense\.generation' \
@@ -1162,7 +1542,7 @@ for storage_regression in \
   'testVerifiedImportRoundTripsAndReplacesDocument' \
   'testDisabledOrInvalidReplacementPreservesVerifiedDocument' \
   'testStoredOversizedDocumentFailsClosedOnEvaluation' \
-  'testImportedDocumentUsesDeviceOnlyNonSynchronizingProtection' \
+  'testShippingKeychainPolicyIsDeviceOnlyAndNonSynchronizing' \
   'testOlderGenerationCannotReplaceNewerStoredLicense' \
   'testEqualGenerationIsIdempotentButConflictingBytesAreRejected' \
   'testHigherGenerationCannotMoveSignedIssuanceTimeBackward' \
@@ -1170,6 +1550,21 @@ for storage_regression in \
   rg -q "$storage_regression" "$LICENSE_STORE_TESTS" \
     || fail "Commercial license storage regression missing: $storage_regression"
 done
+test -s "$LICENSE_STORE_TEST_BACKEND" \
+  || fail "Hermetic commercial-license storage backend is missing"
+for hermetic_storage_invariant in \
+  'CommercialLicenseDocumentStorageBackend' \
+  'InMemoryCommercialLicenseDocumentStorage' \
+  'CommercialLicenseDocumentStore\(backend: storage\)' \
+  'never touches a.*login Keychain'; do
+  rg -q "$hermetic_storage_invariant" \
+    "$LICENSE_STORE_TEST_BACKEND" "$LICENSE_STORE_TESTS" "$LICENSE_ACTIVATION_TESTS" \
+    || fail "Hermetic commercial-license test invariant missing: $hermetic_storage_invariant"
+done
+if rg -n 'SecItem(Add|Update|CopyMatching|Delete)|CommercialLicenseDocumentStore\(service:' \
+  "$LICENSE_STORE_TESTS" "$LICENSE_ACTIVATION_TESTS" "$LICENSE_STORE_TEST_BACKEND"; then
+  fail "Ordinary commercial-license tests must never access the real Keychain"
+fi
 
 for invariant in \
   'minimumUTF8Bytes = 16' \
@@ -1185,6 +1580,7 @@ for invariant in \
   'case secureStorageUnavailable' \
   'previous\.state\.invalidate\(as: \.superseded\)' \
   'state\.invalidate\(as: \.cancelled\)' \
+  'guard !Task\.isCancelled else \{ return \.cancelled \}' \
   'guard state\.claimCommit\(\)' \
   'evaluationClock' \
   'now: evaluationClock\(\)' \
@@ -1207,22 +1603,179 @@ for activation_regression in \
   'testActivationCodeUsesBoundedAlphabetAndAlwaysRedacts' \
   'testActivationCodeUsesSharedDedicatedStorageAndSecureErase' \
   'testDisabledVerifierRejectsBeforeCallingTransport' \
-  'testSuccessfulActivationVerifiesAndRoundTripsThroughKeychain' \
+  'testSuccessfulActivationVerifiesAndRoundTripsThroughSecureStorage' \
   'testTamperedAndOversizedResponsesNeverReplaceValidDocument' \
   'testTransportErrorsAreNormalizedWithoutLeakingRawDetails' \
   'testLatestConcurrentActivationIsTheOnlyDocumentSaved' \
+  'testPreCancelledActivationCannotSupersedePendingOperationOrCallTransport' \
   'testExplicitCancellationRejectsLateTransportResponse' \
   'testResponseIsEvaluatedAtCommitTimeNotRequestStart' \
   'testSignedRollbackIsRejectedWithoutReplacingCurrentLicense'; do
   rg -q "$activation_regression" "$LICENSE_ACTIVATION_TESTS" \
     || fail "Commercial activation regression missing: $activation_regression"
 done
+
+test -s "$LICENSE_ACTIVATION_HTTPS" \
+  || fail "Hardened commercial activation HTTPS transport is missing"
+test -s "$LICENSE_ACTIVATION_HTTPS_TESTS" \
+  || fail "Commercial activation HTTPS transport regressions are missing"
+for https_transport_invariant in \
+  'public struct CommercialActivationHTTPSTransport' \
+  'init\(endpoint: URL\) throws' \
+  'activationPath = "/v1/activate"' \
+  'licenseContentType = "application/vnd.devisland.license"' \
+  'requestTimeout: TimeInterval = 10' \
+  'components\.scheme\?\.lowercased\(\) == "https"' \
+  'components\.port == nil \|\| components\.port == 443' \
+  'components\.user == nil' \
+  'components\.password == nil' \
+  'components\.percentEncodedPath == activationPath' \
+  'components\.percentEncodedQuery == nil' \
+  'components\.fragment == nil' \
+  'isPublicDNSName' \
+  'URLSessionConfiguration\.ephemeral' \
+  'connectionProxyDictionary = \[:\]' \
+  'httpShouldSetCookies = false' \
+  'urlCredentialStorage = nil' \
+  'urlCache = nil' \
+  'waitsForConnectivity = false' \
+  'httpMaximumConnectionsPerHost = 1' \
+  'CommercialActivationHTTPSNoRedirectDelegate' \
+  'willPerformHTTPRedirection' \
+  'completionHandler\(nil\)' \
+  'session\.bytes\(for: request\)' \
+  'response\.url == endpoint' \
+  'response\.expectedContentLength' \
+  'guard document\.count < maximumBytes' \
+  'Task\.checkCancellation\(\)' \
+  'case 400, 401, 404' \
+  'case 429' \
+  'case 500\.\.\.599'; do
+  rg -q "$https_transport_invariant" "$LICENSE_ACTIVATION_HTTPS" \
+    || fail "Commercial activation HTTPS invariant missing: $https_transport_invariant"
+done
+if rg -n '^\s*public\s+(init|static\s+func)\b' \
+  "$LICENSE_ACTIVATION_HTTPS"; then
+  fail "Commercial activation HTTPS endpoint construction must remain module-internal until provider review"
+fi
+if rg -n 'IslandLogger|os_log|print\(|URLProtocol|XCTest|Signing\.PrivateKey' \
+  "$LICENSE_ACTIVATION_HTTPS"; then
+  fail "Commercial activation HTTPS transport must remain log-free and fixture-free"
+fi
+if rg -n 'CommercialActivationHTTPSTransport\(' \
+  IslandApp IslandAppLib IslandCore/Sources/IslandCore \
+  --glob '*.swift'; then
+  fail "Commercial activation HTTPS transport must remain disconnected until provider and policy review"
+fi
+for https_transport_regression in \
+  'testEndpointPolicyAcceptsOnlyExactPublicDNSHTTPSOrigin' \
+  'testSessionConfigurationIsEphemeralBoundedAndCredentialFree' \
+  'testRedirectDelegateNeverAcceptsReplacementRequest' \
+  'testExactRequestAndStreamedDocumentResponse' \
+  'testStatusMappingNeverReturnsProviderBody' \
+  'testDeclaredAndStreamedOversizeResponsesFailBeforeReturningBytes' \
+  'testMaximumUnknownLengthResponseIsAcceptedExactlyAtBoundary' \
+  'testEmptyWrongMediaTypeUnknownStatusAndMismatchedURLFailClosed' \
+  'testTransportErrorIsNormalizedAndCodeNeverAppearsInErrors' \
+  'testCallerCancellationStopsInFlightRequestAndStaysCancellation'; do
+  rg -q "$https_transport_regression" "$LICENSE_ACTIVATION_HTTPS_TESTS" \
+    || fail "Commercial activation HTTPS regression missing: $https_transport_regression"
+done
+for https_cancellation_invariant in \
+  'let requestStopped = expectation\(description: "request stopped"\)' \
+  'CommercialActivationHTTPSURLProtocol\.install\(onStop:' \
+  'await fulfillment\(of: \[requestStopped\], timeout: 1\)' \
+  'override func stopLoading\(\)' \
+  'let handler = stopHandler' \
+  'handler\?\(\)'; do
+  rg -q "$https_cancellation_invariant" "$LICENSE_ACTIVATION_HTTPS_TESTS" \
+    || fail "Commercial activation HTTPS cancellation evidence missing: $https_cancellation_invariant"
+done
+for https_transport_document in \
+  "$LICENSE_SECURITY_DOC" \
+  "$LICENSE_THREAT_MODEL" \
+  docs/CI_DIAGNOSTICS.md \
+  docs/INTERFACE_CONTRACT.md \
+  docs/DATA_FLOW_INVENTORY.md \
+  docs/LEGAL_RELEASE_CHECKLIST.md; do
+  rg -q 'CommercialActivationHTTPSTransport|HTTPS transport' \
+    "$https_transport_document" \
+    || fail "Commercial activation HTTPS boundary is undocumented: $https_transport_document"
+done
+
+test -s "$LICENSE_ACTIVATION_SANDBOX_TESTS" \
+  || fail "Provider-neutral commercial activation sandbox is missing"
+for sandbox_invariant in \
+  'import Hummingbird' \
+  'http://127\.0\.0\.1:' \
+  'endpoint\.host == "127\.0\.0\.1"' \
+  'endpoint\.path == "/v1/activate"' \
+  'connectionProxyDictionary = \[:\]' \
+  'httpShouldSetCookies = false' \
+  'willPerformHTTPRedirection' \
+  'CommercialLicenseDocumentStore\.maximumDocumentBytes' \
+  'InMemoryCommercialLicenseDocumentStorage' \
+  'testRealLoopbackRoundTripVerifiesAndStoresSignedLicense' \
+  'testUnsignedLoopbackResponseFailsClosedWithoutStorage' \
+  'testRealLoopbackStatusMappingIsLowCardinalityAndNeverStoresBodies' \
+  'testRedirectUnknownStatusAndOversizedBodyFailClosedWithoutStorage' \
+  'testExplicitCancelRejectsCancellationInsensitiveRealHTTPResponse' \
+  'testLatestOperationWinsWhenSupersededRealHTTPResponseArrives' \
+  'testPreCancelledActivationCannotSupersedeOrSendRealHTTPRequest' \
+  'ignoresCallerCancellation' \
+  'Task\.detached' \
+  'responseDelayMilliseconds' \
+  'responseCount' \
+  'redirectTargetRequestCount' \
+  'http://127\.0\.0\.1:0/v1/activate' \
+  'testSandboxTransportAcceptsOnlyExactNumericLoopbackEndpoint'; do
+  rg -q "$sandbox_invariant" "$LICENSE_ACTIVATION_SANDBOX_TESTS" \
+    || fail "Commercial activation sandbox invariant missing: $sandbox_invariant"
+done
+if rg -n 'SecItem(Add|Update|CopyMatching|Delete)|kSecClassGenericPassword' \
+  "$LICENSE_ACTIVATION_SANDBOX_TESTS"; then
+  fail "Commercial activation sandbox must use process-memory storage only"
+fi
+if rg -n 'CommercialActivationLoopback|/_sandbox/ready' \
+  IslandApp IslandAppLib IslandCore/Sources/IslandCore --glob '*.swift'; then
+  fail "Commercial activation sandbox implementation must remain test-only"
+fi
+
+for keychain_invariant in \
+  'protocol KeychainStoreBackend: Sendable' \
+  'struct KeychainStoreClient: Sendable' \
+  'struct KeychainStoreSecurityBackend: KeychainStoreBackend' \
+  'kSecAttrAccessibleWhenUnlockedThisDeviceOnly' \
+  'kSecAttrSynchronizable: false'; do
+  rg -q "$keychain_invariant" "$KEYCHAIN_STORE" \
+    || fail "API-key Keychain boundary invariant missing: $keychain_invariant"
+done
+for keychain_regression in \
+  'testSaveAndLoad' \
+  'testSaveOverwritesExistingValue' \
+  'testDeleteRemovesValue' \
+  'testInvalidUTF8FailsClosedWithoutExposingBytes' \
+  'testShippingPolicyIsDeviceOnlyAndNonSynchronizing' \
+  'InMemoryKeychainStoreBackend'; do
+  rg -q "$keychain_regression" "$KEYCHAIN_STORE_TESTS" \
+    || fail "Hermetic API-key storage regression missing: $keychain_regression"
+done
+if rg -n 'KeychainStore\.(save|load|delete)|SecItem(Add|Update|CopyMatching|Delete)' \
+  "$KEYCHAIN_STORE_TESTS"; then
+  fail "Ordinary API-key storage tests must never access the production Keychain"
+fi
+if rg -n 'SecItem(Add|Update|CopyMatching|Delete)' \
+  IslandCoreTests IslandAppLibTests --glob '*.swift'; then
+  fail "The ordinary Swift test graph must not call Security.framework Keychain mutations"
+fi
 for documented_control in \
   'raw-body signature verification' \
   'durable event-ID uniqueness' \
   'Single-use short-lived activation code' \
   'WhenUnlockedThisDeviceOnly' \
   'Hardware fingerprint.*Rejected baseline' \
+  'pre-provider test-only loopback sandbox' \
+  'not evidence for TLS/server identity' \
   'commercial mode must stay disabled'; do
   rg -qi "$documented_control" "$LICENSE_THREAT_MODEL" \
     || fail "Commercial activation threat model control missing: $documented_control"
@@ -1296,6 +1849,746 @@ for file in "$TUNNEL_MANAGER" "$TUNNEL_MANAGER_TESTS"; do
   test -s "$file" || fail "Manus realtime lifecycle artifact missing: $file"
 done
 for invariant in \
+  'case webhookCleanupFailed(underlying: Error)' \
+  '@TaskLocal private static var lifecycleCallbackToken: UUID?' \
+  'private struct HeartbeatOperation: Sendable' \
+  'private struct LifecycleCallbackOperation: Sendable' \
+  'private var heartbeatOperation: HeartbeatOperation?' \
+  'private var retiringHeartbeatOperations: [UUID: HeartbeatOperation] = [:]' \
+  'private var lifecycleCallbackOperations: [UUID: LifecycleCallbackOperation] = [:]' \
+  'private var knownWebhookIDs: [String]' \
+  'private var webhookDeletionOperations: [String: WebhookDeletionOperation] = [:]' \
+  'private var webhookDeletionAttemptSequence: UInt64 = 0' \
+  'private var latestWebhookDeletionAttemptByID: [String: UInt64] = [:]' \
+  'private var webhookLaunchOperations: [UUID: WebhookLaunchOperation] = [:]' \
+  'private var unresolvedRegistrationTokens: Set<String>' \
+  'private var unresolvedRegistrationAttempts:' \
+  'private var unresolvedRegistrationAttemptStateIsCorrupt: Bool' \
+  'private var webhookListingOperation: WebhookListingOperation?' \
+  'static let webhookIDsPreferenceKey = "webhookIds"' \
+  'static let unresolvedRegistrationTokensPreferenceKey =' \
+  '"unresolvedWebhookRegistrationTokens"' \
+  'static let unresolvedRegistrationAttemptsPreferenceKey =' \
+  '"unresolvedWebhookRegistrationAttemptsV1"' \
+  'static let webhookRecoveryStatePreferenceKey =' \
+  '"webhookRecoveryStateV1"' \
+  'private static let registrationTimestampToleranceSeconds: Int64 = 300' \
+  'private static let maximumKnownWebhookCount = 1_024' \
+  'private static let maximumRegistrationAttemptCount = 64' \
+  'private static let maximumRecoveryStateBytes = 512 * 1_024' \
+  'struct TunnelPreferencesHandle: @unchecked Sendable' \
+  'static let shipping = TunnelPreferencesHandle(' \
+  'let restoredRecoveryState = Self.restoreWebhookRecoveryState(' \
+  'self.knownWebhookIDs = restoredRecoveryState.knownWebhookIDs' \
+  'self.unresolvedRegistrationTokens =' \
+  'self.unresolvedRegistrationAttempts =' \
+  'self.unresolvedRegistrationAttemptStateIsCorrupt =' \
+  'actor CleanupOnlyWebhookServer: WebhookServerProtocol'; do
+  rg -Fq "$invariant" "$TUNNEL_MANAGER" \
+    || fail "Persisted Manus webhook cleanup invariant missing: $invariant"
+done
+[[ "$(rg -Fc 'func stop() async throws' "$TUNNEL_MANAGER")" -eq 2 ]] \
+  || fail "Both the Manus tunnel protocol and TunnelManager stop must report cleanup failure"
+
+TUNNEL_STOP_WRAPPER="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'func stop() async throws {'
+)"
+for invariant in \
+  'private struct StopOperation: Sendable' \
+  'private var stopOperation: StopOperation?' \
+  'private var stopWaiterCounts: [UUID: Int] = [:]'; do
+  rg -Fq "$invariant" "$TUNNEL_MANAGER" \
+    || fail "Single-flight TunnelManager stop ownership missing: $invariant"
+done
+for invariant in \
+  'if let existing = stopOperation' \
+  'if let callerCallbackToken,' \
+  'lifecycleCallbackOperations[callerCallbackToken] != nil' \
+  'throw TunnelError.lifecycleSuperseded' \
+  'operation = existing' \
+  'stopWaiterCounts[existing.token, default: 0] += 1' \
+  'let token = UUID()' \
+  'let task = Task.detached' \
+  'try await performStop(' \
+  'excludingLifecycleCallback: callerCallbackToken' \
+  'let created = StopOperation(token: token, task: task)' \
+  'stopOperation = created' \
+  'stopWaiterCounts[token] = 1' \
+  'let stopError: (any Error)?' \
+  'try await operation.task.value' \
+  'if callerCallbackToken == nil {' \
+  'await joinLifecycleCallbacks()' \
+  'releaseStopWaiter(ifMatching: operation.token)' \
+  'if let stopError {' \
+  'throw stopError'; do
+  printf '%s\n' "$TUNNEL_STOP_WRAPPER" | rg -Fq "$invariant" \
+    || fail "Single-flight TunnelManager stop wrapper missing: $invariant"
+done
+if ! printf '%s\n' "$TUNNEL_STOP_WRAPPER" | rg -Uq \
+    'if let callerCallbackToken,[[:space:]]+lifecycleCallbackOperations\[callerCallbackToken\] != nil \{[[:space:][:print:]]*throw TunnelError\.lifecycleSuperseded'; then
+  fail "A lifecycle callback joining its externally-owned stop must fail superseded without forming a wait cycle"
+fi
+require_fixed_order \
+  "$TUNNEL_STOP_WRAPPER" \
+  'stopOperation = created' \
+  'try await operation.task.value' \
+  "TunnelManager must publish credential-release ownership before callers join it"
+require_fixed_order \
+  "$TUNNEL_STOP_WRAPPER" \
+  'try await operation.task.value' \
+  'await joinLifecycleCallbacks()' \
+  "External TunnelManager stop must join lifecycle callbacks after the stop transaction"
+require_fixed_order \
+  "$TUNNEL_STOP_WRAPPER" \
+  'await joinLifecycleCallbacks()' \
+  'releaseStopWaiter(ifMatching: operation.token)' \
+  "External TunnelManager stop must join callbacks before releasing its single-flight waiter"
+require_fixed_order \
+  "$TUNNEL_STOP_WRAPPER" \
+  'releaseStopWaiter(ifMatching: operation.token)' \
+  'throw stopError' \
+  "Failed external TunnelManager stop must release its waiter before returning the shared error"
+
+TUNNEL_RELEASE_STOP_WAITER="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func releaseStopWaiter'
+)"
+for invariant in \
+  'guard let count = stopWaiterCounts[token], count > 0 else { return }' \
+  'if count == 1 {' \
+  'stopWaiterCounts[token] = nil' \
+  'if stopOperation?.token == token {' \
+  'stopOperation = nil' \
+  'stopWaiterCounts[token] = count - 1'; do
+  printf '%s\n' "$TUNNEL_RELEASE_STOP_WAITER" | rg -Fq "$invariant" \
+    || fail "TunnelManager stop waiter-retirement invariant missing: $invariant"
+done
+
+TUNNEL_STOP_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func performStop('
+)"
+TUNNEL_STOP_CODE="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func performStop(' code
+)"
+for invariant in \
+  'let launchOperations = await cancelLaunchesAndJoinHeartbeat(' \
+  'excludingLifecycleCallback: callbackToken' \
+  'let deletionAttemptSequenceAtStart = webhookDeletionAttemptSequence' \
+  'let deletionOperationsAtStart = Array(webhookDeletionOperations.values)' \
+  'var attemptedWebhookIDs: Set<String> = []' \
+  'for operation in deletionOperationsAtStart' \
+  'try await awaitWebhookDeletionOperation(operation)' \
+  'let completed = await waitForLaunchCompletion(' \
+  'timeout: launchCancellationGrace' \
+  'guard completed else {' \
+  'WebhookCleanupInvariantError.registrationOutcomeUnresolved' \
+  'try await operation.task.value' \
+  'while let operation = webhookDeletionOperations.values.first {' \
+  'for webhookID in knownWebhookIDs {' \
+  'latestWebhookDeletionAttemptByID[webhookID, default: 0]' \
+  '> deletionAttemptSequenceAtStart' \
+  'guard !attemptedWebhookIDs.contains(webhookID),' \
+  '!attemptStartedDuringStop else { continue }' \
+  'try await reconcileUnresolvedRegistrationOutcomes()' \
+  'await stopServerOnly()' \
+  'throw firstCleanupError' \
+  'guard knownWebhookIDs.isEmpty,' \
+  'unresolvedRegistrationTokens.isEmpty,' \
+  'unresolvedRegistrationAttempts.isEmpty,' \
+  '!unresolvedRegistrationAttemptStateIsCorrupt,' \
+  'webhookLaunchOperations.isEmpty,' \
+  'webhookDeletionOperations.isEmpty,' \
+  'webhookListingOperation == nil else {' \
+  'WebhookCleanupInvariantError.persistedWebhookIDsRemain'; do
+  printf '%s\n' "$TUNNEL_STOP_BODY" | rg -Fq "$invariant" \
+    || fail "Credential-releasing TunnelManager stop invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_STOP_BODY" \
+  'let deletionOperationsAtStart = Array(webhookDeletionOperations.values)' \
+  'try await cleanupActiveTransport()' \
+  "TunnelManager stop must snapshot in-flight stored deletion ownership before its first suspension"
+require_fixed_order \
+  "$TUNNEL_STOP_BODY" \
+  'try await cleanupActiveTransport()' \
+  'for operation in deletionOperationsAtStart' \
+  "TunnelManager stop must join stored deletions that were active at credential-release entry"
+require_fixed_order \
+  "$TUNNEL_STOP_BODY" \
+  'try await awaitWebhookDeletionOperation(operation)' \
+  'let completed = await waitForLaunchCompletion(' \
+  "TunnelManager stop must join entry-time deletion ownership before waiting on registrations"
+require_fixed_order \
+  "$TUNNEL_STOP_BODY" \
+  'let completed = await waitForLaunchCompletion(' \
+  'try await operation.task.value' \
+  "TunnelManager stop must prove launch completion before joining its retained result"
+require_fixed_order \
+  "$TUNNEL_STOP_BODY" \
+  'try await operation.task.value' \
+  'while let operation = webhookDeletionOperations.values.first {' \
+  "TunnelManager stop must join registrations before draining their late deletion ownership"
+require_fixed_order \
+  "$TUNNEL_STOP_BODY" \
+  'while let operation = webhookDeletionOperations.values.first {' \
+  'for webhookID in knownWebhookIDs {' \
+  "TunnelManager stop must join launch-exposed deletion ownership before draining persisted IDs"
+
+TUNNEL_POST_RECONCILIATION_DRAIN="$(
+  printf '%s\n' "$TUNNEL_STOP_CODE" | awk '
+    !capturing && index($0, "try await reconcileUnresolvedRegistrationOutcomes()") {
+      capturing = 1
+    }
+    capturing {
+      print
+    }
+    capturing && index($0, "await stopServerOnly()") {
+      exit
+    }
+  '
+)"
+for invariant in \
+  'try await reconcileUnresolvedRegistrationOutcomes()' \
+  'while let operation = webhookDeletionOperations.values.first {' \
+  'try await awaitWebhookDeletionOperation(operation)' \
+  'await stopServerOnly()'; do
+  printf '%s\n' "$TUNNEL_POST_RECONCILIATION_DRAIN" | rg -Fq "$invariant" \
+    || fail "Post-reconciliation TunnelManager deletion drain invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_POST_RECONCILIATION_DRAIN" \
+  'try await reconcileUnresolvedRegistrationOutcomes()' \
+  'while let operation = webhookDeletionOperations.values.first {' \
+  "TunnelManager stop must reconcile before joining deletion ownership published by another list waiter"
+require_fixed_order \
+  "$TUNNEL_POST_RECONCILIATION_DRAIN" \
+  'while let operation = webhookDeletionOperations.values.first {' \
+  'try await awaitWebhookDeletionOperation(operation)' \
+  "TunnelManager post-reconciliation drain must join each retained deletion operation"
+require_fixed_order \
+  "$TUNNEL_POST_RECONCILIATION_DRAIN" \
+  'try await awaitWebhookDeletionOperation(operation)' \
+  'await stopServerOnly()' \
+  "TunnelManager stop must join every post-reconciliation deletion operation before closing local resources"
+if printf '%s\n' "$TUNNEL_POST_RECONCILIATION_DRAIN" \
+  | rg -Fq 'attemptedWebhookIDs'; then
+  fail "Post-reconciliation deletion drain must not exclude replacement operations by stale webhook-ID history"
+fi
+if printf '%s\n' "$TUNNEL_POST_RECONCILIATION_DRAIN" \
+  | rg -Fq 'deleteKnownWebhook('; then
+  fail "Post-reconciliation deletion drain must join existing ownership without retrying the persisted-ID ledger"
+fi
+require_fixed_order \
+  "$TUNNEL_STOP_BODY" \
+  'try await reconcileUnresolvedRegistrationOutcomes()' \
+  'await stopServerOnly()' \
+  "TunnelManager stop must reconcile process-death registration outcomes before closing local resources"
+require_fixed_order \
+  "$TUNNEL_STOP_BODY" \
+  'await stopServerOnly()' \
+  'throw firstCleanupError' \
+  "TunnelManager stop must close local resources before reporting remote cleanup failure"
+require_fixed_order \
+  "$TUNNEL_STOP_BODY" \
+  'throw firstCleanupError' \
+  'guard knownWebhookIDs.isEmpty,' \
+  "TunnelManager stop must enforce its complete terminal recovery-state gate after cleanup errors are absent"
+
+TUNNEL_LAUNCH_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func launchAndRegister'
+)"
+for invariant in \
+  'try await reconcileUnresolvedRegistrationOutcomes()' \
+  'try requireNoUnresolvedRegistrationOutcome()' \
+  'webhookLaunchOperations[token] = operation' \
+  'while webhookLaunchOperations[token] != nil {' \
+  'try Task.checkCancellation()' \
+  'try await task.value'; do
+  printf '%s\n' "$TUNNEL_LAUNCH_BODY" | rg -Fq "$invariant" \
+    || fail "Joinable Manus webhook launch invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_LAUNCH_BODY" \
+  'try await reconcileUnresolvedRegistrationOutcomes()' \
+  'try requireNoUnresolvedRegistrationOutcome()' \
+  "Manus launch must attempt conservative recovery before unresolved state blocks replacement"
+require_fixed_order \
+  "$TUNNEL_LAUNCH_BODY" \
+  'try requireNoUnresolvedRegistrationOutcome()' \
+  'let token = UUID()' \
+  "Unknown Manus registration outcomes must block before allocating replacement launch ownership"
+require_fixed_order \
+  "$TUNNEL_LAUNCH_BODY" \
+  'webhookLaunchOperations[token] = operation' \
+  'while webhookLaunchOperations[token] != nil {' \
+  "Webhook launch ownership must be recorded before the caller can suspend"
+
+TUNNEL_REGISTRATION_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func performLaunchAndRegister'
+)"
+for invariant in \
+  'try beginRegistrationOutcomeTracking(' \
+  'operationToken,' \
+  'callbackURL: webhookURL' \
+  'webhookID = try await client.registerWebhook(publicURL: webhookURL)' \
+  'let disposition = await client.registrationFailureDisposition(for: error)' \
+  'if disposition == .definitivelyRejected {' \
+  'try resolveRegistrationOutcome(operationToken)' \
+  'try recordAcceptedWebhookID(' \
+  'resolvingRegistrationToken: operationToken.uuidString' \
+  'try await cleanupKnownWebhooks(excluding: webhookID)'; do
+  printf '%s\n' "$TUNNEL_REGISTRATION_BODY" | rg -Fq "$invariant" \
+    || fail "Multi-ID Manus webhook registration invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_REGISTRATION_BODY" \
+  'try beginRegistrationOutcomeTracking(' \
+  'webhookID = try await client.registerWebhook(publicURL: webhookURL)' \
+  "Manus registration recovery identity must be persisted before provider I/O"
+require_fixed_order \
+  "$TUNNEL_REGISTRATION_BODY" \
+  'webhookID = try await client.registerWebhook(publicURL: webhookURL)' \
+  'try recordAcceptedWebhookID(' \
+  "Every accepted Manus webhook ID must enter the atomic recovery envelope immediately"
+require_fixed_order \
+  "$TUNNEL_REGISTRATION_BODY" \
+  'try recordAcceptedWebhookID(' \
+  'try await cleanupKnownWebhooks(excluding: webhookID)' \
+  "A replacement webhook must persist and resolve its accepted attempt before older cleanup"
+[[ "$(printf '%s\n' "$TUNNEL_REGISTRATION_BODY" \
+  | rg -Fc 'try resolveRegistrationOutcome(operationToken)')" -eq 1 ]] \
+  || fail "Only a definitive registration rejection may separately resolve an attempt"
+
+TUNNEL_REGISTRATION_DISPOSITION="$(
+  extract_braced_region \
+    "$TUNNEL_MANAGER" \
+    'nonisolated func registrationFailureDisposition('
+)"
+for invariant in \
+  'case ManusError.unauthorized,' \
+  'ManusError.invalidURL:' \
+  'where [400, 401, 403, 404, 405, 410, 422].contains(statusCode)' \
+  'return .definitivelyRejected' \
+  'default:' \
+  'return .outcomeUnknown'; do
+  printf '%s\n' "$TUNNEL_REGISTRATION_DISPOSITION" | rg -Fq "$invariant" \
+    || fail "Manus registration failure-disposition invariant missing: $invariant"
+done
+if printf '%s\n' "$TUNNEL_REGISTRATION_DISPOSITION" \
+    | rg -n '409|429|rateLimited'; then
+  fail "Manus conflict and rate-limit registration failures must remain outcome-unknown"
+fi
+
+TUNNEL_BEGIN_REGISTRATION_TRACKING="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func beginRegistrationOutcomeTracking'
+)"
+for invariant in \
+  'let callbackURLSHA256 = Self.callbackURLSHA256(callbackURL)' \
+  'let tokenString = token.uuidString' \
+  'version: UnresolvedWebhookRegistrationAttempt.schemaVersion' \
+  'callbackURLSHA256: callbackURLSHA256' \
+  'startedAtUnixSeconds:' \
+  'discoveredWebhookIDs: []' \
+  'try commitWebhookRecoveryState {' \
+  'unresolvedRegistrationTokens.insert(tokenString)' \
+  'unresolvedRegistrationAttempts[tokenString] = attempt'; do
+  printf '%s\n' "$TUNNEL_BEGIN_REGISTRATION_TRACKING" | rg -Fq "$invariant" \
+    || fail "Durable Manus registration recovery identity missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_BEGIN_REGISTRATION_TRACKING" \
+  'let attempt = UnresolvedWebhookRegistrationAttempt(' \
+  'try commitWebhookRecoveryState {' \
+  "Manus registration identity must be complete before the atomic recovery commit"
+
+for invariant in \
+  'private struct UnresolvedWebhookRegistrationAttempt:' \
+  'static let schemaVersion = 1' \
+  'let token: String' \
+  'let callbackURLSHA256: String' \
+  'let startedAtUnixSeconds: Int64' \
+  'let discoveredWebhookIDs: [String]' \
+  'private struct WebhookRecoveryStateEnvelope: Codable, Equatable, Sendable' \
+  'let knownWebhookIDs: [String]' \
+  'let unresolvedRegistrationTokens: [String]' \
+  'let unresolvedRegistrationAttempts:'; do
+  rg -Fq "$invariant" "$TUNNEL_MANAGER" \
+    || fail "Versioned Manus recovery-envelope invariant missing: $invariant"
+done
+
+TUNNEL_COMMIT_RECOVERY_STATE="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func commitWebhookRecoveryState'
+)"
+for invariant in \
+  'guard !unresolvedRegistrationAttemptStateIsCorrupt else {' \
+  'let previousKnownWebhookIDs = knownWebhookIDs' \
+  'let previousTokens = unresolvedRegistrationTokens' \
+  'let previousAttempts = unresolvedRegistrationAttempts' \
+  'mutation()' \
+  'Self.validateWebhookRecoveryState(' \
+  'persistWebhookRecoveryStateWithReadback()' \
+  'knownWebhookIDs = previousKnownWebhookIDs' \
+  'unresolvedRegistrationTokens = previousTokens' \
+  'unresolvedRegistrationAttempts = previousAttempts' \
+  'unresolvedRegistrationAttemptStateIsCorrupt = true' \
+  'WebhookCleanupInvariantError.registrationAttemptPersistenceFailed'; do
+  printf '%s\n' "$TUNNEL_COMMIT_RECOVERY_STATE" | rg -Fq "$invariant" \
+    || fail "Atomic Manus recovery-envelope commit invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_COMMIT_RECOVERY_STATE" \
+  'mutation()' \
+  'Self.validateWebhookRecoveryState(' \
+  "Manus recovery mutation must be validated before persistence"
+
+TUNNEL_PERSIST_RECOVERY_STATE="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func persistWebhookRecoveryStateWithReadback'
+)"
+for invariant in \
+  'let envelope = WebhookRecoveryStateEnvelope(' \
+  'preferences.set(data, forKey: Self.webhookRecoveryStatePreferenceKey)' \
+  'guard preferences.synchronize() else { return false }' \
+  'let restored = Self.decodeWebhookRecoveryStateEnvelope(rawReadback)' \
+  'restored.knownWebhookIDs == knownWebhookIDs' \
+  'restored.unresolvedRegistrationTokens' \
+  'restored.unresolvedRegistrationAttempts' \
+  'persistLegacyRecoveryMirrors(to: preferences)'; do
+  printf '%s\n' "$TUNNEL_PERSIST_RECOVERY_STATE" | rg -Fq "$invariant" \
+    || fail "Flushed Manus recovery-envelope readback invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_PERSIST_RECOVERY_STATE" \
+  'preferences.set(data, forKey: Self.webhookRecoveryStatePreferenceKey)' \
+  'guard preferences.synchronize() else { return false }' \
+  "Manus recovery envelope must be set before its persistent-domain flush"
+require_fixed_order \
+  "$TUNNEL_PERSIST_RECOVERY_STATE" \
+  'guard preferences.synchronize() else { return false }' \
+  'let restored = Self.decodeWebhookRecoveryStateEnvelope(rawReadback)' \
+  "Manus recovery envelope must flush before decode/readback"
+require_fixed_order \
+  "$TUNNEL_PERSIST_RECOVERY_STATE" \
+  'let restored = Self.decodeWebhookRecoveryStateEnvelope(rawReadback)' \
+  'persistLegacyRecoveryMirrors(to: preferences)' \
+  "Compatibility mirrors must be written only after authoritative envelope readback"
+
+for invariant in \
+  'if let envelopeObject = preferences.object(' \
+  'forKey: webhookRecoveryStatePreferenceKey' \
+  'let state = decodeWebhookRecoveryStateEnvelope(data)' \
+  'return ([], [], [:], true)' \
+  'preferences.object(forKey: webhookIDsPreferenceKey)' \
+  'preferences.object(' \
+  'forKey: unresolvedRegistrationAttemptsPreferenceKey'; do
+  rg -Fq "$invariant" "$TUNNEL_MANAGER" \
+    || fail "Authoritative-envelope/legacy-migration invariant missing: $invariant"
+done
+for invariant in \
+  'knownWebhookIDs.count <= maximumKnownWebhookCount' \
+  'Set(knownWebhookIDs).count == knownWebhookIDs.count' \
+  'unresolvedRegistrationTokens.count' \
+  '<= maximumRegistrationAttemptCount' \
+  'attempt.callbackURLSHA256.count == 64' \
+  'attempt.startedAtUnixSeconds >= 0' \
+  'Set(attempt.discoveredWebhookIDs).count' \
+  'knownIDs.contains(id)' \
+  'discoveredIDs.insert(id).inserted'; do
+  rg -Fq "$invariant" "$TUNNEL_MANAGER" \
+    || fail "Bounded Manus recovery-envelope validation missing: $invariant"
+done
+
+TUNNEL_RECONCILE_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func reconcileUnresolvedRegistrationOutcomes'
+)"
+for invariant in \
+  'guard !unresolvedRegistrationAttemptStateIsCorrupt else { return }' \
+  'guard activeTransport == nil else { return }' \
+  '!$0.discoveredWebhookIDs.isEmpty' \
+  'try await deleteKnownWebhook(webhookID)' \
+  '$0.discoveredWebhookIDs.isEmpty' \
+  'webhooks = try await listWebhooksForReconciliation()' \
+  'attemptsByCallbackDigest[attempt.callbackURLSHA256]?.count' \
+  '== 1 else {' \
+  'attempt.startedAtUnixSeconds' \
+  'Self.registrationTimestampToleranceSeconds' \
+  'webhook.status == .active' \
+  'webhook.createdAt >= earliestCreatedAt' \
+  'webhook.createdAt <= latestCreatedAt' \
+  'Self.callbackURLSHA256(webhook.url)' \
+  '== attempt.callbackURLSHA256' \
+  'guard !matches.isEmpty else { continue }' \
+  'try bindDiscoveredWebhookIDs(' \
+  'matches.map(\.id)' \
+  'try await deleteKnownWebhook(webhook.id)'; do
+  printf '%s\n' "$TUNNEL_RECONCILE_BODY" | rg -Fq "$invariant" \
+    || fail "Conservative Manus webhook.list reconciliation invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_RECONCILE_BODY" \
+  'try bindDiscoveredWebhookIDs(' \
+  'try await deleteKnownWebhook(webhook.id)' \
+  "Discovered Manus IDs must enter the envelope before provider delete"
+
+TUNNEL_LIST_RECONCILIATION="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func listWebhooksForReconciliation'
+)"
+for invariant in \
+  'if let existing = webhookListingOperation' \
+  'try await client.listWebhooks()' \
+  'webhookListingOperation = created' \
+  'let webhooks = try await operation.task.value' \
+  'clearWebhookListingOperation(ifMatching: operation.token)'; do
+  printf '%s\n' "$TUNNEL_LIST_RECONCILIATION" | rg -Fq "$invariant" \
+    || fail "Single-flight Manus webhook.list invariant missing: $invariant"
+done
+
+TUNNEL_BIND_DISCOVERED_IDS="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func bindDiscoveredWebhookIDs'
+)"
+for invariant in \
+  'guard !ids.isEmpty' \
+  'Set(ids).count == ids.count' \
+  'attempt.discoveredWebhookIDs.isEmpty' \
+  'alreadyOwnedIDs.isDisjoint(with: ids)' \
+  'try commitWebhookRecoveryState {' \
+  'knownWebhookIDs.append(id)' \
+  'discoveredWebhookIDs: ids'; do
+  printf '%s\n' "$TUNNEL_BIND_DISCOVERED_IDS" | rg -Fq "$invariant" \
+    || fail "Atomic Manus discovered-ID binding invariant missing: $invariant"
+done
+
+TUNNEL_CLEAR_KNOWN_ID="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func clearKnownWebhookID'
+)"
+for invariant in \
+  'let owningTokens = unresolvedRegistrationAttempts.values' \
+  'try commitWebhookRecoveryState {' \
+  'knownWebhookIDs.removeAll { $0 == id }' \
+  'let remainingIDs = attempt.discoveredWebhookIDs.filter' \
+  'if remainingIDs.isEmpty {' \
+  'unresolvedRegistrationAttempts[token] = nil' \
+  'unresolvedRegistrationTokens.remove(token)' \
+  'discoveredWebhookIDs: remainingIDs'; do
+  printf '%s\n' "$TUNNEL_CLEAR_KNOWN_ID" | rg -Fq "$invariant" \
+    || fail "Transactional Manus discovered-ID retirement invariant missing: $invariant"
+done
+
+TUNNEL_PROCESS_START_BODY="$TUNNEL_REGISTRATION_BODY"
+for invariant in \
+  'var process: (any TunnelProcessProtocol)?' \
+  'var processStopRequested: Bool'; do
+  rg -Fq "$invariant" "$TUNNEL_MANAGER" \
+    || fail "Joinable launch-process ownership missing: $invariant"
+done
+for invariant in \
+  'let process = processFactory()' \
+  'attachProcess(process, toLaunch: operationToken)' \
+  'publicURL = try await process.start()' \
+  'await stopLaunchProcess(operationToken)'; do
+  printf '%s\n' "$TUNNEL_PROCESS_START_BODY" | rg -Fq "$invariant" \
+    || fail "Launch-process fail-closed invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_PROCESS_START_BODY" \
+  'attachProcess(process, toLaunch: operationToken)' \
+  'publicURL = try await process.start()' \
+  "Tunnel launch must publish process ownership before start can suspend"
+
+TUNNEL_STOP_LAUNCH_PROCESS_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func stopLaunchProcess'
+)"
+for invariant in \
+  '!operation.processStopRequested' \
+  'let process = operation.process else { return }' \
+  'operation.processStopRequested = true' \
+  'webhookLaunchOperations[token] = operation' \
+  'await process.stop()'; do
+  printf '%s\n' "$TUNNEL_STOP_LAUNCH_PROCESS_BODY" | rg -Fq "$invariant" \
+    || fail "Single-stop launch-process invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_STOP_LAUNCH_PROCESS_BODY" \
+  'webhookLaunchOperations[token] = operation' \
+  'await process.stop()' \
+  "Launch-process stop ownership must be recorded before stop can suspend"
+
+TUNNEL_CANCEL_LAUNCHES_BODY="$(
+  extract_braced_region \
+    "$TUNNEL_MANAGER" \
+    'private func cancelLaunchOperationsAndStopProcesses()'
+)"
+for invariant in \
+  'let launches = Array(webhookLaunchOperations.values)' \
+  'operation.task.cancel()' \
+  'await stopLaunchProcess(operation.token)' \
+  'return launches'; do
+  printf '%s\n' "$TUNNEL_CANCEL_LAUNCHES_BODY" | rg -Fq "$invariant" \
+    || fail "Retained launch cancellation invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_CANCEL_LAUNCHES_BODY" \
+  'operation.task.cancel()' \
+  'await stopLaunchProcess(operation.token)' \
+  "Launch cancellation must signal tasks before stopping every actor-owned process"
+
+TUNNEL_RETIRE_HEARTBEAT_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func retireCurrentHeartbeat()'
+)"
+for invariant in \
+  'guard let operation = heartbeatOperation else { return }' \
+  'heartbeatOperation = nil' \
+  'retiringHeartbeatOperations[operation.token] = operation' \
+  'operation.task.cancel()'; do
+  printf '%s\n' "$TUNNEL_RETIRE_HEARTBEAT_BODY" | rg -Fq "$invariant" \
+    || fail "Retained heartbeat retirement invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_RETIRE_HEARTBEAT_BODY" \
+  'retiringHeartbeatOperations[operation.token] = operation' \
+  'operation.task.cancel()' \
+  "Heartbeat ownership must move to the retiring ledger before cancellation"
+
+TUNNEL_JOIN_HEARTBEATS_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func joinRetiringHeartbeats()'
+)"
+for invariant in \
+  'let operations = Array(retiringHeartbeatOperations.values)' \
+  'await operation.task.value' \
+  'retiringHeartbeatOperations[operation.token]?.token == operation.token' \
+  'retiringHeartbeatOperations[operation.token] = nil'; do
+  printf '%s\n' "$TUNNEL_JOIN_HEARTBEATS_BODY" | rg -Fq "$invariant" \
+    || fail "Strict retiring-heartbeat join invariant missing: $invariant"
+done
+
+TUNNEL_CANCEL_AND_JOIN_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func cancelLaunchesAndJoinHeartbeat('
+)"
+for invariant in \
+  'retireCurrentHeartbeat()' \
+  'let launches = await cancelLaunchOperationsAndStopProcesses()' \
+  'await joinRetiringHeartbeats()' \
+  'while let operation = lifecycleCallbackOperations.values.first(' \
+  'where: { $0.token != callbackToken }' \
+  'operation.task.cancel()' \
+  'await operation.task.value' \
+  'lifecycleCallbackOperations[operation.token]?.token == operation.token' \
+  'lifecycleCallbackOperations[operation.token] = nil'; do
+  printf '%s\n' "$TUNNEL_CANCEL_AND_JOIN_BODY" | rg -Fq "$invariant" \
+    || fail "Heartbeat/callback strict-join invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_CANCEL_AND_JOIN_BODY" \
+  'retireCurrentHeartbeat()' \
+  'let launches = await cancelLaunchOperationsAndStopProcesses()' \
+  "Heartbeat must be retired before its cancellation-unaware launch is interrupted"
+require_fixed_order \
+  "$TUNNEL_CANCEL_AND_JOIN_BODY" \
+  'let launches = await cancelLaunchOperationsAndStopProcesses()' \
+  'await joinRetiringHeartbeats()' \
+  "Heartbeat-owned launches must be interrupted before strict heartbeat join"
+require_fixed_order \
+  "$TUNNEL_CANCEL_AND_JOIN_BODY" \
+  'await joinRetiringHeartbeats()' \
+  'while let operation = lifecycleCallbackOperations.values.first(' \
+  "Lifecycle callbacks must be drained only after every retiring heartbeat exits"
+
+TUNNEL_SCHEDULE_CALLBACK_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func scheduleLifecycleCallback('
+)"
+for invariant in \
+  'await self.lifecycleCallbackMayStart(token)' \
+  'await Self.$lifecycleCallbackToken.withValue(token)' \
+  'await callback()' \
+  'await self.finishLifecycleCallback(token)' \
+  'let operation = LifecycleCallbackOperation(token: token, task: task)' \
+  'lifecycleCallbackOperations[token] = operation'; do
+  printf '%s\n' "$TUNNEL_SCHEDULE_CALLBACK_BODY" | rg -Fq "$invariant" \
+    || fail "Retained lifecycle-callback ownership invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_SCHEDULE_CALLBACK_BODY" \
+  'let operation = LifecycleCallbackOperation(token: token, task: task)' \
+  'lifecycleCallbackOperations[token] = operation' \
+  "Lifecycle callback handle must be retained in the actor-owned ledger"
+
+TUNNEL_HEARTBEAT_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func runHeartbeat(token: UUID)'
+)"
+for invariant in \
+  'let callbackOperation = callback.map(scheduleLifecycleCallback)' \
+  'finishHeartbeat(token)'; do
+  printf '%s\n' "$TUNNEL_HEARTBEAT_BODY" | rg -Fq "$invariant" \
+    || fail "Heartbeat callback handoff invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_HEARTBEAT_BODY" \
+  'let callbackOperation = callback.map(scheduleLifecycleCallback)' \
+  'finishHeartbeat(token)' \
+  "Heartbeat must retain its callback before releasing heartbeat ownership"
+
+TUNNEL_JOIN_CALLBACKS_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func joinLifecycleCallbacks()'
+)"
+for invariant in \
+  'while let operation = lifecycleCallbackOperations.values.first' \
+  'await operation.task.value' \
+  'lifecycleCallbackOperations[operation.token]?.token == operation.token' \
+  'lifecycleCallbackOperations[operation.token] = nil'; do
+  printf '%s\n' "$TUNNEL_JOIN_CALLBACKS_BODY" | rg -Fq "$invariant" \
+    || fail "Strict lifecycle-callback join invariant missing: $invariant"
+done
+
+TUNNEL_DELETE_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func deleteKnownWebhook'
+)"
+for invariant in \
+  'recordKnownWebhookID(id)' \
+  'if let existing = webhookDeletionOperations[id]' \
+  'operation = existing' \
+  'webhookDeletionAttemptSequence &+= 1' \
+  'latestWebhookDeletionAttemptByID[id] = webhookDeletionAttemptSequence' \
+  'try await client.deleteWebhook(id: id)' \
+  'webhookDeletionOperations[id] = created' \
+  'try await awaitWebhookDeletionOperation(operation)'; do
+  printf '%s\n' "$TUNNEL_DELETE_BODY" | rg -Fq "$invariant" \
+    || fail "Shared Manus webhook deletion invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TUNNEL_DELETE_BODY" \
+  'latestWebhookDeletionAttemptByID[id] = webhookDeletionAttemptSequence' \
+  'try await client.deleteWebhook(id: id)' \
+  "A new per-ID deletion attempt must be recorded before provider I/O"
+require_fixed_order \
+  "$TUNNEL_DELETE_BODY" \
+  'webhookDeletionOperations[id] = created' \
+  'try await awaitWebhookDeletionOperation(operation)' \
+  "Keyed deletion ownership must be published before any lifecycle caller awaits it"
+
+TUNNEL_AWAIT_DELETE_BODY="$(
+  extract_braced_region "$TUNNEL_MANAGER" 'private func awaitWebhookDeletionOperation'
+)"
+for invariant in \
+  'try await operation.task.value' \
+  'webhookDeletionOperations[operation.webhookID]?.token == operation.token' \
+  'webhookDeletionOperations[operation.webhookID] = nil' \
+  'clearKnownWebhookID(operation.webhookID)' \
+  'throw TunnelError.webhookCleanupFailed(underlying: error)'; do
+  printf '%s\n' "$TUNNEL_AWAIT_DELETE_BODY" | rg -Fq "$invariant" \
+    || fail "Joined Manus webhook deletion completion invariant missing: $invariant"
+done
+[[ "$(printf '%s\n' "$TUNNEL_AWAIT_DELETE_BODY" \
+  | rg -Fc 'webhookDeletionOperations[operation.webhookID]?.token == operation.token')" -eq 2 ]] \
+  || fail "Both success and failure must retire only the exact joined deletion token"
+require_fixed_order \
+  "$TUNNEL_AWAIT_DELETE_BODY" \
+  'try await operation.task.value' \
+  'clearKnownWebhookID(operation.webhookID)' \
+  "Persisted webhook IDs may clear only after confirmed provider deletion"
+[[ "$(rg -Fc 'try await client.deleteWebhook(id: id)' "$TUNNEL_MANAGER")" -eq 1 ]] \
+  || fail "Every lifecycle branch must share the single keyed webhook deletion path"
+[[ "$(rg -Fc 'clearKnownWebhookID(operation.webhookID)' "$TUNNEL_MANAGER")" -eq 1 ]] \
+  || fail "Webhook cleanup capability must clear only in the confirmed deletion path"
+
+for invariant in \
   'private var activeTransport: RegisteredTransport?' \
   'func handleSleepWake\(\) async throws' \
   'await process.stop()' \
@@ -1313,12 +2606,48 @@ for invariant in \
     || fail "TaskStore realtime downgrade invariant missing: $invariant"
 done
 for regression in \
+  'testStoredWebhookCleanupFailureBlocksReplacementAndRetainsID' \
+  'testCleanupOnlyManagerDeletesPersistedIDsWithoutOpeningRealtime' \
+  'testStopRetainsFailedDeletionAndNextStartCleansBeforeRegistering' \
+  'testHeartbeatDeleteFailureBlocksReplacementAndRetainsID' \
   'testRegistrationFailureStopsUnregisteredProcessAndRollsBackServer' \
   'testWakeFailureIsReturnedAndCannotLeaveProcessOnlyRealtime' \
   'testSuccessfulWakeRestoresOnlyAfterWebhookRegistration' \
   'testHeartbeatRegistrationFailureSignalsPollingOnlyAndStopsReplacement' \
   'testSuccessfulPollCannotPromotePollingOnlyModeToConnected' \
-  'testStopDuringRegistrationDeletesLateWebhookAndLeavesNoTransport'; do
+  'testStopDuringRegistrationDeletesLateWebhookAndLeavesNoTransport' \
+  'testLateRegistrationFailedDeletionRemainsRetryableAfterSupersession' \
+  'testJoinedCleanupFailureDoesNotSuppressOtherPersistedIDs' \
+  'testStopJoinsInFlightStoredDeletionBeforeCredentialRelease' \
+  'testStopFailsClosedWhenConcurrentCleanupFailureLeavesLedgerID' \
+  'testConcurrentStopsShareSuccessfulCredentialReleaseOperation' \
+  'testConcurrentStopsShareFailureAndLaterStopRetriesLedger' \
+  'testStopStrictlyJoinsHeartbeatBlockedInServerReadiness' \
+  'testSuspendJoinsHeartbeatBlockedInProcessCheckBeforeWakePromotesReplacement' \
+  'testStopJoinsHeartbeatBlockedAfterClearingActiveBeforeLedgerCleanup' \
+  'testBlockedRegistrationStopIsImmediateFailClosedAndLateIDIsCompensated' \
+  'testConflictAndRateLimitRegistrationFailuresRemainPersistedUnknown' \
+  'testExternalStopJoinsBlockedCallbackWhoseRecursiveStopSeesSingleFlight' \
+  'testCallbackOwnedStopLetsExternalWaiterJoinCallbackWithoutCycle' \
+  'testSuccessorStartWaitsForRetiringCallbackBeforePromotingNewTransport' \
+  'testCallbackOwnedFailedStopStillJoinsCallbackBeforeExternalErrorReturns' \
+  'testUnknownRegistrationBlocksOverlapUntilLateIDIsCompensated' \
+  'testRestartReconcilesOnlyExactCallbackAndClearsDurableAttempt' \
+  'testRestartPersistsEveryExactMatchBeforeDeletingAnyOfThem' \
+  'testRestartDoesNotAttributeInactiveExactCallback' \
+  'testRestartKeepsAttemptWhenAuthoritativeListIsEmpty' \
+  'testRestartKeepsAttemptWhenWebhookListFails' \
+  'testRestartRejectsExactCallbackCreatedBeforeAttemptWindow' \
+  'testRestartRejectsExactCallbackCreatedAfterAttemptWindow' \
+  'testRestartCleansKnownIDThenReconcilesUnknownRegistration' \
+  'testTwoUnknownAttemptsWithSameCallbackDigestDeleteNothing' \
+  'testWrongTypeLegacyRecoveryStateFailsClosed' \
+  'testWrongTypeRecoveryEnvelopeFailsClosedAndIgnoresLegacyMirrors' \
+  'testRestartRetriesBoundDiscoveredIDWithoutListingAgain' \
+  'testLegacyTokenOnlyMarkerStaysFailClosedWithoutAccountDeletion' \
+  'testStopBlockedInListRejectsSuccessorStartAndWake' \
+  'testOverlappingRestartReconciliationSharesListAndDeleteOperations' \
+  'testPostReconciliationDrainJoinsReplacementDeletionTokenForPreviouslyAttemptedID'; do
   rg -q "$regression" "$TUNNEL_MANAGER_TESTS" \
     || fail "Manus realtime lifecycle regression missing: $regression"
 done
@@ -1330,13 +2659,311 @@ for invariant in \
   'private var lifecycleGeneration: UInt64' \
   'onUnauthorized' \
   'guard isCurrent\(generation\)' \
-  'pollingTask\?\.cancel\(\)'; do
+  'private var pollingOperation: PollingOperation?' \
+  'private var retiringPollingOperations: \[UInt64: Task<Void, Never>\]' \
+  'private var nextOperationToken: UInt64' \
+  'retireCurrentPollingOperation\(\)' \
+  'pollingOperationDidFinish\(token: token\)'; do
   rg -q "$invariant" "$POLLING_FALLBACK" \
     || fail "Manus polling lifecycle invariant missing: $invariant"
 done
 if rg -n 'nonisolated\(unsafe\)' "$POLLING_FALLBACK"; then
   fail "PollingFallback must not restore unsafe shared task state"
 fi
+POLLING_STOP_BODY="$(
+  extract_braced_region "$POLLING_FALLBACK" 'func stop() async {'
+)"
+for invariant in \
+  'lifecycleGeneration &+= 1' \
+  'retireCurrentPollingOperation()' \
+  'let tasks = Array(retiringPollingOperations.values)' \
+  'tasks.forEach { $0.cancel() }' \
+  'for task in tasks {' \
+  'await task.value'; do
+  printf '%s\n' "$POLLING_STOP_BODY" | rg -Fq "$invariant" \
+    || fail "Joinable PollingFallback stop invariant missing: $invariant"
+done
+require_fixed_order \
+  "$POLLING_STOP_BODY" \
+  'retireCurrentPollingOperation()' \
+  'let tasks = Array(retiringPollingOperations.values)' \
+  "PollingFallback stop must retire current ownership before snapshotting every superseded poll"
+require_fixed_order \
+  "$POLLING_STOP_BODY" \
+  'tasks.forEach { $0.cancel() }' \
+  'await task.value' \
+  "PollingFallback stop must cancel and then join every current and superseded poll"
+
+POLLING_RETIRE_BODY="$(
+  extract_braced_region "$POLLING_FALLBACK" 'private func retireCurrentPollingOperation() {'
+)"
+for invariant in \
+  'operation.task.cancel()' \
+  'retiringPollingOperations[operation.token] = operation.task' \
+  'pollingOperation = nil'; do
+  printf '%s\n' "$POLLING_RETIRE_BODY" | rg -Fq "$invariant" \
+    || fail "Tokenized retiring poll ownership missing: $invariant"
+done
+POLLING_COMPLETION_BODY="$(
+  extract_braced_region "$POLLING_FALLBACK" 'private func pollingOperationDidFinish(token: UInt64) {'
+)"
+for invariant in \
+  'pollingOperation?.token == token' \
+  'retiringPollingOperations.removeValue(forKey: token)'; do
+  printf '%s\n' "$POLLING_COMPLETION_BODY" | rg -Fq "$invariant" \
+    || fail "Exact-token poll completion ownership missing: $invariant"
+done
+POLLING_START_BODY="$(
+  extract_braced_region "$POLLING_FALLBACK" 'func start('
+)"
+for invariant in \
+  'retireCurrentPollingOperation()' \
+  'let token = nextOperationToken' \
+  'pollingOperationDidFinish(token: token)' \
+  'pollingOperation = PollingOperation(token: token, task: task)'; do
+  printf '%s\n' "$POLLING_START_BODY" | rg -Fq "$invariant" \
+    || fail "Polling restart retirement invariant missing: $invariant"
+done
+require_fixed_order \
+  "$POLLING_START_BODY" \
+  'retireCurrentPollingOperation()' \
+  'pollingOperation = PollingOperation(token: token, task: task)' \
+  "Polling start must retire the superseded operation before publishing its successor"
+
+LOCAL_HOOK_STOP_BODY="$(
+  extract_braced_region "$LOCAL_HOOK_SERVER" 'public func stop() async {'
+)"
+for invariant in \
+  '@TaskLocal static var identity: LocalHookDeliveryDrainIdentity?' \
+  'await stop(excluding: LocalHookDeliveryDrainContext.identity)' \
+  'private struct LifecycleOperation' \
+  'let gracefulShutdownControl: LocalHookServeShutdownControl?' \
+  'private struct EventDeliveryLifecycle' \
+  'private var serverOperation: LifecycleOperation?' \
+  'private var readinessOperation: LifecycleOperation?' \
+  'private var eventDelivery: EventDeliveryLifecycle?' \
+  'private var retiringServerOperations: [UInt64: LifecycleOperation]' \
+  'private var retiringReadinessOperations: [UInt64: Task<Void, Never>]' \
+  'private var retiringEventDeliveryOperations: [UInt64: Task<Void, Never>]' \
+  'private var nextOperationToken: UInt64'; do
+  rg -Fq "$invariant" "$LOCAL_HOOK_SERVER" \
+    || fail "Tokenized LocalHookServer lifecycle ownership missing: $invariant"
+done
+
+LOCAL_HOOK_START_BODY="$(
+  extract_braced_region "$LOCAL_HOOK_SERVER" 'public func start('
+)"
+for invariant in \
+  'retireCurrentServerOperation()' \
+  'retireCurrentReadinessOperation()' \
+  'launchServeLoop(epoch: epoch)'; do
+  printf '%s\n' "$LOCAL_HOOK_START_BODY" | rg -Fq "$invariant" \
+    || fail "LocalHookServer start retirement invariant missing: $invariant"
+done
+LOCAL_HOOK_RESTART_BODY="$(
+  extract_braced_region "$LOCAL_HOOK_SERVER" 'public func restart() {'
+)"
+for invariant in \
+  'retireCurrentServerOperation()' \
+  'retireCurrentReadinessOperation()' \
+  'launchServeLoop(epoch: epoch)'; do
+  printf '%s\n' "$LOCAL_HOOK_RESTART_BODY" | rg -Fq "$invariant" \
+    || fail "LocalHookServer restart retirement invariant missing: $invariant"
+done
+for invariant in \
+  'let callerServerToken = LocalHookDeliveryDrainContext.identity?.ownerServerToken' \
+  'retireCurrentEventDelivery()' \
+  'retireCurrentServerOperation()' \
+  'retireCurrentReadinessOperation()' \
+  'let serverTasks = retiringServerOperations.sorted { $0.key < $1.key }' \
+  'let readinessTasks = Array(retiringReadinessOperations.values)' \
+  'let eventDeliveryTasks = retiringEventDeliveryOperations.sorted { $0.key < $1.key }' \
+  'operation.requestStop()' \
+  'readinessTasks.forEach { $0.cancel() }' \
+  'onEvent = nil' \
+  'onActionRequest = nil' \
+  'for task in readinessTasks {' \
+  'for (token, task) in eventDeliveryTasks where token != callerServerToken {' \
+  'for (token, operation) in serverTasks where token != callerServerToken {' \
+  'await operation.task.value'; do
+  printf '%s\n' "$LOCAL_HOOK_STOP_BODY" | rg -Fq "$invariant" \
+    || fail "Joinable LocalHookServer stop invariant missing: $invariant"
+done
+require_fixed_order \
+  "$LOCAL_HOOK_STOP_BODY" \
+  'retireCurrentEventDelivery()' \
+  'let eventDeliveryTasks = retiringEventDeliveryOperations.sorted' \
+  "LocalHookServer stop must retain current delivery ownership before snapshotting every delivery"
+require_fixed_order \
+  "$LOCAL_HOOK_STOP_BODY" \
+  'retireCurrentServerOperation()' \
+  'let serverTasks = retiringServerOperations.sorted' \
+  "LocalHookServer stop must retire current serve ownership before snapshotting all serve tasks"
+require_fixed_order \
+  "$LOCAL_HOOK_STOP_BODY" \
+  'retireCurrentReadinessOperation()' \
+  'let readinessTasks = Array(retiringReadinessOperations.values)' \
+  "LocalHookServer stop must retire current readiness ownership before snapshotting all probes"
+require_fixed_order \
+  "$LOCAL_HOOK_STOP_BODY" \
+  'readinessTasks.forEach { $0.cancel() }' \
+  'for task in readinessTasks {' \
+  "LocalHookServer stop must cancel before joining all readiness operations"
+require_fixed_order \
+  "$LOCAL_HOOK_STOP_BODY" \
+  'for task in readinessTasks {' \
+  'for (token, task) in eventDeliveryTasks where token != callerServerToken {' \
+  "LocalHookServer stop must join readiness before non-self event delivery"
+require_fixed_order \
+  "$LOCAL_HOOK_STOP_BODY" \
+  'for (token, task) in eventDeliveryTasks where token != callerServerToken {' \
+  'for (token, operation) in serverTasks where token != callerServerToken {' \
+  "LocalHookServer stop must join non-self delivery before its serve generation"
+
+for invariant in \
+  'retireCurrentServerOperation(cancel: false)' \
+  'retiringServerOperations[operation.token] = operation' \
+  'retiringReadinessOperations[operation.token] = operation.task' \
+  'retiringEventDeliveryOperations[current.token] = task' \
+  'serverOperationDidFinish(token: serverToken)' \
+  'readinessOperationDidFinish(token: readinessOperationToken)' \
+  'retiringServerOperations.removeValue(forKey: token)' \
+  'retiringReadinessOperations.removeValue(forKey: token)' \
+  'readinessOperation?.token == token'; do
+  rg -Fq "$invariant" "$LOCAL_HOOK_SERVER" \
+    || fail "Current/retiring LocalHookServer token invariant missing: $invariant"
+done
+
+LOCAL_HOOK_DELIVERY_STOP_BODY="$(
+  extract_braced_region "$LOCAL_HOOK_SERVER" 'fileprivate func stop('
+)"
+for invariant in \
+  'isAcceptingEvents = false' \
+  'let queuedEntries = states.values.flatMap(\.queue)' \
+  'states = [:]' \
+  'entry.completion?.resume(returning: false)' \
+  'for operation in currentDrainOperations.values {' \
+  'operation.task.cancel()' \
+  'retiringDrainOperations[operation.identity.token] = operation.task' \
+  'currentDrainOperations = [:]' \
+  'callerIdentity?.deliveryID == deliveryID' \
+  'let operations = retiringDrainOperations.sorted { $0.key < $1.key }' \
+  'for (token, task) in operations where token != callerToken {' \
+  'await task.value'; do
+  printf '%s\n' "$LOCAL_HOOK_DELIVERY_STOP_BODY" | rg -Fq "$invariant" \
+    || fail "Strict Local Hook event-delivery stop invariant missing: $invariant"
+done
+require_fixed_order \
+  "$LOCAL_HOOK_DELIVERY_STOP_BODY" \
+  'states = [:]' \
+  'entry.completion?.resume(returning: false)' \
+  "Local Hook delivery stop must clear queued ownership before failing action barriers neutral"
+require_fixed_order \
+  "$LOCAL_HOOK_DELIVERY_STOP_BODY" \
+  'retiringDrainOperations[operation.identity.token] = operation.task' \
+  'currentDrainOperations = [:]' \
+  "Local Hook drains must enter retiring ownership before current handles are cleared"
+require_fixed_order \
+  "$LOCAL_HOOK_DELIVERY_STOP_BODY" \
+  'operation.task.cancel()' \
+  'await task.value' \
+  "Local Hook delivery stop must cancel and join every non-self drain"
+
+LOCAL_HOOK_RETIRE_DELIVERY_BODY="$(
+  extract_braced_region "$LOCAL_HOOK_SERVER" 'private func retireCurrentEventDelivery('
+)"
+for invariant in \
+  'eventDelivery = nil' \
+  'await current.delivery.stop(excluding: nil)' \
+  'await self?.eventDeliveryOperationDidFinish(token: current.token)' \
+  'retiringEventDeliveryOperations[current.token] = task'; do
+  printf '%s\n' "$LOCAL_HOOK_RETIRE_DELIVERY_BODY" | rg -Fq "$invariant" \
+    || fail "Retained Local Hook delivery lifecycle invariant missing: $invariant"
+done
+require_fixed_order \
+  "$LOCAL_HOOK_RETIRE_DELIVERY_BODY" \
+  'eventDelivery = nil' \
+  'retiringEventDeliveryOperations[current.token] = task' \
+  "Local Hook delivery must leave the current slot before publishing retiring ownership"
+
+LOCAL_HOOK_REQUEST_STOP_BODY="$(
+  extract_braced_region "$LOCAL_HOOK_SERVER" 'func requestStop() {'
+)"
+for invariant in \
+  'if let gracefulShutdownControl {' \
+  'if gracefulShutdownControl.requestShutdown() {' \
+  'task.cancel()'; do
+  printf '%s\n' "$LOCAL_HOOK_REQUEST_STOP_BODY" | rg -Fq "$invariant" \
+    || fail "Graceful Local Hook serve-stop invariant missing: $invariant"
+done
+
+LOCAL_HOOK_LAUNCH_SERVE_BODY="$(
+  extract_braced_region "$LOCAL_HOOK_SERVER" 'private func launchServeLoop('
+)"
+for invariant in \
+  'retireCurrentEventDelivery(ifMatching: replacingServerToken)' \
+  'retireCurrentEventDelivery()' \
+  'retireCurrentServerOperation()' \
+  'let gracefulShutdownControl = serveOperationOverride == nil' \
+  '? LocalHookServeShutdownControl()' \
+  'ownerServerToken: serverToken' \
+  'gracefulShutdownControl: gracefulShutdownControl!' \
+  'gracefulShutdownControl: gracefulShutdownControl'; do
+  printf '%s\n' "$LOCAL_HOOK_LAUNCH_SERVE_BODY" | rg -Fq "$invariant" \
+    || fail "Production Local Hook graceful-shutdown ownership missing: $invariant"
+done
+
+LOCAL_HOOK_SERVE_BODY="$(
+  extract_braced_region "$LOCAL_HOOK_SERVER" 'private static func serve('
+)"
+for invariant in \
+  'let serviceGroup = ServiceGroup(' \
+  'gracefulShutdownControl.install(serviceGroup)' \
+  'try await serviceGroup.run()' \
+  'gracefulShutdownControl.serviceGroupDidFinish()'; do
+  printf '%s\n' "$LOCAL_HOOK_SERVE_BODY" | rg -Fq "$invariant" \
+    || fail "Graceful Hummingbird shutdown invariant missing: $invariant"
+done
+require_fixed_order \
+  "$LOCAL_HOOK_SERVE_BODY" \
+  'gracefulShutdownControl.install(serviceGroup)' \
+  'try await serviceGroup.run()' \
+  "Hummingbird graceful shutdown control must be installed before serving"
+for invariant in \
+  'private var shutdownTask: Task<Void, Never>?' \
+  'shutdownTask = Task {' \
+  'await serviceGroup.triggerGracefulShutdown()'; do
+  rg -Fq "$invariant" "$LOCAL_HOOK_SERVER" \
+    || fail "Retained Hummingbird shutdown trigger missing: $invariant"
+done
+
+for regression in \
+  'testDeliveryStopCancelsAndJoinsCancellationUnawareCurrentDrain' \
+  'testListenerStopJoinsRetiringDeliveryFromSupersededGeneration' \
+  'testDeliveryStopFromOwnCallbackDoesNotSelfJoin' \
+  'testHTTPActionCallbackInternalStopSelfExcludesAndGracefullyReleasesListener' \
+  'testHTTPActionCallbackExternalStopStrictlyJoinsSelfExcludedGeneration'; do
+  rg -q "$regression" "$LOCAL_ACTION_TESTS" \
+    || fail "Local Hook strict-join/self-stop regression missing: $regression"
+done
+
+WEBHOOK_SERVER_STOP_BODY="$(
+  extract_braced_region "$SERVER_FILE" 'public func stop() async {'
+)"
+for invariant in \
+  'let task = serverTask' \
+  'task?.cancel()' \
+  'serverTask = nil' \
+  'readinessToken = nil' \
+  'await task?.value'; do
+  printf '%s\n' "$WEBHOOK_SERVER_STOP_BODY" | rg -Fq "$invariant" \
+    || fail "Joinable WebhookServer stop invariant missing: $invariant"
+done
+require_fixed_order \
+  "$WEBHOOK_SERVER_STOP_BODY" \
+  'task?.cancel()' \
+  'await task?.value' \
+  "WebhookServer stop must join its serve loop after cancellation"
 for invariant in \
   'ingestManusWebhookEvent' \
   'applyManusPollingSnapshot' \
@@ -1346,11 +2973,19 @@ for invariant in \
     || fail "TaskStore stale-callback invariant missing: $invariant"
 done
 for regression in \
-  'testStopSuppressesLateSnapshotFromCancellationUnawareConnector' \
+  'testStopJoinsCancellationUnawareConnectorAndSuppressesLateSnapshot' \
+  'testStopJoinsCurrentAndSupersededCancellationUnawarePolls' \
   'testRestartInvalidatesOlderInFlightPoll' \
   'testNetworkEdgesAreCoalescedAndUnauthorizedStopsPolling'; do
   rg -q "$regression" "$POLLING_FALLBACK_TESTS" \
     || fail "Manus polling lifecycle regression missing: $regression"
+done
+for regression in \
+  'testStopJoinsServeLoopSoPortCanBeReboundImmediately' \
+  'testStopJoinsCurrentAndSupersededServeAndReadinessOperations' \
+  'testServerStopJoinsServeLoopSoPortCanBeReboundImmediately'; do
+  rg -q "$regression" "$LOCAL_HOOK_HEALTH_TESTS" "$WEBHOOK_AUTH_TESTS" \
+    || fail "Joinable listener-stop regression missing: $regression"
 done
 test -s "$MANUS_LIFECYCLE_TESTS" \
   || fail "TaskStore Manus account-lifecycle regressions are missing"
@@ -1364,6 +2999,408 @@ for invariant in \
   'configurationGeneration == manusConfigurationGeneration'; do
   rg -q "$invariant" "$TASK_STORE" \
     || fail "TaskStore Manus account-lifecycle invariant missing: $invariant"
+done
+for invariant in \
+  'webhookPreferencesSuiteName: String? = nil' \
+  'webhookPreferencesSuiteName: "app.devisland.Island"' \
+  'server: CleanupOnlyWebhookServer()' \
+  'preferences: TunnelPreferencesHandle(webhookPreferences)' \
+  'ManusCredentialRemovalPolicy.cleanupPendingReason' \
+  'Remote callback cleanup pending; retry disconnect'; do
+  rg -Fq "$invariant" "$TASK_STORE" \
+    || fail "Credential-backed Manus cleanup owner invariant missing: $invariant"
+done
+if rg -n -F 'webhookPreferencesSuiteName: "app.devisland.Island"' IslandCoreTests; then
+  fail "Ordinary tests must not attach a Manus cleanup manager to the shipping preferences ledger"
+fi
+
+MANUS_START_SERVICES_BODY="$(
+  extract_braced_region "$TASK_STORE" 'private func startServices('
+)"
+for invariant in \
+  'let webhookPreferences = manusDependencies.webhookPreferencesSuiteName' \
+  'server: CleanupOnlyWebhookServer()' \
+  'if ManusRealtimeTrust.liveV2AcceptanceComplete'; do
+  printf '%s\n' "$MANUS_START_SERVICES_BODY" | rg -Fq "$invariant" \
+    || fail "Polling-only Manus cleanup ownership invariant missing: $invariant"
+done
+require_fixed_order \
+  "$MANUS_START_SERVICES_BODY" \
+  'server: CleanupOnlyWebhookServer()' \
+  'if ManusRealtimeTrust.liveV2AcceptanceComplete' \
+  "A credential-backed cleanup owner must exist even while realtime remains disabled"
+
+CONFIGURE_API_KEY_BODY="$(
+  extract_braced_region "$TASK_STORE" 'public func configureAPIKey'
+)"
+for invariant in \
+  'if let removal = manusCredentialRemovalOperation' \
+  'try await awaitManusCredentialRemoval(removal)' \
+  'if let existingTunnel = tunnelManager' \
+  'try await existingTunnel.stop()' \
+  'pollingOnlyReason = ManusCredentialRemovalPolicy.cleanupPendingReason' \
+  'apiKeyStatus = previousKeyStatus' \
+  'try manusDependencies.saveAPIKey(key)'; do
+  printf '%s\n' "$CONFIGURE_API_KEY_BODY" | rg -Fq "$invariant" \
+    || fail "Replacement-key cleanup transaction invariant missing: $invariant"
+done
+require_fixed_order \
+  "$CONFIGURE_API_KEY_BODY" \
+  'try await awaitManusCredentialRemoval(removal)' \
+  'manusConfigurationGeneration &+= 1' \
+  "A new key configuration must join an in-flight Disconnect before changing generation"
+require_fixed_order \
+  "$CONFIGURE_API_KEY_BODY" \
+  'try await existingTunnel.stop()' \
+  'try manusDependencies.saveAPIKey(key)' \
+  "An existing Manus webhook must be cleaned before a replacement key is persisted"
+for invariant in \
+  'let retiredServices = detachManusServices()' \
+  'setTasks(tasks.filter { $0.source != "manus" })' \
+  'connectionStatus = .disconnected' \
+  'await retiredServices.poller?.stop()' \
+  'let persistedKey = try manusDependencies.loadAPIKey()' \
+  'apiKeyStatus = persistedKey == nil ? .notConfigured : .valid' \
+  'apiKeyStatus = previousKeyStatus'; do
+  printf '%s\n' "$CONFIGURE_API_KEY_BODY" | rg -Fq "$invariant" \
+    || fail "Replacement-key save-failure recovery invariant missing: $invariant"
+done
+require_fixed_order \
+  "$CONFIGURE_API_KEY_BODY" \
+  'let retiredServices = detachManusServices()' \
+  'try manusDependencies.saveAPIKey(key)' \
+  "Old Manus services must be detached before replacement persistence can fail"
+require_fixed_order \
+  "$CONFIGURE_API_KEY_BODY" \
+  'await retiredServices.poller?.stop()' \
+  'try manusDependencies.saveAPIKey(key)' \
+  "The retired Manus poller must stop before replacement persistence"
+require_fixed_order \
+  "$CONFIGURE_API_KEY_BODY" \
+  'try manusDependencies.saveAPIKey(key)' \
+  'let persistedKey = try manusDependencies.loadAPIKey()' \
+  "A failed replacement save must read back the Keychain source of truth"
+
+CLEAR_API_KEY_BODY="$(
+  extract_braced_region "$TASK_STORE" 'public func clearAPIKey() async throws'
+)"
+for invariant in \
+  'if let removal = manusCredentialRemovalOperation' \
+  'try await awaitManusCredentialRemoval(removal)' \
+  'await self.manusDependencies.awaitCredentialRemovalPermission()' \
+  'guard !self.shutdownRequested else { throw CancellationError() }' \
+  'try await self.performClearAPIKey()' \
+  'manusCredentialRemovalOperation = removal'; do
+  printf '%s\n' "$CLEAR_API_KEY_BODY" | rg -Fq "$invariant" \
+    || fail "Shared Manus credential-removal transaction invariant missing: $invariant"
+done
+require_fixed_order \
+  "$CLEAR_API_KEY_BODY" \
+  'await self.manusDependencies.awaitCredentialRemovalPermission()' \
+  'guard !self.shutdownRequested else { throw CancellationError() }' \
+  "A registered but queued Disconnect must observe terminal shutdown before cleanup begins"
+
+PERFORM_CLEAR_API_KEY_BODY="$(
+  extract_braced_region "$TASK_STORE" 'private func performClearAPIKey'
+)"
+for invariant in \
+  'let services = detachManusServices()' \
+  'try await services.tunnel?.stop()' \
+  'tunnelManager = services.tunnel' \
+  'apiKeyStatus = previousKeyStatus' \
+  'ManusCredentialRemovalPolicy.cleanupPendingReason' \
+  'try manusDependencies.deleteAPIKey()' \
+  'apiKeyStatus = .notConfigured'; do
+  printf '%s\n' "$PERFORM_CLEAR_API_KEY_BODY" | rg -Fq "$invariant" \
+    || fail "Delete-before-credential-release invariant missing: $invariant"
+done
+if printf '%s\n' "$PERFORM_CLEAR_API_KEY_BODY" \
+  | rg -Fq 'try? await services.tunnel?.stop()'; then
+  fail "Disconnect must not swallow remote webhook cleanup failure before Keychain deletion"
+fi
+require_fixed_order \
+  "$PERFORM_CLEAR_API_KEY_BODY" \
+  'try await services.tunnel?.stop()' \
+  'try manusDependencies.deleteAPIKey()' \
+  "Remote webhook cleanup must finish before the Manus credential is released"
+require_fixed_order \
+  "$PERFORM_CLEAR_API_KEY_BODY" \
+  'try manusDependencies.deleteAPIKey()' \
+  'apiKeyStatus = .notConfigured' \
+  "TaskStore must publish Not Configured only after Keychain deletion succeeds"
+[[ "$(rg -Fc 'try manusDependencies.deleteAPIKey()' "$TASK_STORE")" -eq 1 ]] \
+  || fail "TaskStore must release the Manus credential through one reviewed post-cleanup path"
+
+for file in \
+  "$APP_TERMINATION_COORDINATOR" \
+  "$APP_TERMINATION_TESTS"; do
+  test -s "$file" || fail "Normal-Quit termination artifact missing: $file"
+done
+for invariant in \
+  'public enum TaskStoreShutdownResult: Equatable, Sendable' \
+  'case completed' \
+  'case cleanupPending' \
+  'private var shutdownOperation: ShutdownOperation?' \
+  'private var shutdownRequested = false' \
+  'private var bootstrapTask: Task<Void, Never>?' \
+  'private var localHookStartTask: Task<Void, Never>?' \
+  'public func shutdown() async -> TaskStoreShutdownResult'; do
+  rg -Fq "$invariant" "$TASK_STORE" \
+    || fail "Awaited TaskStore shutdown ownership invariant missing: $invariant"
+done
+
+TASK_STORE_SHUTDOWN_BODY="$(
+  extract_braced_region "$TASK_STORE" 'public func shutdown() async -> TaskStoreShutdownResult'
+)"
+for invariant in \
+  'if let shutdownOperation' \
+  'return await shutdownOperation.task.value' \
+  'shutdownRequested = true' \
+  'cancelAllActionRequests()' \
+  'manusConfigurationGeneration &+= 1' \
+  'systemPowerGeneration &+= 1' \
+  'let credentialRemoval = manusCredentialRemovalOperation' \
+  'let sleepSuspension = manusSleepSuspension' \
+  'let manusServices = detachManusServices()' \
+  'let serverStart = localHookStartTask' \
+  'let bootstrap = bootstrapTask' \
+  'localHookServer = nil' \
+  'localHookStartTask = nil' \
+  'bootstrapTask = nil' \
+  'localConnectors = [:]' \
+  'bootstrap?.cancel()' \
+  'try await credentialRemoval.task.value' \
+  'await sleepSuspension?.task.value' \
+  'await manusServices.poller?.stop()' \
+  'try await manusServices.tunnel?.stop()' \
+  'await serverStart?.value' \
+  'await server?.stop()' \
+  'await bootstrap?.value' \
+  'return cleanupPending ? .cleanupPending : .completed' \
+  'shutdownOperation = ShutdownOperation(task: task)' \
+  'return await task.value'; do
+  printf '%s\n' "$TASK_STORE_SHUTDOWN_BODY" | rg -Fq "$invariant" \
+    || fail "Awaited TaskStore shutdown transaction missing: $invariant"
+done
+if printf '%s\n' "$TASK_STORE_SHUTDOWN_BODY" | rg -n 'Task\.detached|deleteAPIKey'; then
+  fail "Normal Quit must neither detach cleanup nor release the Manus credential"
+fi
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'shutdownRequested = true' \
+  'let credentialRemoval = manusCredentialRemovalOperation' \
+  "TaskStore shutdown must publish terminal state before capturing owned work"
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'cancelAllActionRequests()' \
+  'let task = Task<TaskStoreShutdownResult, Never>' \
+  "TaskStore shutdown must resolve action continuations before its first cleanup task"
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'let credentialRemoval = manusCredentialRemovalOperation' \
+  'let manusServices = detachManusServices()' \
+  "TaskStore shutdown must capture in-flight Disconnect before detaching current Manus services"
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'try await credentialRemoval.task.value' \
+  'await sleepSuspension?.task.value' \
+  "TaskStore shutdown must join in-flight Disconnect before the sleep barrier"
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'await sleepSuspension?.task.value' \
+  'await manusServices.poller?.stop()' \
+  "TaskStore shutdown must join sleep suspension before stopping Manus services"
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'await manusServices.poller?.stop()' \
+  'try await manusServices.tunnel?.stop()' \
+  "TaskStore shutdown must join the poller before the tunnel"
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'try await manusServices.tunnel?.stop()' \
+  'await serverStart?.value' \
+  "TaskStore shutdown must settle Manus cleanup before the local-listener start hop"
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'await serverStart?.value' \
+  'await server?.stop()' \
+  "TaskStore shutdown must join listener startup before stopping the listener"
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'await server?.stop()' \
+  'await bootstrap?.value' \
+  "TaskStore shutdown must join the retained bootstrap after every captured service stop"
+require_fixed_order \
+  "$TASK_STORE_SHUTDOWN_BODY" \
+  'shutdownOperation = ShutdownOperation(task: task)' \
+  'return await task.value' \
+  "TaskStore must publish single-flight shutdown ownership before the caller awaits it"
+
+TASK_STORE_BOOTSTRAP_BODY="$(
+  extract_braced_region "$TASK_STORE" 'private func bootstrap() async {'
+)"
+for invariant in \
+  'await manusDependencies.awaitBootstrapPermission()' \
+  'try await store.open()' \
+  '_ = await refreshStoredTaskHistory()' \
+  'try await client.listTasks()' \
+  'try await startServices(client: client)'; do
+  printf '%s\n' "$TASK_STORE_BOOTSTRAP_BODY" | rg -Fq "$invariant" \
+    || fail "Retained TaskStore bootstrap boundary missing: $invariant"
+done
+[[ "$(printf '%s\n' "$TASK_STORE_BOOTSTRAP_BODY" \
+  | rg -Fc 'guard !shutdownRequested else { return }')" -ge 10 ]] \
+  || fail "TaskStore bootstrap must re-check terminal state across every storage/provider suspension"
+for invariant in \
+  'guard !shutdownRequested else { throw CancellationError() }' \
+  'guard !shutdownRequested, let server = localHookServer else { return }' \
+  'guard !shutdownRequested else { return }'; do
+  rg -Fq "$invariant" "$TASK_STORE" \
+    || fail "Post-shutdown service-resurrection guard missing: $invariant"
+done
+
+for invariant in \
+  'public enum AppTerminationMode: Equatable, Sendable' \
+  'case owner' \
+  'case yieldedDuplicate' \
+  'case performanceQA' \
+  'case hermeticLaunchSmoke' \
+  'public enum AppTerminationDecision: Equatable, Sendable' \
+  'case terminateNow' \
+  'case terminateLater' \
+  'public static let hardTimeoutNanoseconds: UInt64 = 2_000_000_000' \
+  'private var terminationToken: UUID?' \
+  'private var pendingReply: Reply?'; do
+  rg -Fq "$invariant" "$APP_TERMINATION_COORDINATOR" \
+    || fail "Tokenized AppKit termination invariant missing: $invariant"
+done
+if rg -n 'with(Task|ThrowingTask)Group' "$APP_TERMINATION_COORDINATOR"; then
+  fail "The two-second Quit deadline must not wait for an unresponsive task-group child"
+fi
+
+TERMINATION_POLICY_BODY="$(
+  extract_braced_region "$APP_TERMINATION_COORDINATOR" 'public static func decision('
+)"
+for invariant in \
+  'case .owner:' \
+  'return .terminateLater' \
+  'case .yieldedDuplicate, .performanceQA, .hermeticLaunchSmoke:' \
+  'return .terminateNow'; do
+  printf '%s\n' "$TERMINATION_POLICY_BODY" | rg -Fq "$invariant" \
+    || fail "AppKit termination-mode policy missing: $invariant"
+done
+
+TERMINATION_REQUEST_BODY="$(
+  extract_braced_region "$APP_TERMINATION_COORDINATOR" 'public func requestTermination('
+)"
+for invariant in \
+  'let decision = AppTerminationPolicy.decision(for: mode)' \
+  'guard decision == .terminateLater else { return decision }' \
+  'guard terminationToken == nil else {' \
+  'let token = UUID()' \
+  'terminationToken = token' \
+  'pendingReply = reply' \
+  'cleanupLauncher {' \
+  'await cleanup()' \
+  'self?.finish(token: token)' \
+  'timeoutScheduler(timeoutNanoseconds)' \
+  'return .terminateLater'; do
+  printf '%s\n' "$TERMINATION_REQUEST_BODY" | rg -Fq "$invariant" \
+    || fail "Tokenized finish-once termination request missing: $invariant"
+done
+require_fixed_order \
+  "$TERMINATION_REQUEST_BODY" \
+  'guard decision == .terminateLater else { return decision }' \
+  'let token = UUID()' \
+  "Termination bypasses must return before allocating cleanup ownership"
+require_fixed_order \
+  "$TERMINATION_REQUEST_BODY" \
+  'terminationToken = token' \
+  'cleanupLauncher {' \
+  "Owner termination must publish its token before launching cleanup"
+
+TERMINATION_FINISH_BODY="$(
+  extract_braced_region "$APP_TERMINATION_COORDINATOR" 'private func finish(token: UUID) {'
+)"
+for invariant in \
+  'guard terminationToken == token,' \
+  'let reply = pendingReply else {' \
+  'pendingReply = nil' \
+  'reply()'; do
+  printf '%s\n' "$TERMINATION_FINISH_BODY" | rg -Fq "$invariant" \
+    || fail "Finish-once AppKit termination invariant missing: $invariant"
+done
+require_fixed_order \
+  "$TERMINATION_FINISH_BODY" \
+  'pendingReply = nil' \
+  'reply()' \
+  "Termination must consume the reply before calling AppKit"
+
+APP_SHOULD_TERMINATE_BODY="$(
+  extract_braced_region "$APP_ENTRY" 'func applicationShouldTerminate('
+)"
+for invariant in \
+  'mode = .yieldedDuplicate' \
+  'mode = .hermeticLaunchSmoke' \
+  'mode = .owner' \
+  'terminationCoordinator.requestTermination(' \
+  '_ = await TaskStore.shared.shutdown()' \
+  'sender.reply(toApplicationShouldTerminate: true)' \
+  'return .terminateNow' \
+  'return .terminateLater'; do
+  printf '%s\n' "$APP_SHOULD_TERMINATE_BODY" | rg -Fq "$invariant" \
+    || fail "AppDelegate normal-Quit integration missing: $invariant"
+done
+APP_WILL_TERMINATE_BODY="$(
+  extract_braced_region "$APP_ENTRY" 'func applicationWillTerminate('
+)"
+if printf '%s\n' "$APP_WILL_TERMINATE_BODY" | rg -n 'TaskStore|shutdown\('; then
+  fail "applicationWillTerminate must not launch a second TaskStore shutdown"
+fi
+
+LOCAL_HOOK_RETRY_BODY="$(
+  extract_braced_region "$TASK_STORE" 'public func retryLocalHookService() {'
+)"
+for invariant in \
+  'guard !shutdownRequested, let server = localHookServer else { return }' \
+  'let precedingLifecycle = localHookStartTask' \
+  'localHookStartTask = Task' \
+  'await precedingLifecycle?.value' \
+  '!self.shutdownRequested' \
+  'self.localHookServer === server' \
+  'await self.restartLocalHookServer(server)'; do
+  printf '%s\n' "$LOCAL_HOOK_RETRY_BODY" | rg -Fq "$invariant" \
+    || fail "Joinable local-listener retry invariant missing: $invariant"
+done
+require_fixed_order \
+  "$LOCAL_HOOK_RETRY_BODY" \
+  'localHookStartTask = Task' \
+  'await precedingLifecycle?.value' \
+  "Local-listener retries must be retained before joining prior lifecycle work"
+
+for regression in \
+  'testShippingHardTimeoutIsTwoSeconds' \
+  'testCleanupCompletionRepliesBeforeHardTimeout' \
+  'testHardTimeoutRepliesWhileCleanupIsStillPending' \
+  'testCompletionAndTimeoutRaceCanReplyOnlyOnceInEitherOrder' \
+  'testRepeatedOwnerRequestSharesTheFirstCleanupFlight' \
+  'testAllThreeBypassModesTerminateNowInPurePolicy' \
+  'testBypassModesScheduleNoCleanupTimeoutOrReply'; do
+  rg -q "$regression" "$APP_TERMINATION_TESTS" \
+    || fail "AppKit termination regression missing: $regression"
+done
+for regression in \
+  'testShutdownWaitsForBlockedTunnelAndConcurrentCallersShareStop' \
+  'testCancellingShutdownCallerDoesNotCancelSharedOperation' \
+  'testShutdownJoinsBlockedBootstrapWithoutResurrectingServices' \
+  'testShutdownSupersedesRegisteredDisconnectBeforeCleanupBodyStarts' \
+  'testShutdownJoinsQueuedLocalRetryAndPreventsRestartAfterStop' \
+  'testShutdownCleanupFailureRetainsCredentialAndMemoizesPendingResult' \
+  'testShutdownJoinsInFlightDisconnectWithoutDeletingCredential' \
+  'testShutdownMapsInFlightDisconnectCleanupFailureToPending' \
+  'testShutdownJoinsSleepSuspensionBeforeStoppingTunnel'; do
+  rg -q "$regression" "$MANUS_LIFECYCLE_TESTS" \
+    || fail "TaskStore normal-Quit regression missing: $regression"
 done
 for invariant in \
   'protocol ManusTunnelLifecycleProtocol: Sendable' \
@@ -1394,6 +3431,10 @@ for regression in \
   'testRuntimeUnauthorizedInvalidatesVisibleAccountState' \
   'testUnauthorizedCandidateNeverOverwritesKeychain' \
   'testKeychainDeleteFailureNeverPretendsCredentialWasRemoved' \
+  'testCleanupFailureRetainsCredentialAndManagerForDisconnectRetry' \
+  'testReplacementKeyCannotOverwriteCredentialBeforeOldWebhookCleanup' \
+  'testReplacementSaveFailureRetiresOldServicesAndRetryCanConfigure' \
+  'testReplacementSaveFailureWithoutPersistedCredentialAllowsDisconnect' \
   'testWakeWaitsForBlockedSuspendBeforeRestartingRealtime' \
   'testDuplicateWakeDoesNotRestartRealtimeTwice' \
   'testDisconnectDuringBlockedSuspendPreventsObsoleteWakeRecovery' \
@@ -2386,10 +4427,72 @@ for test_invariant in \
     || fail "Commercial verifier attack regression missing: $test_invariant"
 done
 
+for file in "$SINGLE_INSTANCE_GATE" "$SINGLE_INSTANCE_TESTS"; do
+  test -s "$file" || fail "Trusted single-instance artifact missing: $file"
+done
+rg -Fq 'AppSingleInstanceGate.activateExistingInstanceIfNeeded()' "$APP_ENTRY" \
+  || fail "Shipping App does not invoke the trusted single-instance gate"
+rg -Fq 'Settings {' "$APP_ENTRY" \
+  || fail "Shipping App is missing its inert Settings command scene"
+rg -Fq 'EmptyView()' "$APP_ENTRY" \
+  || fail "Shipping Settings command scene is not inert before launch arbitration"
+if rg -Fq 'SettingsView()' "$APP_ENTRY"; then
+  fail "Shipping root Scene must not construct TaskStore-backed SettingsView before launch arbitration"
+fi
+for invariant in \
+  'maximumCandidateCount = 32' \
+  'SecCodeCopyGuestWithAttributes' \
+  'SecCodeCheckValidity' \
+  'SecCodeCopyStaticCode' \
+  'SecCodeCopySigningInformation' \
+  'kSecCodeInfoIdentifier' \
+  'identifier == expectedIdentifier' \
+  'kSecCodeInfoFlags' \
+  'SecCodeSignatureFlags' \
+  'signatureFlags.contains(.adhoc)' \
+  'anchor apple generic and identifier' \
+  'SecRequirementCreateWithString' \
+  'kSecCodeInfoTeamIdentifier' \
+  'kSecCodeInfoUnique' \
+  'case (.teamSigned, .hashBound), (.hashBound, .teamSigned)' \
+  'identity.isTrustedPeer(of: currentCodeIdentity)' \
+  'revalidatedIdentity == winner.codeIdentity'; do
+  rg -Fq -- "$invariant" "$SINGLE_INSTANCE_GATE" \
+    || fail "Trusted single-instance invariant missing: $invariant"
+done
+if rg -n 'executableURL|bundleURL|localizedName|launchDate|ProcessInfo\.processInfo\.environment|CommandLine\.arguments|Logger\(|os_log|NSLog|print\(' \
+  "$SINGLE_INSTANCE_GATE"; then
+  fail "Single-instance identity must not inspect candidate paths/process content or log code identity"
+fi
+for regression in \
+  'testSameTeamCanTrustDifferentReleaseHashes' \
+  'testDifferentTeamsCannotArbitrate' \
+  'testAdHocCopiesRequireTheSameNonemptyCDHash' \
+  'testTeamAndAdHocIdentitiesNeverMix' \
+  'testBundleIdentifierMustMatchExactly' \
+  'testDuplicateUnorderedCandidatesResolveEachEligiblePIDAtMostOnce' \
+  'testCandidateFloodFailsOpenWithoutResolvingIdentity' \
+  'testTrustedWinnerIsRevalidatedThenActivatedExactlyOnce' \
+  'testActivationFailureKeepsCurrentInstanceRunning' \
+  'testIdentityDriftBeforeActivationFailsOpen' \
+  'testCandidateDisappearingBeforeActivationFailsOpen' \
+  'testSecurityResolverRejectsInvalidProcessIdentifiers' \
+  'testSigningClassifierRequiresExplicitAdHocFlagForHashBinding' \
+  'testSigningClassifierRequiresAppleAnchoredTeamSignature' \
+  'testSigningClassifierRejectsMixedOrMalformedIdentity' \
+  'testSigningClassifierRejectsMissingIdentityFields' \
+  'testSameTeamIdentityDriftStillFailsRevalidation'; do
+  rg -Fq -- "$regression" "$SINGLE_INSTANCE_TESTS" \
+    || fail "Trusted single-instance regression missing: $regression"
+done
+
 ./scripts/ci/verify-localizations.sh
 ./scripts/ci/verify-legal-data-flows.sh
 ./scripts/ci/verify-ci-diagnostics.sh
 ./scripts/ci/verify-manus-live-acceptance-evidence.sh
+./scripts/ci/verify-codex-live-approval-evidence.sh
+./scripts/ci/verify-codex-live-decision-evidence.sh
+./scripts/ci/verify-system-accessibility-evidence.sh
 ./scripts/ci/verify-github-repository-controls.sh
 "$BRAND_ASSET_VERIFIER" \
   --manifest scripts/assets/agent-logos/manifest.json \

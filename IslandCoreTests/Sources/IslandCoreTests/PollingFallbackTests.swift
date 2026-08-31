@@ -3,20 +3,33 @@ import XCTest
 @testable import IslandCore
 
 final class PollingFallbackTests: XCTestCase {
-    func testStopSuppressesLateSnapshotFromCancellationUnawareConnector() async throws {
-        let connector = BlockingPollingConnector()
+    func testStopJoinsCancellationUnawareConnectorAndSuppressesLateSnapshot() async throws {
+        let cancellationProbe = PollingCancellationProbe()
+        let stopProbe = PollingStopProbe()
+        let connector = BlockingPollingConnector(onCancellation: {
+            Task { await cancellationProbe.record() }
+        })
         let probe = PollingCallbackProbe()
         let poller = PollingFallback(connector: connector, interval: 3_600)
 
         await start(poller, probe: probe)
         try await waitUntil { await connector.fetchCount == 1 }
 
-        await poller.stop()
+        let stopTask = Task {
+            await poller.stop()
+            await stopProbe.recordReturn()
+        }
+        try await waitUntil { await cancellationProbe.wasObserved }
+        let returnedWhileFetchWasSuspended = await stopProbe.didReturn
+        XCTAssertFalse(returnedWhileFetchWasSuspended)
+
         await connector.completeNext(.success([task(id: "late")]))
-        try await Task.sleep(for: .milliseconds(30))
+        await stopTask.value
 
         let snapshotIDs = await probe.snapshotIDs
+        let didReturnAfterFetchExited = await stopProbe.didReturn
         XCTAssertTrue(snapshotIDs.isEmpty)
+        XCTAssertTrue(didReturnAfterFetchExited)
     }
 
     func testRestartInvalidatesOlderInFlightPoll() async throws {
@@ -37,6 +50,46 @@ final class PollingFallbackTests: XCTestCase {
         let snapshotIDs = await probe.snapshotIDs
         XCTAssertEqual(snapshotIDs, [["current"]])
         await poller.stop()
+    }
+
+    func testStopJoinsCurrentAndSupersededCancellationUnawarePolls() async throws {
+        let cancellationProbe = PollingCancellationProbe()
+        let stopProbe = PollingStopProbe()
+        let connector = BlockingPollingConnector(onCancellation: {
+            Task { await cancellationProbe.record() }
+        })
+        let probe = PollingCallbackProbe()
+        let poller = PollingFallback(connector: connector, interval: 3_600)
+
+        await start(poller, probe: probe)
+        try await waitUntil { await connector.fetchCount == 1 }
+        await start(poller, probe: probe)
+        try await waitUntil {
+            let fetchCount = await connector.fetchCount
+            let cancellationCount = await cancellationProbe.cancellationCount
+            return fetchCount == 2 && cancellationCount == 1
+        }
+
+        let stopTask = Task {
+            await poller.stop()
+            await stopProbe.recordReturn()
+        }
+        try await waitUntil { await cancellationProbe.cancellationCount == 2 }
+        let returnedBeforeEitherFetchExited = await stopProbe.didReturn
+        XCTAssertFalse(returnedBeforeEitherFetchExited)
+
+        await connector.completeNext(.success([task(id: "superseded-late")]))
+        try await Task.sleep(for: .milliseconds(20))
+        let returnedWithCurrentFetchSuspended = await stopProbe.didReturn
+        XCTAssertFalse(returnedWithCurrentFetchSuspended)
+
+        await connector.completeNext(.success([task(id: "current-late")]))
+        await stopTask.value
+
+        let didReturn = await stopProbe.didReturn
+        let snapshotIDs = await probe.snapshotIDs
+        XCTAssertTrue(didReturn)
+        XCTAssertTrue(snapshotIDs.isEmpty)
     }
 
     func testNetworkEdgesAreCoalescedAndUnauthorizedStopsPolling() async throws {
@@ -151,15 +204,43 @@ private actor PollingCallbackProbe {
     }
 }
 
+private actor PollingCancellationProbe {
+    private(set) var cancellationCount = 0
+
+    var wasObserved: Bool { cancellationCount > 0 }
+
+    func record() {
+        cancellationCount += 1
+    }
+}
+
+private actor PollingStopProbe {
+    private(set) var didReturn = false
+
+    func recordReturn() {
+        didReturn = true
+    }
+}
+
 private actor BlockingPollingConnector: AgentConnector {
     nonisolated let source = "manus"
+    private let onCancellation: (@Sendable () -> Void)?
     private(set) var fetchCount = 0
     private var continuations: [CheckedContinuation<[AgentTask], Error>] = []
 
+    init(onCancellation: (@Sendable () -> Void)? = nil) {
+        self.onCancellation = onCancellation
+    }
+
     func fetchTasks() async throws -> [AgentTask] {
         fetchCount += 1
-        return try await withCheckedThrowingContinuation { continuation in
-            continuations.append(continuation)
+        let onCancellation = self.onCancellation
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                continuations.append(continuation)
+            }
+        } onCancel: {
+            onCancellation?()
         }
     }
 

@@ -146,6 +146,274 @@ final class ManusAPIClientTests: XCTestCase {
         XCTAssertEqual(id, "wh_abc123")
     }
 
+    func testRegisterWebhookRejectsMismatchedOrInvalidReturnedWebhook() async {
+        let invalidBodies = [
+            // A response ID cannot substitute a different callback registration.
+            """
+            {"ok":true,"webhook":{"id":"wh_abc123","url":"https://other.trycloudflare.com/webhook","status":"active","created_at":123}}
+            """,
+            // A newly created inactive subscription is not a usable registration.
+            """
+            {"ok":true,"webhook":{"id":"wh_abc123","url":"https://abc.trycloudflare.com/webhook","status":"inactive","created_at":123}}
+            """,
+            """
+            {"ok":true,"webhook":{"id":"wh_abc123","url":"https://abc.trycloudflare.com/webhook","status":"active","created_at":-1}}
+            """,
+            """
+            {"ok":true,"webhook":{"id":"../unsafe","url":"https://abc.trycloudflare.com/webhook","status":"active","created_at":123}}
+            """,
+            """
+            {"ok":false,"webhook":{"id":"wh_abc123","url":"https://abc.trycloudflare.com/webhook","status":"active","created_at":123}}
+            """,
+        ]
+
+        for body in invalidBodies {
+            MockURLProtocol.handler = { request in
+                (
+                    self.makeResponse(statusCode: 200, url: request.url!),
+                    Data(body.utf8)
+                )
+            }
+            let client = ManusAPIClient(
+                apiKey: "sk-test-0123456789abcdef",
+                session: session
+            )
+
+            do {
+                _ = try await client.registerWebhook(
+                    publicURL: "https://abc.trycloudflare.com/webhook"
+                )
+                XCTFail("Expected an invalid create response to fail closed")
+            } catch ManusError.invalidResponse {
+                // Expected after the shared webhook object validation boundary.
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testRegisterWebhookRequiresCompleteOfficialWebhookObject() async {
+        let malformedBodies = [
+            "{\"ok\":true,\"webhook\":{\"url\":\"https://abc.trycloudflare.com/webhook\",\"status\":\"active\",\"created_at\":123}}",
+            "{\"ok\":true,\"webhook\":{\"id\":\"wh_abc123\",\"status\":\"active\",\"created_at\":123}}",
+            "{\"ok\":true,\"webhook\":{\"id\":\"wh_abc123\",\"url\":\"https://abc.trycloudflare.com/webhook\",\"created_at\":123}}",
+            "{\"ok\":true,\"webhook\":{\"id\":\"wh_abc123\",\"url\":\"https://abc.trycloudflare.com/webhook\",\"status\":\"active\"}}",
+        ]
+
+        for body in malformedBodies {
+            MockURLProtocol.handler = { request in
+                (
+                    self.makeResponse(statusCode: 200, url: request.url!),
+                    Data(body.utf8)
+                )
+            }
+            let client = ManusAPIClient(
+                apiKey: "sk-test-0123456789abcdef",
+                session: session
+            )
+
+            do {
+                _ = try await client.registerWebhook(
+                    publicURL: "https://abc.trycloudflare.com/webhook"
+                )
+                XCTFail("Expected an incomplete create response to fail closed")
+            } catch ManusError.decodingError {
+                // Expected: recovery needs the complete official webhook object.
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testListWebhooksUsesOfficialEndpointAndReturnsValidatedModels() async throws {
+        let json = """
+        {"ok":true,"request_id":"req_list","data":[
+          {"id":"wh_active","url":"https://hooks.example.com/events?source=manus","status":"active","created_at":0},
+          {"id":"wh_inactive","url":"https://archive.example.com/manus","status":"inactive","created_at":9223372036854775807}
+        ]}
+        """
+        var requestCount = 0
+        MockURLProtocol.handler = { request in
+            requestCount += 1
+            XCTAssertEqual(request.url?.absoluteString, "https://api.manus.ai/v2/webhook.list")
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "x-manus-api-key"),
+                "sk-test-0123456789abcdef"
+            )
+            XCTAssertNil(request.value(forHTTPHeaderField: "API_KEY"))
+            XCTAssertNil(request.httpBody)
+            XCTAssertNil(request.httpBodyStream)
+            return (
+                self.makeResponse(statusCode: 200, url: request.url!),
+                Data(json.utf8)
+            )
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        let webhooks = try await client.listWebhooks()
+
+        XCTAssertEqual(requestCount, 1)
+        XCTAssertEqual(webhooks.count, 2)
+        XCTAssertEqual(webhooks[0].id, "wh_active")
+        XCTAssertEqual(webhooks[0].url, "https://hooks.example.com/events?source=manus")
+        XCTAssertEqual(webhooks[0].status, .active)
+        XCTAssertEqual(webhooks[0].createdAt, 0)
+        XCTAssertEqual(webhooks[1].id, "wh_inactive")
+        XCTAssertEqual(webhooks[1].status, .inactive)
+        XCTAssertEqual(webhooks[1].createdAt, Int64.max)
+    }
+
+    func testListWebhooksRejectsRedirectWithoutFollowingCredential() async {
+        var requestCount = 0
+        MockURLProtocol.handler = { request in
+            requestCount += 1
+            XCTAssertEqual(request.url?.host, "api.manus.ai")
+            XCTAssertEqual(
+                request.value(forHTTPHeaderField: "x-manus-api-key"),
+                "sk-test-0123456789abcdef"
+            )
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 302,
+                httpVersion: nil,
+                headerFields: ["Location": "https://collector.invalid/capture"]
+            )!
+            return (response, Data("{\"ok\":true,\"data\":[]}".utf8))
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        do {
+            _ = try await client.listWebhooks()
+            XCTFail("Expected redirect response to fail closed")
+        } catch ManusError.httpError(let statusCode, _) {
+            XCTAssertEqual(statusCode, 302)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(requestCount, 1)
+    }
+
+    func testListWebhooksRejectsOversizedBodyBeforeDecode() async {
+        let body = Data(repeating: 0x20, count: 1_048_577)
+        MockURLProtocol.handler = { request in
+            (self.makeResponse(statusCode: 200, url: request.url!), body)
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        do {
+            _ = try await client.listWebhooks()
+            XCTFail("Expected an oversized webhook list to fail closed")
+        } catch ManusError.invalidResponse {
+            // Expected before JSON decoding.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testListWebhooksRejectsAmbiguousOrUnsafeProviderRows() async {
+        let oversizedID = String(repeating: "a", count: 257)
+        let oversizedURL = "https://hooks.example.com/" + String(repeating: "a", count: 2_048)
+        let invalidBodies = [
+            "{\"ok\":false,\"data\":[]}",
+            "{\"ok\":true}",
+            "{\"ok\":true,\"data\":[{\"id\":\"same\",\"url\":\"https://a.example.com/hook\",\"status\":\"active\",\"created_at\":1},{\"id\":\"same\",\"url\":\"https://b.example.com/hook\",\"status\":\"active\",\"created_at\":2}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"\",\"url\":\"https://a.example.com/hook\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"../unsafe\",\"url\":\"https://a.example.com/hook\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"\(oversizedID)\",\"url\":\"https://a.example.com/hook\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"http://a.example.com/hook\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"https://A.example.com/hook\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"https://user@a.example.com/hook\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"https://a.example.com/hook#fragment\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"\(oversizedURL)\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"https://a.example.com/hook\",\"status\":\"paused\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"https://a.example.com/hook\",\"status\":\"active\",\"created_at\":-1}]}",
+        ]
+
+        for body in invalidBodies {
+            MockURLProtocol.handler = { request in
+                (
+                    self.makeResponse(statusCode: 200, url: request.url!),
+                    Data(body.utf8)
+                )
+            }
+            let client = ManusAPIClient(
+                apiKey: "sk-test-0123456789abcdef",
+                session: session
+            )
+
+            do {
+                _ = try await client.listWebhooks()
+                XCTFail("Expected an unsafe or ambiguous webhook list to fail closed")
+            } catch ManusError.invalidResponse {
+                // Expected after bounded DTO decoding.
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testListWebhooksRequiresAllOfficialFieldsWithExactTypes() async {
+        let malformedBodies = [
+            "{\"ok\":true,\"data\":[{\"url\":\"https://a.example.com/hook\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"status\":\"active\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"https://a.example.com/hook\",\"created_at\":1}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"https://a.example.com/hook\",\"status\":\"active\"}]}",
+            "{\"ok\":true,\"data\":[{\"id\":\"wh_1\",\"url\":\"https://a.example.com/hook\",\"status\":\"active\",\"created_at\":\"1\"}]}",
+        ]
+
+        for body in malformedBodies {
+            MockURLProtocol.handler = { request in
+                (
+                    self.makeResponse(statusCode: 200, url: request.url!),
+                    Data(body.utf8)
+                )
+            }
+            let client = ManusAPIClient(
+                apiKey: "sk-test-0123456789abcdef",
+                session: session
+            )
+
+            do {
+                _ = try await client.listWebhooks()
+                XCTFail("Expected missing or wrongly typed official fields to fail closed")
+            } catch ManusError.decodingError {
+                // Expected: all official fields are required for safe recovery.
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testListWebhooksRejectsMoreThan1024Rows() async throws {
+        let rows: [[String: Any]] = (0...1_024).map { index in
+            [
+                "id": "wh_\(index)",
+                "url": "https://hook\(index).example.com/callback",
+                "status": "active",
+                "created_at": index,
+            ]
+        }
+        let body = try JSONSerialization.data(withJSONObject: [
+            "ok": true,
+            "data": rows,
+        ])
+        XCTAssertLessThanOrEqual(body.count, 1_048_576)
+        MockURLProtocol.handler = { request in
+            (self.makeResponse(statusCode: 200, url: request.url!), body)
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        do {
+            _ = try await client.listWebhooks()
+            XCTFail("Expected more than 1024 webhooks to fail closed")
+        } catch ManusError.invalidResponse {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testDeleteWebhookUsesOfficialV2RPCShape() async throws {
         let json = "{\"ok\":true,\"request_id\":\"req_2\"}"
         MockURLProtocol.handler = { request in
@@ -168,6 +436,215 @@ final class ManusAPIClientTests: XCTestCase {
         let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
 
         try await client.deleteWebhook(id: "wh_abc123")
+    }
+
+    func testDeleteWebhookRejectsExplicitFailureResponse() async {
+        MockURLProtocol.handler = { request in
+            (
+                self.makeResponse(statusCode: 200, url: request.url!),
+                Data("{\"ok\":false,\"request_id\":\"req_failed\"}".utf8)
+            )
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        do {
+            try await client.deleteWebhook(id: "wh_abc123")
+            XCTFail("Expected ok=false to leave the deletion unconfirmed")
+        } catch ManusError.invalidResponse {
+            // Expected: the caller must retain the webhook ID for retry.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testDeleteWebhookRejectsNon2xxEvenWithSuccessJSON() async {
+        let body = Data("{\"ok\":true,\"request_id\":\"req_failed\"}".utf8)
+        MockURLProtocol.handler = { request in
+            (
+                self.makeResponse(statusCode: 500, url: request.url!),
+                body
+            )
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        do {
+            try await client.deleteWebhook(id: "wh_abc123")
+            XCTFail("Expected non-2xx response to fail despite ok=true JSON")
+        } catch ManusError.httpError(let statusCode, let responseBytes) {
+            XCTAssertEqual(statusCode, 500)
+            XCTAssertEqual(responseBytes, body.count)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testDeleteWebhookTreatsOfficialNotFoundAsIdempotentSuccess() async throws {
+        let body = Data(
+            """
+            {"ok":false,"request_id":"req_missing","error":{"code":"not_found","message":"Webhook not found"}}
+            """.utf8
+        )
+        MockURLProtocol.handler = { request in
+            (
+                self.makeResponse(statusCode: 404, url: request.url!),
+                body
+            )
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        try await client.deleteWebhook(id: "wh_abc123")
+    }
+
+    func testDeleteWebhookRejectsOrdinaryOrMalformedNotFoundResponses() async {
+        let unconfirmedBodies = [
+            "",
+            "not-json",
+            "{}",
+            "{\"error\":{}}",
+            "{\"error\":{\"code\":\"not_found\"}}",
+            "{\"ok\":true,\"error\":{\"code\":\"not_found\"}}",
+            "{\"error\":{\"code\":null}}",
+            "{\"error\":{\"code\":404}}",
+            "{\"error\":{\"code\":\"permission_denied\"}}",
+            "{\"error\":{\"code\":\"Not_Found\"}}",
+            "{\"error\":{\"code\":\"not_found \"}}",
+        ]
+
+        for body in unconfirmedBodies {
+            let data = Data(body.utf8)
+            MockURLProtocol.handler = { request in
+                (
+                    self.makeResponse(statusCode: 404, url: request.url!),
+                    data
+                )
+            }
+            let client = ManusAPIClient(
+                apiKey: "sk-test-0123456789abcdef",
+                session: session
+            )
+
+            do {
+                try await client.deleteWebhook(id: "wh_abc123")
+                XCTFail("Expected an unconfirmed 404 to retain the cleanup ledger: \(body)")
+            } catch ManusError.httpError(let statusCode, let responseBytes) {
+                XCTAssertEqual(statusCode, 404)
+                XCTAssertEqual(responseBytes, data.count)
+            } catch {
+                XCTFail("Unexpected error for body \(body): \(error)")
+            }
+        }
+    }
+
+    func testDeleteWebhookRejectsNotFoundFromWrongOrigin() async {
+        let body = Data("{\"error\":{\"code\":\"not_found\"}}".utf8)
+        let wrongOrigin = URL(string: "https://collector.invalid/v2/webhook.delete")!
+        MockURLProtocol.handler = { _ in
+            (
+                self.makeResponse(statusCode: 404, url: wrongOrigin),
+                body
+            )
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        do {
+            try await client.deleteWebhook(id: "wh_abc123")
+            XCTFail("Expected a cross-origin not_found response to fail closed")
+        } catch ManusError.invalidResponse {
+            // Expected before the remote error envelope is decoded.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testDeleteWebhookRejectsRedirectEvenWithNotFoundBody() async {
+        let body = Data("{\"error\":{\"code\":\"not_found\"}}".utf8)
+        MockURLProtocol.handler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 302,
+                httpVersion: nil,
+                headerFields: ["Location": "https://collector.invalid/capture"]
+            )!
+            return (response, body)
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        do {
+            try await client.deleteWebhook(id: "wh_abc123")
+            XCTFail("Expected a redirect response to fail closed")
+        } catch ManusError.httpError(let statusCode, let responseBytes) {
+            XCTAssertEqual(statusCode, 302)
+            XCTAssertEqual(responseBytes, body.count)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testDeleteWebhookRejectsOversizedNotFoundBeforeDecode() async {
+        let body = Data(repeating: 0x20, count: 1_048_577)
+        MockURLProtocol.handler = { request in
+            (
+                self.makeResponse(statusCode: 404, url: request.url!),
+                body
+            )
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        do {
+            try await client.deleteWebhook(id: "wh_abc123")
+            XCTFail("Expected an oversized not_found response to fail before decoding")
+        } catch ManusError.invalidResponse {
+            // Expected at the shared bounded transport boundary.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testDeleteWebhookRejectsMissingOrInvalidSuccessConfirmation() async {
+        let unconfirmedBodies = [
+            "{}",
+            "not-json",
+            "{\"ok\":\"true\"}",
+            "",
+        ]
+
+        for body in unconfirmedBodies {
+            MockURLProtocol.handler = { request in
+                (
+                    self.makeResponse(statusCode: 204, url: request.url!),
+                    Data(body.utf8)
+                )
+            }
+            let client = ManusAPIClient(
+                apiKey: "sk-test-0123456789abcdef",
+                session: session
+            )
+
+            do {
+                try await client.deleteWebhook(id: "wh_abc123")
+                XCTFail("Expected an explicit JSON ok=true confirmation for body: \(body)")
+            } catch ManusError.decodingError {
+                // Expected: malformed, missing, and non-Boolean `ok` cannot confirm deletion.
+            } catch {
+                XCTFail("Unexpected error for body \(body): \(error)")
+            }
+        }
+    }
+
+    func testStopTaskStillAcceptsEmptySuccessfulResponse() async throws {
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(
+                request.url?.absoluteString,
+                "https://api.manus.im/v1/tasks/task_123/stop"
+            )
+            return (
+                self.makeResponse(statusCode: 204, url: request.url!),
+                Data()
+            )
+        }
+        let client = ManusAPIClient(apiKey: "sk-test-0123456789abcdef", session: session)
+
+        try await client.stopTask(id: "task_123")
     }
 
     func testWebhookPublicKeyUsesOfficialEndpointAndOneHourCache() async throws {

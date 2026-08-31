@@ -118,9 +118,11 @@ enum Palette {
     static let islandBorder  = adaptive(.islandBorder)
 
     // Welcome Tour
-    static let tourCanvas   = Color(hex: 0x0A0A0A)
-    static let tourPanel    = Color(hex: 0x111111)
-    static let tourAccent   = Color(hex: 0xC8C6C0)
+    static let tourCanvas       = Color(hex: 0x090909)
+    static let tourCanvasRaised = Color(hex: 0x0D0D0D)
+    static let tourPanel        = Color(hex: 0x101010)
+    static let tourPanelRaised  = Color(hex: 0x151515)
+    static let tourAccent       = Color(hex: 0xC8C6C0)
 
     // States
     static let stateIdle      = adaptive(.idleState)

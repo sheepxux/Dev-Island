@@ -139,7 +139,30 @@ final class LocalLiveReadinessPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(content.title, "1 setup action remains")
-        XCTAssertEqual(content.detail, "Review Dev Island Hooks in Codex /hooks.")
+        XCTAssertEqual(
+            content.detail,
+            "In Codex /hooks, review and trust only the Dev Island entries. "
+                + "“Continue without trusting” keeps approvals outside the island."
+        )
+    }
+
+    func testSimplifiedChineseCodexTrustGuidanceExplainsTheBypassRisk() {
+        let content = LocalLiveReadinessPresentation.content(
+            snapshot: snapshot(
+                listener: .listening,
+                claude: (.verified, .connected, .notRequired),
+                codex: (.verified, .configured, .reviewRequired)
+            ),
+            isChecking: false,
+            language: .simplifiedChinese
+        )
+
+        XCTAssertEqual(content.title, "还需完成 1 项设置")
+        XCTAssertEqual(
+            content.detail,
+            "请在 Codex /hooks 中审阅并仅信任 Dev Island 条目；"
+                + "选择“无信任继续”会让审批留在 Codex，不会进入灵动岛。"
+        )
     }
 
     func testFailedVersionCheckAsksForRetryWithoutClaimingCompatibilityReview() {

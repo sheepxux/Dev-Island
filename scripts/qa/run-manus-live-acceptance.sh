@@ -10,9 +10,12 @@ LIVE_VALIDATOR="$LIVE_SCRIPT_DIR/validate-manus-live-acceptance-transcript.rb"
 LIVE_BUILD_INPUT_GENERATOR="$LIVE_SCRIPT_DIR/generate-manus-live-build-inputs.rb"
 LIVE_VERSION_VALIDATOR="$LIVE_REPOSITORY_ROOT/scripts/release/validate-product-version.rb"
 LIVE_TIMEOUT=600
+LIVE_OPERATION="acceptance"
+LIVE_RECOVERY_REQUEST_PATH=""
 
 usage() {
   echo "Usage: run-manus-live-acceptance.sh [--timeout 60...1800]" >&2
+  echo "       run-manus-live-acceptance.sh --recover ABSOLUTE_PRIVATE_JOURNAL" >&2
   exit 64
 }
 
@@ -23,10 +26,16 @@ fail() {
 
 if [[ $# -eq 2 && "$1" == "--timeout" && "$2" =~ ^[0-9]+$ ]]; then
   LIVE_TIMEOUT="$2"
+elif [[ $# -eq 2 && "$1" == "--recover" && "$2" == /* ]]; then
+  [[ "$2" != *$'\n'* && "$2" != *$'\r'* && "$2" != *$'\t'* ]] || usage
+  LIVE_OPERATION="recovery"
+  LIVE_RECOVERY_REQUEST_PATH="$2"
 elif [[ $# -ne 0 ]]; then
   usage
 fi
-(( LIVE_TIMEOUT >= 60 && LIVE_TIMEOUT <= 1800 )) || usage
+if [[ "$LIVE_OPERATION" == "acceptance" ]]; then
+  (( LIVE_TIMEOUT >= 60 && LIVE_TIMEOUT <= 1800 )) || usage
+fi
 
 test -x "$LIVE_VALIDATOR" && test -x "$LIVE_BUILD_INPUT_GENERATOR" \
   && test -x "$LIVE_VERSION_VALIDATOR" \
@@ -80,6 +89,17 @@ LIVE_SWIFTPM_CACHE="$LIVE_CACHE_ROOT/cache"
 LIVE_SWIFTPM_CONFIG="$LIVE_CACHE_ROOT/configuration"
 LIVE_SWIFTPM_SECURITY="$LIVE_CACHE_ROOT/security"
 
+LIVE_RECOVERY_ROOT=""
+if [[ "$LIVE_OPERATION" == "acceptance" ]]; then
+  LIVE_RECOVERY_ROOT="$LIVE_MOUNT_ROOT"
+  for LIVE_COMPONENT in MacMini CodexFiles DevIsland-Optimization recovery manus-live-acceptance; do
+    LIVE_RECOVERY_ROOT="$(ensure_child_directory "$LIVE_RECOVERY_ROOT" "$LIVE_COMPONENT")"
+  done
+  LIVE_RECOVERY_ROOT="$(cd "$LIVE_RECOVERY_ROOT" && pwd -P)"
+  [[ "$LIVE_RECOVERY_ROOT" == "$LIVE_MOUNT_ROOT/"* ]] \
+    || fail "resolved recovery directory escaped T7 Shield"
+fi
+
 LIVE_TIMESTAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
 LIVE_RUN_DIRECTORY="$(/usr/bin/mktemp -d "$LIVE_EVIDENCE_ROOT/run-$LIVE_TIMESTAMP-XXXXXX")" \
   || fail "could not allocate an append-never evidence directory"
@@ -101,6 +121,9 @@ LIVE_TRANSCRIPT_RESULT="not_created"
 LIVE_ACCEPTED_RESULT="not_checked"
 LIVE_WRAPPER_RESULT="preparing"
 LIVE_WRAPPER_SIGNAL="none"
+LIVE_RECOVERY_JOURNAL_RESULT="not_allocated"
+LIVE_JOURNAL_DIRECTORY=""
+LIVE_JOURNAL_PATH=""
 LIVE_BINARY_SHA256="unavailable"
 LIVE_BASELINE_COMMIT="$(git -C "$LIVE_REPOSITORY_ROOT" rev-parse HEAD)" \
   || fail "repository commit could not be resolved"
@@ -154,6 +177,7 @@ write_metadata() {
     printf 'product_version=%s\n' "$LIVE_PRODUCT_VERSION"
     printf 'baseline_commit=%s\n' "$LIVE_BASELINE_COMMIT"
     printf 'worktree_state=%s\n' "$LIVE_WORKTREE_STATE"
+    printf 'operation=%s\n' "$LIVE_OPERATION"
     printf 'timeout_seconds=%s\n' "$LIVE_TIMEOUT"
     printf 'bootstrap_result=%s\n' "$LIVE_BOOTSTRAP_RESULT"
     printf 'build_result=%s\n' "$LIVE_BUILD_RESULT"
@@ -168,6 +192,7 @@ write_metadata() {
     printf 'accepted_result=%s\n' "$LIVE_ACCEPTED_RESULT"
     printf 'wrapper_result=%s\n' "$LIVE_WRAPPER_RESULT"
     printf 'wrapper_signal=%s\n' "$LIVE_WRAPPER_SIGNAL"
+    printf 'recovery_journal_result=%s\n' "$LIVE_RECOVERY_JOURNAL_RESULT"
   } >"$LIVE_RUN_DIRECTORY/EVIDENCE_METADATA.txt"
 }
 
@@ -217,6 +242,59 @@ handle_build_signal() {
 
 record_live_signal() {
   LIVE_WRAPPER_SIGNAL="$1"
+}
+
+prepare_recovery_journal() {
+  if [[ "$LIVE_OPERATION" == "recovery" ]]; then
+    LIVE_JOURNAL_PATH="$LIVE_RECOVERY_REQUEST_PATH"
+    LIVE_RECOVERY_JOURNAL_RESULT="provided"
+    return
+  fi
+
+  LIVE_JOURNAL_DIRECTORY="$(/usr/bin/mktemp -d \
+    "$LIVE_RECOVERY_ROOT/attempt-$LIVE_TIMESTAMP-XXXXXX")" \
+    || fail "could not allocate a private recovery directory"
+  [[ "$LIVE_JOURNAL_DIRECTORY" == "$LIVE_RECOVERY_ROOT/attempt-"* \
+     && -d "$LIVE_JOURNAL_DIRECTORY" \
+     && ! -L "$LIVE_JOURNAL_DIRECTORY" ]] \
+    || fail "private recovery directory allocation escaped its reviewed root"
+  /bin/chmod 700 "$LIVE_JOURNAL_DIRECTORY"
+  [[ "$(/usr/bin/stat -f '%u' "$LIVE_JOURNAL_DIRECTORY")" == "$(/usr/bin/id -u)" \
+     && "$(/usr/bin/stat -f '%Lp' "$LIVE_JOURNAL_DIRECTORY")" == "700" ]] \
+    || fail "private recovery directory ownership or mode is unsafe"
+  LIVE_JOURNAL_PATH="$LIVE_JOURNAL_DIRECTORY/recovery.json"
+  [[ ! -e "$LIVE_JOURNAL_PATH" && ! -L "$LIVE_JOURNAL_PATH" ]] \
+    || fail "new recovery journal path is unexpectedly occupied"
+  LIVE_RECOVERY_JOURNAL_RESULT="ready"
+}
+
+inspect_recovery_journal() {
+  if [[ -L "$LIVE_JOURNAL_PATH" ]]; then
+    LIVE_RECOVERY_JOURNAL_RESULT="unsafe"
+  elif [[ ! -e "$LIVE_JOURNAL_PATH" ]]; then
+    LIVE_RECOVERY_JOURNAL_RESULT="cleared"
+  elif [[ -f "$LIVE_JOURNAL_PATH" \
+          && "$(/usr/bin/stat -f '%u' "$LIVE_JOURNAL_PATH")" == "$(/usr/bin/id -u)" \
+          && "$(/usr/bin/stat -f '%l' "$LIVE_JOURNAL_PATH")" == "1" \
+          && "$(/usr/bin/stat -f '%Lp' "$LIVE_JOURNAL_PATH")" == "600" ]]; then
+    LIVE_RECOVERY_JOURNAL_RESULT="retained"
+  else
+    LIVE_RECOVERY_JOURNAL_RESULT="unsafe"
+  fi
+
+  if [[ "$LIVE_OPERATION" == "acceptance" \
+        && "$LIVE_RECOVERY_JOURNAL_RESULT" == "cleared" \
+        && -n "$LIVE_JOURNAL_DIRECTORY" ]]; then
+    /bin/rmdir "$LIVE_JOURNAL_DIRECTORY" 2>/dev/null || true
+  fi
+}
+
+print_recovery_instruction() {
+  printf 'Private recovery journal (excluded from evidence): %q\n' \
+    "$LIVE_JOURNAL_PATH" >&2
+  printf 'Recovery command: %q --recover %q\n' \
+    "$LIVE_SCRIPT_DIR/run-manus-live-acceptance.sh" \
+    "$LIVE_JOURNAL_PATH" >&2
 }
 
 echo "Preparing the Package.resolved dependency closure on T7 Shield..."
@@ -312,9 +390,26 @@ LIVE_EVIDENCE_BINARY="$LIVE_RUN_DIRECTORY/IslandCoreCLI"
 /bin/chmod 500 "$LIVE_EVIDENCE_BINARY"
 LIVE_BINARY_SHA256="$(shasum -a 256 "$LIVE_EVIDENCE_BINARY" | awk '{print $1}')"
 
-echo "Starting the explicit Manus live-account acceptance run."
-echo "The CLI will ask for the API key through the terminal and never from arguments or environment."
-echo "Create one task that finishes and one task that pauses for input; fixed checkpoints appear below."
+prepare_recovery_journal
+if [[ "$LIVE_OPERATION" == "acceptance" ]]; then
+  echo "Starting the explicit Manus live-account acceptance run."
+  echo "The CLI will ask for the API key through the terminal and never from arguments or environment."
+  echo "Create one task that finishes and one task that pauses for input; fixed checkpoints appear below."
+  print_recovery_instruction
+  LIVE_CLI_ARGUMENTS=(
+    manus-live-acceptance
+    --journal "$LIVE_JOURNAL_PATH"
+    --timeout "$LIVE_TIMEOUT"
+  )
+else
+  echo "Starting explicit recovery for one private Manus live-acceptance journal."
+  echo "The CLI will ask for the API key through the terminal and never from arguments or environment."
+  print_recovery_instruction
+  LIVE_CLI_ARGUMENTS=(
+    manus-live-acceptance-recover
+    --journal "$LIVE_JOURNAL_PATH"
+  )
+fi
 
 LIVE_TRANSCRIPT_PART="$LIVE_RUN_DIRECTORY/transcript.txt.partial"
 LIVE_TRANSCRIPT="$LIVE_RUN_DIRECTORY/transcript.txt"
@@ -325,7 +420,7 @@ set +e
   PATH="/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin" \
   TMPDIR="/tmp" \
   LC_ALL="C" \
-  "$LIVE_EVIDENCE_BINARY" manus-live-acceptance --timeout "$LIVE_TIMEOUT" \
+  "$LIVE_EVIDENCE_BINARY" "${LIVE_CLI_ARGUMENTS[@]}" \
   | /usr/bin/tee "$LIVE_TRANSCRIPT_PART"
 LIVE_PIPE_STATUSES=("${PIPESTATUS[@]}")
 set -e
@@ -334,6 +429,7 @@ LIVE_CLI_EXIT="${LIVE_PIPE_STATUSES[0]:-1}"
 LIVE_TEE_EXIT="${LIVE_PIPE_STATUSES[1]:-1}"
 /bin/mv "$LIVE_TRANSCRIPT_PART" "$LIVE_TRANSCRIPT"
 /bin/chmod 600 "$LIVE_TRANSCRIPT"
+inspect_recovery_journal
 
 LIVE_VALIDATION_LOG="$LIVE_RUN_DIRECTORY/TRANSCRIPT_VALIDATION.txt"
 set +e
@@ -342,15 +438,19 @@ LIVE_SAFE_TRANSCRIPT_EXIT=$?
 set -e
 if (( LIVE_SAFE_TRANSCRIPT_EXIT == 0 )); then
   LIVE_TRANSCRIPT_RESULT="allowlisted"
-  set +e
-  "$LIVE_VALIDATOR" --transcript "$LIVE_TRANSCRIPT" --require-accepted \
-    >>"$LIVE_VALIDATION_LOG" 2>&1
-  LIVE_ACCEPTED_TRANSCRIPT_EXIT=$?
-  set -e
-  if (( LIVE_ACCEPTED_TRANSCRIPT_EXIT == 0 )); then
-    LIVE_ACCEPTED_RESULT="validated"
+  if [[ "$LIVE_OPERATION" == "acceptance" ]]; then
+    set +e
+    "$LIVE_VALIDATOR" --transcript "$LIVE_TRANSCRIPT" --require-accepted \
+      >>"$LIVE_VALIDATION_LOG" 2>&1
+    LIVE_ACCEPTED_TRANSCRIPT_EXIT=$?
+    set -e
+    if (( LIVE_ACCEPTED_TRANSCRIPT_EXIT == 0 )); then
+      LIVE_ACCEPTED_RESULT="validated"
+    else
+      LIVE_ACCEPTED_RESULT="not_accepted"
+    fi
   else
-    LIVE_ACCEPTED_RESULT="not_accepted"
+    LIVE_ACCEPTED_RESULT="not_applicable_to_recovery"
   fi
 else
   LIVE_TRANSCRIPT_RESULT="rejected_and_removed"
@@ -361,9 +461,11 @@ else
     >"$LIVE_RUN_DIRECTORY/TRANSCRIPT_REMOVED.txt"
 fi
 
-if [[ "$LIVE_CLI_EXIT" == "0" \
+if [[ "$LIVE_OPERATION" == "acceptance" \
+      && "$LIVE_CLI_EXIT" == "0" \
       && "$LIVE_TEE_EXIT" == "0" \
-      && "$LIVE_ACCEPTED_RESULT" == "validated" ]]; then
+      && "$LIVE_ACCEPTED_RESULT" == "validated" \
+      && "$LIVE_RECOVERY_JOURNAL_RESULT" == "cleared" ]]; then
   LIVE_WRAPPER_RESULT="accepted"
   printf '%s\n' 'accepted=true' >"$LIVE_RUN_DIRECTORY/ACCEPTED"
   finalize_evidence
@@ -371,17 +473,42 @@ if [[ "$LIVE_CLI_EXIT" == "0" \
   exit 0
 fi
 
+if [[ "$LIVE_OPERATION" == "recovery" \
+      && "$LIVE_CLI_EXIT" == "0" \
+      && "$LIVE_TEE_EXIT" == "0" \
+      && "$LIVE_TRANSCRIPT_RESULT" == "allowlisted" \
+      && "$LIVE_RECOVERY_JOURNAL_RESULT" == "cleared" ]]; then
+  LIVE_WRAPPER_RESULT="recovered"
+  printf '%s\n' 'recovered=true' >"$LIVE_RUN_DIRECTORY/RECOVERED"
+  finalize_evidence
+  echo "Manus live acceptance recovery: RECOVERED"
+  exit 0
+fi
+
 if [[ "$LIVE_TEE_EXIT" != "0" ]]; then
   LIVE_WRAPPER_RESULT="transcript_capture_failed"
 elif [[ "$LIVE_TRANSCRIPT_RESULT" == "rejected_and_removed" ]]; then
   LIVE_WRAPPER_RESULT="transcript_rejected"
+elif [[ "$LIVE_RECOVERY_JOURNAL_RESULT" == "unsafe" ]]; then
+  LIVE_WRAPPER_RESULT="recovery_journal_unsafe"
 elif [[ "$LIVE_CLI_EXIT" == "0" ]]; then
-  LIVE_WRAPPER_RESULT="accepted_claim_not_proven"
+  LIVE_WRAPPER_RESULT="$([[ "$LIVE_OPERATION" == "acceptance" ]] \
+    && printf accepted_claim_not_proven \
+    || printf recovery_claim_not_proven)"
 else
-  LIVE_WRAPPER_RESULT="live_run_not_accepted"
+  LIVE_WRAPPER_RESULT="$([[ "$LIVE_OPERATION" == "acceptance" ]] \
+    && printf live_run_not_accepted \
+    || printf recovery_not_completed)"
 fi
 finalize_evidence
-echo "Manus live acceptance: NOT ACCEPTED" >&2
+if [[ "$LIVE_RECOVERY_JOURNAL_RESULT" == "retained" ]]; then
+  echo "Recovery journal retained; run the recovery command shown above." >&2
+fi
+if [[ "$LIVE_OPERATION" == "acceptance" ]]; then
+  echo "Manus live acceptance: NOT ACCEPTED" >&2
+else
+  echo "Manus live acceptance recovery: NOT COMPLETED" >&2
+fi
 if [[ "$LIVE_CLI_EXIT" =~ ^[0-9]+$ ]] && (( LIVE_CLI_EXIT > 0 && LIVE_CLI_EXIT <= 255 )); then
   exit "$LIVE_CLI_EXIT"
 fi

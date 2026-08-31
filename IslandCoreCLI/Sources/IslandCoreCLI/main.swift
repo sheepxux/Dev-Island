@@ -24,7 +24,8 @@ private func printUsage() {
     print("  IslandCoreCLI local-hermetic-listener-check")
     print("  IslandCoreCLI local-usage")
     print("  IslandCoreCLI local-hooks")
-    print("  IslandCoreCLI manus-live-acceptance [--timeout 60...1800]")
+    print("  IslandCoreCLI manus-live-acceptance --journal ABSOLUTE_PATH [--timeout 60...1800]")
+    print("  IslandCoreCLI manus-live-acceptance-recover --journal ABSOLUTE_PATH")
     print("")
     print("The Manus command requires an interactive TTY and never reads a key from the environment.")
 }
@@ -164,15 +165,52 @@ private func runLocalHooks() -> Never {
     fatalError("RunLoop exited unexpectedly")
 }
 
-private func parseAcceptanceTimeout(_ arguments: [String]) -> Duration? {
-    guard !arguments.isEmpty else { return .seconds(600) }
+private struct ManusAcceptanceArguments {
+    let journalPath: String
+    let timeout: Duration
+}
+
+private func parseAcceptanceArguments(
+    _ arguments: [String]
+) -> ManusAcceptanceArguments? {
+    var journalPath: String?
+    var timeout: Duration = .seconds(600)
+    var sawTimeout = false
+    var index = 0
+    while index < arguments.count {
+        guard index + 1 < arguments.count else { return nil }
+        let flag = arguments[index]
+        let value = arguments[index + 1]
+        switch flag {
+        case "--journal" where journalPath == nil && !value.isEmpty:
+            journalPath = value
+        case "--timeout":
+            guard !sawTimeout,
+                  let seconds = Int(value),
+                  60...1_800 ~= seconds else {
+                return nil
+            }
+            timeout = .seconds(seconds)
+            sawTimeout = true
+        default:
+            return nil
+        }
+        index += 2
+    }
+    guard let journalPath else { return nil }
+    return ManusAcceptanceArguments(
+        journalPath: journalPath,
+        timeout: timeout
+    )
+}
+
+private func parseRecoveryJournalPath(_ arguments: [String]) -> String? {
     guard arguments.count == 2,
-          arguments[0] == "--timeout",
-          let seconds = Int(arguments[1]),
-          60...1_800 ~= seconds else {
+          arguments[0] == "--journal",
+          !arguments[1].isEmpty else {
         return nil
     }
-    return .seconds(seconds)
+    return arguments[1]
 }
 
 /// `readpassphrase` keeps terminal echo disabled and `RPP_REQUIRE_TTY` rejects
@@ -224,12 +262,22 @@ private final class CancellationSignalBridge: @unchecked Sendable {
     }
 }
 
-private func runManusLiveAcceptance(timeout: Duration) -> Never {
+private func runManusLiveAcceptance(
+    timeout: Duration,
+    journalPath: String
+) -> Never {
     setvbuf(stdout, nil, _IONBF, 0)
     print("[CLI] Manus v2 live acceptance")
     print("[CLI] This creates a temporary public tunnel and webhook, then removes both.")
     print("[CLI] During the run, create one task that finishes and one task that pauses for input.")
     print("[CLI] Provider identifiers, callback addresses, payload text and raw errors are never printed.")
+
+    guard let journal = try? ManusLiveAcceptanceRecoveryJournal(
+        path: journalPath
+    ) else {
+        print("[CLI] result=journal_rejected")
+        exit(CLIExit.usage)
+    }
 
     guard let apiKey = readManusCredential() else {
         print("[CLI] credential_rejected")
@@ -238,6 +286,7 @@ private func runManusLiveAcceptance(timeout: Duration) -> Never {
 
     let runner = ManusLiveAcceptanceRunner(
         client: ManusAPIClient(apiKey: apiKey),
+        journal: journal,
         checkpointHandler: { checkpoint in
             print("[CLI] checkpoint=\(checkpoint.rawValue)")
         }
@@ -283,6 +332,57 @@ private func runManusLiveAcceptance(timeout: Duration) -> Never {
     fatalError("RunLoop exited unexpectedly")
 }
 
+private func runManusLiveAcceptanceRecovery(journalPath: String) -> Never {
+    setvbuf(stdout, nil, _IONBF, 0)
+    print("[CLI] Manus v2 live acceptance recovery")
+    print("[CLI] This removes only a webhook proven by one explicit private journal.")
+    print("[CLI] Provider identifiers, callback addresses and raw errors are never printed.")
+
+    guard let journal = try? ManusLiveAcceptanceRecoveryJournal(
+        path: journalPath
+    ) else {
+        print("[CLI] result=journal_rejected")
+        exit(CLIExit.usage)
+    }
+    guard let apiKey = readManusCredential() else {
+        print("[CLI] credential_rejected")
+        exit(CLIExit.usage)
+    }
+
+    let runner = ManusLiveAcceptanceRecoveryRunner(
+        client: ManusAPIClient(apiKey: apiKey),
+        journal: journal,
+        checkpointHandler: { checkpoint in
+            print("[CLI] checkpoint=\(checkpoint.rawValue)")
+        }
+    )
+    let recoveryTask = Task {
+        await runner.recover()
+    }
+    let signals = CancellationSignalBridge {
+        recoveryTask.cancel()
+    }
+
+    Task {
+        let result = await recoveryTask.value
+        signals.stop()
+        switch result {
+        case .recovered:
+            print("[CLI] result=recovered")
+            exit(CLIExit.success)
+        case .noJournal:
+            print("[CLI] result=no_recovery_journal")
+            exit(CLIExit.failure)
+        case .manualReviewRequired:
+            print("[CLI] result=manual_webhook_review_required")
+            exit(CLIExit.manualReview)
+        }
+    }
+
+    RunLoop.main.run()
+    fatalError("RunLoop exited unexpectedly")
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
 guard let command = arguments.first else {
     printUsage()
@@ -311,12 +411,27 @@ case "local-hooks" where arguments.count == 1,
     runLocalHooks()
 
 case "manus-live-acceptance":
-    guard let timeout = parseAcceptanceTimeout(Array(arguments.dropFirst())) else {
-        print("[CLI] invalid_timeout")
+    guard let parsed = parseAcceptanceArguments(
+        Array(arguments.dropFirst())
+    ) else {
+        print("[CLI] invalid_acceptance_arguments")
         printUsage()
         exit(CLIExit.usage)
     }
-    runManusLiveAcceptance(timeout: timeout)
+    runManusLiveAcceptance(
+        timeout: parsed.timeout,
+        journalPath: parsed.journalPath
+    )
+
+case "manus-live-acceptance-recover":
+    guard let journalPath = parseRecoveryJournalPath(
+        Array(arguments.dropFirst())
+    ) else {
+        print("[CLI] invalid_recovery_arguments")
+        printUsage()
+        exit(CLIExit.usage)
+    }
+    runManusLiveAcceptanceRecovery(journalPath: journalPath)
 
 default:
     print("[CLI] unknown_command")

@@ -30,6 +30,7 @@ for invariant in \
   'DIAGNOSTIC_ROOT="$(mktemp -d "${RUNNER_TEMP}/dev-island-ci-diagnostics.XXXXXX")"' \
   '--security-log "${SECURITY_LOG}"' \
   '--test-log "${TEST_LOG}"' \
+  '--step '\''sparkle-update=${{ steps.sparkle_update.outcome }}'\''' \
   '--step '\''brand=${{ steps.brand.outcome }}'\''' \
   '${GITHUB_OUTPUT}' \
   '${GITHUB_STEP_SUMMARY}'; do
@@ -68,6 +69,7 @@ done
 for step_id in \
   toolchain \
   dependencies \
+  sparkle_update \
   security \
   tests \
   performance_build \
@@ -331,6 +333,7 @@ FAILURE_OUTPUT="$TEMP_DIR/failure-output"
   "${COMMON_ARGUMENTS[@]}" \
   --step toolchain=success \
   --step dependencies=success \
+  --step sparkle-update=success \
   --step security=success \
   --step tests=failure \
   --step performance-build=skipped \
@@ -388,6 +391,7 @@ SUCCESS_OUTPUT="$TEMP_DIR/success-output"
   --test-log "$SUCCESS_TEST_LOG" \
   --step toolchain=success \
   --step dependencies=success \
+  --step sparkle-update=success \
   --step security=success \
   --step tests=success \
   --step performance-build=success \
@@ -416,6 +420,7 @@ APP_BUILD_FAILURE_OUTPUT="$TEMP_DIR/app-build-failure-output"
   --test-log "$SUCCESS_TEST_LOG" \
   --step toolchain=success \
   --step dependencies=success \
+  --step sparkle-update=success \
   --step security=success \
   --step tests=success \
   --step performance-build=success \
@@ -455,6 +460,7 @@ BRAND_FAILURE_OUTPUT="$TEMP_DIR/brand-failure-output"
   --test-log "$SUCCESS_TEST_LOG" \
   --step toolchain=success \
   --step dependencies=success \
+  --step sparkle-update=success \
   --step security=success \
   --step tests=success \
   --step performance-build=success \
@@ -496,6 +502,7 @@ SYMLINK_OUTPUT="$TEMP_DIR/symlink-output"
   --test-log "$TEMP_DIR/symlink-test.log" \
   --step toolchain=success \
   --step dependencies=success \
+  --step sparkle-update=success \
   --step security=success \
   --step tests=success \
   --step performance-build=success \
@@ -533,6 +540,7 @@ OVERSIZED_OUTPUT="$TEMP_DIR/oversized-output"
   --test-log "$OVERSIZED_TEST_LOG" \
   --step toolchain=success \
   --step dependencies=success \
+  --step sparkle-update=success \
   --step security=success \
   --step tests=success \
   --step performance-build=success \
@@ -567,6 +575,7 @@ HARDLINK_OUTPUT="$TEMP_DIR/hardlink-output"
   --test-log "$HARDLINK_TEST_LOG" \
   --step toolchain=success \
   --step dependencies=success \
+  --step sparkle-update=success \
   --step security=success \
   --step tests=success \
   --step performance-build=success \

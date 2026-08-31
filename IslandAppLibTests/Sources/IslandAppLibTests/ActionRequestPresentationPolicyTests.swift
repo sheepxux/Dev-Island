@@ -140,6 +140,110 @@ final class ActionRequestPresentationPolicyTests: XCTestCase {
         )
     }
 
+    func testResponseReceiptUsesDecisionSpecificCopyWithoutLeakingSessionID() {
+        let permission = request(session: "private-session-id")
+        let allowed = ActionResponseReceiptPresentation.decision(
+            for: permission,
+            decision: .allow,
+            language: .english
+        )
+        let denied = ActionResponseReceiptPresentation.decision(
+            for: permission,
+            decision: .deny,
+            language: .simplifiedChinese
+        )
+
+        XCTAssertEqual(allowed.title, "Allowed once")
+        XCTAssertEqual(allowed.detail, "Response sent to Codex")
+        XCTAssertEqual(denied.title, "已拒绝请求")
+        XCTAssertEqual(denied.detail, "响应已发送给 Codex")
+        XCTAssertFalse(allowed.accessibilityLabel.contains("private-session-id"))
+        XCTAssertFalse(denied.accessibilityLabel.contains("private-session-id"))
+    }
+
+    func testResponseReceiptDistinguishesPlanAndQuestionOutcomes() throws {
+        let planReview = try XCTUnwrap(AgentPlanReview(
+            markdown: "# Plan",
+            originalInputJSON: Data(#"{"plan":"x"}"#.utf8)
+        ))
+        let plan = AgentActionRequest(
+            source: "claude-code",
+            sessionId: "plan",
+            kind: .planReview,
+            title: "Review plan",
+            message: "Ready",
+            planReview: planReview
+        )
+        let question = AgentActionRequest(
+            source: "claude-code",
+            sessionId: "question",
+            kind: .question,
+            title: "Choose",
+            message: "Pick one",
+            questions: [
+                AgentQuestion(
+                    question: "Tone?",
+                    header: "Tone",
+                    options: [AgentQuestionOption(label: "Quiet")]
+                ),
+            ]
+        )
+
+        XCTAssertEqual(
+            ActionResponseReceiptPresentation.decision(
+                for: plan,
+                decision: .allow,
+                language: .english
+            ).title,
+            "Plan approved"
+        )
+        XCTAssertEqual(
+            ActionResponseReceiptPresentation.decision(
+                for: plan,
+                decision: .deny,
+                language: .english
+            ).title,
+            "Plan rejected"
+        )
+        XCTAssertEqual(
+            ActionResponseReceiptPresentation.answersSent(
+                for: question,
+                language: .english
+            ).title,
+            "Answers sent"
+        )
+    }
+
+    func testQuestionSelectionUsesDistinctStableNinePointStates() {
+        let unselectedSingle = QuestionSelectionPresentation.style(
+            selected: false,
+            allowsMultipleSelection: false
+        )
+        let unselectedMultiple = QuestionSelectionPresentation.style(
+            selected: false,
+            allowsMultipleSelection: true
+        )
+        let selectedSingle = QuestionSelectionPresentation.style(
+            selected: true,
+            allowsMultipleSelection: false
+        )
+        let selectedMultiple = QuestionSelectionPresentation.style(
+            selected: true,
+            allowsMultipleSelection: true
+        )
+
+        XCTAssertEqual(unselectedSingle.pattern, .field)
+        XCTAssertEqual(unselectedMultiple.pattern, .field)
+        XCTAssertEqual(unselectedSingle.tone, .quiet)
+        XCTAssertEqual(unselectedMultiple.tone, .quiet)
+        XCTAssertEqual(selectedSingle.pattern, .ring)
+        XCTAssertEqual(selectedMultiple.pattern, .plus)
+        XCTAssertEqual(selectedSingle.tone, .attention)
+        XCTAssertEqual(selectedMultiple.tone, .attention)
+        XCTAssertEqual(selectedSingle.intensity, 1)
+        XCTAssertEqual(selectedMultiple.intensity, 1)
+    }
+
     private func request(session: String) -> AgentActionRequest {
         AgentActionRequest(
             source: "codex",

@@ -39,18 +39,22 @@ struct TaskCard: View {
     private func card(at referenceDate: Date) -> some View {
         Button(action: onTap) {
             HStack(spacing: 11) {
-                ZStack(alignment: .bottomTrailing) {
-                    toolLogo
+                HStack(spacing: TaskCardLeadingIdentityMetrics.spacing) {
                     TaskStatusMatrix(
                         status: task.status,
-                        size: 9,
+                        size: TaskCardLeadingIdentityMetrics.statusSize,
                         isLive: isLive
                     )
-                        .compositingGroup()
-                        .shadow(color: Palette.islandTop, radius: 1.5)
-                        .offset(x: 1, y: 1)
-                        .animation(Motion.colorTransition, value: task.status)
+                    .compositingGroup()
+                    .shadow(color: Palette.islandTop, radius: 1.5)
+                    .animation(Motion.colorTransition, value: task.status)
+
+                    toolLogo
                 }
+                .frame(
+                    width: TaskCardLeadingIdentityMetrics.width,
+                    alignment: .leading
+                )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(task.title)
@@ -126,9 +130,9 @@ struct TaskCard: View {
         // see AgentBrand.
         AgentLogoBadge(
             source: task.source,
-            size: 26,
+            size: TaskCardLeadingIdentityMetrics.logoSize,
             ink: Palette.warmWhite.opacity(0.82),
-            badge: Color.white.opacity(0.045)
+            badge: nil
         )
     }
 
@@ -174,6 +178,16 @@ struct TaskCard: View {
         }
         return L10n.string(key, language: language)
     }
+}
+
+/// Fixed leading geometry keeps the semantic status mark and the vendor logo
+/// as two distinct signals. The previous bottom-trailing overlay made dense
+/// marks such as Codex read like one malformed composite icon.
+enum TaskCardLeadingIdentityMetrics {
+    static let statusSize: CGFloat = 9
+    static let logoSize: CGFloat = 26
+    static let spacing: CGFloat = 7
+    static let width = statusSize + spacing + logoSize
 }
 
 /// Keeps the continuous opacity loop in Core Animation instead of rebuilding

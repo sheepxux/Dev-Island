@@ -284,7 +284,8 @@ final class TaskStoreActionRequestTests: XCTestCase {
             TaskStore.maximumPendingActionRequests
         )
 
-        store.shutdown()
+        let shutdownResult = await store.shutdown()
+        XCTAssertEqual(shutdownResult, .completed)
         for result in results {
             let value = await result.value
             XCTAssertNil(value)
@@ -330,7 +331,8 @@ final class TaskStoreActionRequestTests: XCTestCase {
             TaskStore.maximumPendingActionRequestsPerSession
         )
 
-        store.shutdown()
+        let shutdownResult = await store.shutdown()
+        XCTAssertEqual(shutdownResult, .completed)
         for result in results.dropFirst() {
             let value = await result.value
             XCTAssertNil(value)

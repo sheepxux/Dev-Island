@@ -23,6 +23,7 @@ struct ActionRequestSurface: View {
     var onDeferToAgent: () -> Void = {}
 
     @State private var questionDraft: QuestionAnswerDraft
+    @State private var questionPageOpacity = 1.0
     @State private var planRenderingState = PlanMarkdownRenderingOperationState()
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -62,8 +63,9 @@ struct ActionRequestSurface: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: 10) {
             header
+                .opacity(request.kind == .question ? questionPageOpacity : 1)
             contextLabel
 
             switch request.kind {
@@ -71,43 +73,32 @@ struct ActionRequestSurface: View {
                 permissionContent
             case .question:
                 questionContent
+                    .opacity(questionPageOpacity)
             case .planReview:
                 planReviewContent
             }
         }
-        .padding(.leading, 43)
-        .padding(.trailing, 12)
-        .padding(.top, 7)
+        .padding(.horizontal, 14)
+        .padding(.top, 9)
         .padding(.bottom, 12)
-        .background(alignment: .leading) {
+        .background(alignment: .bottom) {
             Rectangle()
-                .fill(Palette.stateWaiting.opacity(usesIncreasedContrast ? 1 : 0.82))
-                .frame(width: usesIncreasedContrast ? 1.5 : 1)
-                .padding(.leading, 31)
-                .padding(.vertical, 8)
-        }
-        .background {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.white.opacity(usesIncreasedContrast ? 0.055 : 0.027))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(
-                    Color.white.opacity(usesIncreasedContrast ? 0.18 : 0.065),
-                    lineWidth: usesIncreasedContrast ? 1 : 0.5
+                .fill(
+                    usesIncreasedContrast
+                        ? Color.white.opacity(0.22)
+                        : Palette.hairline
                 )
+                .frame(height: usesIncreasedContrast ? 1 : 0.5)
+                .padding(.horizontal, 2)
         }
-        .transition(
-            reduceMotion
-                ? .opacity
-                : .opacity.combined(with: .move(edge: .top))
-        )
+        .transition(.opacity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint(accessibilityHint)
         .accessibilitySortPriority(isKeyboardPrimary ? 100 : 0)
         .onChange(of: request.id) { _, _ in
             questionDraft = QuestionAnswerDraft(questions: request.questions)
+            questionPageOpacity = 1
             planRenderingState.invalidate()
         }
         .task(id: request.id) { await renderPlanIfNeeded() }
@@ -181,11 +172,11 @@ struct ActionRequestSurface: View {
             .scrollIndicators(.visible)
             .frame(minHeight: 96, maxHeight: 210)
             .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.black.opacity(usesIncreasedContrast ? 0.5 : 0.32))
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.black.opacity(usesIncreasedContrast ? 0.52 : 0.24))
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .stroke(
                         Color.white.opacity(usesIncreasedContrast ? 0.18 : 0.06),
                         lineWidth: usesIncreasedContrast ? 1 : 0.5
@@ -336,11 +327,11 @@ struct ActionRequestSurface: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 8)
                 .background {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.black.opacity(usesIncreasedContrast ? 0.5 : 0.32))
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.black.opacity(usesIncreasedContrast ? 0.52 : 0.24))
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .stroke(
                             Color.white.opacity(usesIncreasedContrast ? 0.18 : 0.055),
                             lineWidth: usesIncreasedContrast ? 1 : 0.5
@@ -410,20 +401,12 @@ struct ActionRequestSurface: View {
                     Button {
                         toggle(option: option, in: question)
                     } label: {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: selectionSymbol(
+                        HStack(alignment: .top, spacing: 9) {
+                            QuestionSelectionMark(
                                 selected: isSelected(option, in: question),
-                                multiple: question.allowsMultipleSelection
-                            ))
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(
-                                isSelected(option, in: question)
-                                    ? Palette.stateWaiting
-                                    : (usesIncreasedContrast
-                                        ? Palette.textSecondary
-                                        : Palette.textTertiary)
+                                allowsMultipleSelection: question.allowsMultipleSelection
                             )
-                            .frame(width: 13, height: 15)
+                            .frame(width: 15, height: 16)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(option.label)
@@ -494,13 +477,7 @@ struct ActionRequestSurface: View {
 
                 if questionDraft.currentIndex > 0 {
                     Button(L10n.string("Back", language: language)) {
-                        if reduceMotion {
-                            _ = questionDraft.goBack()
-                        } else {
-                            withAnimation(Motion.contentReveal) {
-                                _ = questionDraft.goBack()
-                            }
-                        }
+                        goBackOneQuestion()
                     }
                     .buttonStyle(ActionDecisionButtonStyle(role: .secondary))
                     .accessibilityHint(
@@ -746,25 +723,52 @@ struct ActionRequestSurface: View {
         questionDraft.toggle(option, in: question)
     }
 
-    private func selectionSymbol(selected: Bool, multiple: Bool) -> String {
-        if multiple {
-            return selected ? "checkmark.square.fill" : "square"
-        }
-        return selected ? "circle.inset.filled" : "circle"
-    }
-
     private func advanceOrSubmit() {
         let outcome: QuestionAnswerDraft.Outcome
-        if reduceMotion {
+        if reduceMotion || isLastQuestion {
             outcome = questionDraft.advanceOrSubmit()
         } else {
-            outcome = withAnimation(Motion.contentReveal) {
-                questionDraft.advanceOrSubmit()
+            var nextOutcome: QuestionAnswerDraft.Outcome = .blocked
+            var replacement = Transaction(animation: nil)
+            replacement.disablesAnimations = true
+            withTransaction(replacement) {
+                questionPageOpacity = 0
+                nextOutcome = questionDraft.advanceOrSubmit()
             }
+            if nextOutcome == .advanced {
+                withAnimation(Motion.questionPageReveal) {
+                    questionPageOpacity = 1
+                }
+            } else {
+                questionPageOpacity = 1
+            }
+            outcome = nextOutcome
         }
 
         if case let .submit(answers) = outcome {
             onAnswer(answers)
+        }
+    }
+
+    private func goBackOneQuestion() {
+        guard !reduceMotion else {
+            _ = questionDraft.goBack()
+            return
+        }
+
+        var didMove = false
+        var replacement = Transaction(animation: nil)
+        replacement.disablesAnimations = true
+        withTransaction(replacement) {
+            questionPageOpacity = 0
+            didMove = questionDraft.goBack()
+        }
+        if didMove {
+            withAnimation(Motion.questionPageReveal) {
+                questionPageOpacity = 1
+            }
+        } else {
+            questionPageOpacity = 1
         }
     }
 
@@ -917,13 +921,13 @@ private struct ActionDecisionButtonBody: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(foreground.opacity(configuration.isPressed ? 0.72 : 1))
             .padding(.horizontal, 12)
-            .frame(height: 28)
+            .frame(height: 30)
             .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(background.opacity(configuration.isPressed ? 0.78 : 1))
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .stroke(border, lineWidth: increasedContrast ? 1 : 0.6)
             }
             .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.985 : 1))
@@ -958,7 +962,7 @@ private struct ActionDecisionButtonBody: View {
             return isHovering ? Color.white.opacity(0.98) : Palette.warmWhite.opacity(0.92)
         case .secondary:
             return Color.white.opacity(
-                increasedContrast ? (isHovering ? 0.14 : 0.1) : (isHovering ? 0.075 : 0.045)
+                increasedContrast ? (isHovering ? 0.14 : 0.075) : (isHovering ? 0.06 : 0)
             )
         }
     }
@@ -968,8 +972,94 @@ private struct ActionDecisionButtonBody: View {
         case .primary: return Color.clear
         case .secondary:
             return Color.white.opacity(
-                increasedContrast ? (isHovering ? 0.34 : 0.24) : (isHovering ? 0.16 : 0.09)
+                increasedContrast ? (isHovering ? 0.34 : 0.2) : (isHovering ? 0.13 : 0)
             )
+        }
+    }
+}
+
+/// One stable nine-point selection language for every question answer.
+///
+/// The geometry never changes when selection changes: two equal-sized grids
+/// cross-fade in place. Single selection focuses inward; multiple selection
+/// lights the centre and cardinals, keeping the two interaction models
+/// distinguishable without falling back to generic radio/checkmark symbols.
+enum QuestionSelectionPresentation {
+    enum Tone: Equatable {
+        case quiet
+        case attention
+    }
+
+    struct Style: Equatable {
+        let pattern: DotMatrixMark.Pattern
+        let tone: Tone
+        let intensity: Double
+    }
+
+    static func style(
+        selected: Bool,
+        allowsMultipleSelection: Bool
+    ) -> Style {
+        guard selected else {
+            return Style(pattern: .field, tone: .quiet, intensity: 1)
+        }
+        return Style(
+            pattern: allowsMultipleSelection ? .plus : .ring,
+            tone: .attention,
+            intensity: 1
+        )
+    }
+}
+
+struct QuestionSelectionMark: View {
+    let selected: Bool
+    let allowsMultipleSelection: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var accessibilityContrast
+
+    var body: some View {
+        let quiet = QuestionSelectionPresentation.style(
+            selected: false,
+            allowsMultipleSelection: allowsMultipleSelection
+        )
+        let active = QuestionSelectionPresentation.style(
+            selected: true,
+            allowsMultipleSelection: allowsMultipleSelection
+        )
+
+        ZStack {
+            mark(for: quiet)
+                .opacity(selected ? 0 : 1)
+            mark(for: active)
+                .opacity(selected ? 1 : 0)
+        }
+        .frame(width: 15, height: 15)
+        .animation(reduceMotion ? nil : Motion.colorTransition, value: selected)
+        .accessibilityHidden(true)
+    }
+
+    private func mark(
+        for style: QuestionSelectionPresentation.Style
+    ) -> some View {
+        DotMatrixMark(
+            color: color(for: style.tone),
+            size: 15,
+            pattern: style.pattern,
+            intensity: style.intensity
+        )
+    }
+
+    private func color(
+        for tone: QuestionSelectionPresentation.Tone
+    ) -> Color {
+        switch tone {
+        case .quiet:
+            return InterfaceContrastPolicy.usesIncreasedContrast(accessibilityContrast)
+                ? Palette.textSecondary
+                : Palette.textTertiary
+        case .attention:
+            return Palette.stateWaiting
         }
     }
 }
@@ -1003,7 +1093,7 @@ private struct QuestionOptionButtonBody: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
             .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(
                         isSelected
                             ? Palette.stateWaiting.opacity(
@@ -1019,7 +1109,7 @@ private struct QuestionOptionButtonBody: View {
                     )
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .stroke(
                         isSelected
                             ? Palette.stateWaiting.opacity(

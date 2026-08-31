@@ -4,6 +4,374 @@ import XCTest
 @testable import IslandCore
 
 final class LocalHookServerActionTests: XCTestCase {
+    func testDeliveryStopCancelsAndJoinsCancellationUnawareCurrentDrain() async throws {
+        let deliveryProbe = CancellationUnawareDeliveryProbe()
+        let stopProbe = LocalDeliveryStopProbe()
+        let delivery = LocalHookEventDelivery(
+            maximumQueuedEventsPerSource: 4,
+            onEvent: { _, event in
+                await deliveryProbe.handle(event: event, generation: 1)
+            },
+            isLive: { true }
+        )
+
+        await delivery.enqueuePassive(
+            source: "codex",
+            event: LocalAgentEvent(sessionId: "in-flight", action: .running)
+        )
+        let entryDeadline = Date().addingTimeInterval(1)
+        while !(await deliveryProbe.hasEnteredFirst) && Date() < entryDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let didEnterFirst = await deliveryProbe.hasEnteredFirst
+        XCTAssertTrue(didEnterFirst)
+
+        await delivery.enqueuePassive(
+            source: "codex",
+            event: LocalAgentEvent(sessionId: "queued-passive", action: .running)
+        )
+        let actionTask = Task {
+            await delivery.deliverBeforeAction(
+                source: "codex",
+                event: LocalAgentEvent(
+                    sessionId: "queued-action",
+                    action: .waiting(phase: "Needs approval", message: nil)
+                )
+            )
+        }
+        let barrierDeadline = Date().addingTimeInterval(1)
+        while await delivery.queuedActionBarrierCount(source: "codex") == 0
+            && Date() < barrierDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let queuedBarrierCount = await delivery.queuedActionBarrierCount(source: "codex")
+        XCTAssertEqual(queuedBarrierCount, 1)
+
+        // This models TaskStore's synchronous shutdown flag. The connector is
+        // cancellation-unaware, but its post-await publish guard is terminal.
+        await deliveryProbe.advanceGeneration()
+        let stopTask = Task {
+            await delivery.stop()
+            await stopProbe.recordReturn()
+        }
+        let cancellationDeadline = Date().addingTimeInterval(1)
+        while await deliveryProbe.cancellationCount == 0
+            && Date() < cancellationDeadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        let cancellationCount = await deliveryProbe.cancellationCount
+        let didStopEarly = await stopProbe.didReturn
+        let actionResult = await actionTask.value
+        let queuedCountAfterStop = await delivery.queuedEventCount(source: "codex")
+        XCTAssertEqual(cancellationCount, 1)
+        XCTAssertFalse(didStopEarly)
+        XCTAssertFalse(actionResult)
+        XCTAssertEqual(queuedCountAfterStop, 0)
+
+        await delivery.enqueuePassive(
+            source: "codex",
+            event: LocalAgentEvent(sessionId: "post-stop", action: .running)
+        )
+        let queuedCountAfterRejectedEnqueue = await delivery.queuedEventCount(source: "codex")
+        XCTAssertEqual(queuedCountAfterRejectedEnqueue, 0)
+
+        await deliveryProbe.releaseFirst()
+        await stopTask.value
+        let didStopAfterRelease = await stopProbe.didReturn
+        XCTAssertTrue(didStopAfterRelease)
+        try await Task.sleep(for: .milliseconds(20))
+
+        let snapshot = await deliveryProbe.snapshot()
+        XCTAssertEqual(snapshot.enteredSessionIDs, ["in-flight"])
+        XCTAssertTrue(snapshot.publishedSessionIDs.isEmpty)
+    }
+
+    func testListenerStopJoinsRetiringDeliveryFromSupersededGeneration() async throws {
+        let deliveryProbe = CancellationUnawareDeliveryProbe()
+        let stopProbe = LocalDeliveryStopProbe()
+        let port = try availableLoopbackPort()
+        let server = makeLocalHookServer(port: port)
+
+        await server.start(
+            agents: [.codex],
+            onEvent: { _, event in
+                await deliveryProbe.handle(event: event, generation: 1)
+            }
+        )
+
+        do {
+            let readyDeadline = Date().addingTimeInterval(2)
+            while await server.statusSnapshot() != .listening && Date() < readyDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let listenerStatus = await server.statusSnapshot()
+            XCTAssertEqual(listenerStatus, .listening)
+
+            let response = try curlPost(
+                port: port,
+                source: "codex",
+                payload: codexSessionStartPayload(session: "retired-generation")
+            )
+            XCTAssertEqual(response, "{}")
+            let entryDeadline = Date().addingTimeInterval(1)
+            while !(await deliveryProbe.hasEnteredFirst) && Date() < entryDeadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            let didEnterFirst = await deliveryProbe.hasEnteredFirst
+            XCTAssertTrue(didEnterFirst)
+
+            await deliveryProbe.advanceGeneration()
+            await server.start(
+                agents: [.codex],
+                onEvent: { _, event in
+                    await deliveryProbe.handle(event: event, generation: 2)
+                }
+            )
+
+            let stopTask = Task {
+                await server.stop()
+                await stopProbe.recordReturn()
+            }
+            let cancellationDeadline = Date().addingTimeInterval(1)
+            while await deliveryProbe.cancellationCount == 0
+                && Date() < cancellationDeadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            let cancellationCount = await deliveryProbe.cancellationCount
+            let didStopEarly = await stopProbe.didReturn
+            XCTAssertEqual(cancellationCount, 1)
+            XCTAssertFalse(didStopEarly)
+
+            await deliveryProbe.releaseFirst()
+            await stopTask.value
+            let didStopAfterRelease = await stopProbe.didReturn
+            XCTAssertTrue(didStopAfterRelease)
+            try await Task.sleep(for: .milliseconds(20))
+
+            let snapshot = await deliveryProbe.snapshot()
+            XCTAssertEqual(snapshot.enteredSessionIDs, ["retired-generation"])
+            XCTAssertTrue(snapshot.publishedSessionIDs.isEmpty)
+        } catch {
+            await deliveryProbe.releaseFirstIfNeeded()
+            await server.stop()
+            throw error
+        }
+    }
+
+    func testDeliveryStopFromOwnCallbackDoesNotSelfJoin() async throws {
+        let relay = LocalDeliverySelfStopRelay()
+        let delivery = LocalHookEventDelivery(
+            onEvent: { _, _ in
+                await relay.stopFromHandler()
+            },
+            isLive: { true }
+        )
+        await relay.install(delivery)
+
+        await delivery.enqueuePassive(
+            source: "codex",
+            event: LocalAgentEvent(sessionId: "self-stop", action: .running)
+        )
+        let deadline = Date().addingTimeInterval(1)
+        while !(await relay.didReturnFromStop) && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        let didReturnFromSelfStop = await relay.didReturnFromStop
+        XCTAssertTrue(didReturnFromSelfStop)
+        await delivery.stop()
+        let queuedCount = await delivery.queuedEventCount(source: "codex")
+        XCTAssertEqual(queuedCount, 0)
+    }
+
+    func testHTTPActionCallbackInternalStopSelfExcludesAndGracefullyReleasesListener() async throws {
+        let probe = ServerSelfStopProbe()
+        let port = try availableLoopbackPort()
+        let server = makeLocalHookServer(port: port)
+        await server.start(
+            agents: [.codex],
+            onActionRequest: { _ in
+                await probe.recordActionRequest()
+                return .permission(.allow)
+            },
+            onEvent: { _, _ in
+                await probe.recordCallbackEntry()
+                await server.stop()
+                await probe.holdAfterInternalStop()
+            }
+        )
+
+        let readyDeadline = Date().addingTimeInterval(2)
+        while await server.statusSnapshot() != .listening && Date() < readyDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let listenerStatus = await server.statusSnapshot()
+        XCTAssertEqual(listenerStatus, .listening)
+
+        let responseTask = Task {
+            try await self.post(port: port, session: "server-self-stop")
+        }
+        do {
+            let internalStopDeadline = Date().addingTimeInterval(1)
+            while await probe.internalStopReturnCount == 0
+                && Date() < internalStopDeadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            let internalStopSnapshot = await probe.snapshot()
+            XCTAssertEqual(internalStopSnapshot.callbackEntries, 1)
+            XCTAssertEqual(internalStopSnapshot.internalStopReturns, 1)
+            // The callback that invoked stop is the one operation that must be
+            // self-excluded. Returning from that internal stop is deliberately
+            // not a guarantee that the callback has no work left while it
+            // finishes unwinding.
+            XCTAssertEqual(internalStopSnapshot.callbackCompletions, 0)
+            let retainedCounts = await server.lifecycleOperationCounts()
+            XCTAssertEqual(retainedCounts.currentServer, 0)
+            XCTAssertEqual(retainedCounts.currentEventDelivery, 0)
+            XCTAssertEqual(retainedCounts.retiringServers, 1)
+            XCTAssertEqual(retainedCounts.retiringEventDeliveries, 1)
+
+            await probe.releaseCallback()
+            let response = try await responseTask.value
+            XCTAssertEqual(response, "{}")
+
+            let acceptedSnapshot = await probe.snapshot()
+            XCTAssertEqual(acceptedSnapshot.callbackEntries, 1)
+            XCTAssertEqual(acceptedSnapshot.callbackCompletions, 1)
+            XCTAssertEqual(acceptedSnapshot.actionRequests, 0)
+            XCTAssertEqual(acceptedSnapshot.externalStopReturns, 0)
+
+            let retirementDeadline = Date().addingTimeInterval(1)
+            while Date() < retirementDeadline {
+                let counts = await server.lifecycleOperationCounts()
+                if counts.retiringServers == 0
+                    && counts.retiringEventDeliveries == 0 {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            let finishedCounts = await server.lifecycleOperationCounts()
+            XCTAssertEqual(
+                finishedCounts,
+                LocalHookServerLifecycleOperationCounts(
+                    currentServer: 0,
+                    currentReadiness: 0,
+                    currentEventDelivery: 0,
+                    retiringServers: 0,
+                    retiringReadiness: 0,
+                    retiringEventDeliveries: 0
+                )
+            )
+
+            // No external stop has run on the original listener. A successful
+            // bind on the same port proves the callback-initiated stop itself
+            // gracefully quiesced Hummingbird instead of leaking app.run().
+            let replacement = makeLocalHookServer(port: port)
+            await replacement.start(agents: [.codex]) { _, _ in }
+            let replacementDeadline = Date().addingTimeInterval(2)
+            while await replacement.statusSnapshot() != .listening
+                && Date() < replacementDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let replacementStatus = await replacement.statusSnapshot()
+            XCTAssertEqual(replacementStatus, .listening)
+            await replacement.stop()
+        } catch {
+            await probe.releaseCallback()
+            _ = try? await responseTask.value
+            await server.stop()
+            throw error
+        }
+    }
+
+    func testHTTPActionCallbackExternalStopStrictlyJoinsSelfExcludedGeneration() async throws {
+        let probe = ServerSelfStopProbe()
+        let port = try availableLoopbackPort()
+        let server = makeLocalHookServer(port: port)
+        await server.start(
+            agents: [.codex],
+            onActionRequest: { _ in
+                await probe.recordActionRequest()
+                return .permission(.allow)
+            },
+            onEvent: { _, _ in
+                await probe.recordCallbackEntry()
+                await server.stop()
+                await probe.holdAfterInternalStop()
+            }
+        )
+
+        let readyDeadline = Date().addingTimeInterval(2)
+        while await server.statusSnapshot() != .listening && Date() < readyDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let listenerStatus = await server.statusSnapshot()
+        XCTAssertEqual(listenerStatus, .listening)
+
+        let responseTask = Task {
+            try await self.post(port: port, session: "server-external-strict-stop")
+        }
+        do {
+            let internalStopDeadline = Date().addingTimeInterval(1)
+            while await probe.internalStopReturnCount == 0
+                && Date() < internalStopDeadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            let internalStopSnapshot = await probe.snapshot()
+            XCTAssertEqual(internalStopSnapshot.internalStopReturns, 1)
+            XCTAssertEqual(internalStopSnapshot.callbackCompletions, 0)
+
+            // Unlike the necessary self-exclusion above, an external lifecycle
+            // stop has no drain identity and is the strict side-effect boundary:
+            // it must not return until the retained callback and listener end.
+            let externalStopTask = Task {
+                await server.stop()
+                await probe.recordExternalStopReturn()
+            }
+            try await Task.sleep(for: .milliseconds(30))
+            let externalStopBeforeRelease = await probe.externalStopReturnCount
+            XCTAssertEqual(externalStopBeforeRelease, 0)
+
+            await probe.releaseCallback()
+            let response = try await responseTask.value
+            XCTAssertEqual(response, "{}")
+            await externalStopTask.value
+
+            let joinedSnapshot = await probe.snapshot()
+            XCTAssertEqual(joinedSnapshot.callbackEntries, 1)
+            XCTAssertEqual(joinedSnapshot.callbackCompletions, 1)
+            XCTAssertEqual(joinedSnapshot.actionRequests, 0)
+            XCTAssertEqual(joinedSnapshot.externalStopReturns, 1)
+            let joinedCounts = await server.lifecycleOperationCounts()
+            XCTAssertEqual(
+                joinedCounts,
+                LocalHookServerLifecycleOperationCounts(
+                    currentServer: 0,
+                    currentReadiness: 0,
+                    currentEventDelivery: 0,
+                    retiringServers: 0,
+                    retiringReadiness: 0,
+                    retiringEventDeliveries: 0
+                )
+            )
+
+            // Repeating the external stop must observe the already-joined
+            // state, neither lose a retained handle nor allow a late callback.
+            await server.stop()
+            let repeatedCounts = await server.lifecycleOperationCounts()
+            XCTAssertEqual(repeatedCounts, joinedCounts)
+            try await Task.sleep(for: .milliseconds(20))
+            let stableSnapshot = await probe.snapshot()
+            XCTAssertEqual(stableSnapshot, joinedSnapshot)
+        } catch {
+            await probe.releaseCallback()
+            _ = try? await responseTask.value
+            await server.stop()
+            throw error
+        }
+    }
+
     func testActionRequestCannotOvertakeEarlierPassiveLifecycleHTTPEvent() async throws {
         let eventProbe = SerializedEventDeliveryProbe()
         let actionProbe = ActionProbe()
@@ -1477,6 +1845,137 @@ final class LocalHookServerActionTests: XCTestCase {
         }
         guard nameResult == 0 else { throw POSIXError(.EIO) }
         return Int(UInt16(bigEndian: address.sin_port))
+    }
+}
+
+private actor CancellationUnawareDeliveryProbe {
+    struct Snapshot: Sendable {
+        let enteredSessionIDs: [String]
+        let publishedSessionIDs: [String]
+    }
+
+    private(set) var cancellationCount = 0
+    private var activeGeneration = 1
+    private var enteredSessionIDs: [String] = []
+    private var publishedSessionIDs: [String] = []
+    private var firstContinuation: CheckedContinuation<Void, Never>?
+
+    var hasEnteredFirst: Bool { !enteredSessionIDs.isEmpty }
+
+    func handle(event: LocalAgentEvent, generation: Int) async {
+        enteredSessionIDs.append(event.sessionId)
+        if enteredSessionIDs.count == 1 {
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    firstContinuation = continuation
+                }
+            } onCancel: {
+                Task { await self.recordCancellation() }
+            }
+        }
+
+        // Models the terminal/generation guard after a cancellation-unaware
+        // connector or persistence suspension in TaskStore.
+        guard generation == activeGeneration else { return }
+        publishedSessionIDs.append(event.sessionId)
+    }
+
+    func advanceGeneration() {
+        activeGeneration += 1
+    }
+
+    func releaseFirst() {
+        firstContinuation?.resume()
+        firstContinuation = nil
+    }
+
+    func releaseFirstIfNeeded() {
+        releaseFirst()
+    }
+
+    func snapshot() -> Snapshot {
+        Snapshot(
+            enteredSessionIDs: enteredSessionIDs,
+            publishedSessionIDs: publishedSessionIDs
+        )
+    }
+
+    private func recordCancellation() {
+        cancellationCount += 1
+    }
+}
+
+private actor LocalDeliveryStopProbe {
+    private(set) var didReturn = false
+
+    func recordReturn() {
+        didReturn = true
+    }
+}
+
+private actor LocalDeliverySelfStopRelay {
+    private var delivery: LocalHookEventDelivery?
+    private(set) var didReturnFromStop = false
+
+    func install(_ delivery: LocalHookEventDelivery) {
+        self.delivery = delivery
+    }
+
+    func stopFromHandler() async {
+        await delivery?.stop()
+        didReturnFromStop = true
+    }
+}
+
+private actor ServerSelfStopProbe {
+    struct Snapshot: Equatable, Sendable {
+        let callbackEntries: Int
+        let internalStopReturns: Int
+        let callbackCompletions: Int
+        let actionRequests: Int
+        let externalStopReturns: Int
+    }
+
+    private(set) var internalStopReturnCount = 0
+    private(set) var externalStopReturnCount = 0
+    private var callbackEntryCount = 0
+    private var callbackCompletionCount = 0
+    private var actionRequestCount = 0
+    private var callbackContinuation: CheckedContinuation<Void, Never>?
+
+    func recordCallbackEntry() {
+        callbackEntryCount += 1
+    }
+
+    func holdAfterInternalStop() async {
+        internalStopReturnCount += 1
+        await withCheckedContinuation { continuation in
+            callbackContinuation = continuation
+        }
+        callbackCompletionCount += 1
+    }
+
+    func releaseCallback() {
+        callbackContinuation?.resume()
+        callbackContinuation = nil
+    }
+
+    func recordActionRequest() {
+        actionRequestCount += 1
+    }
+
+    func recordExternalStopReturn() {
+        externalStopReturnCount += 1
+    }
+
+    func snapshot() -> Snapshot {
+        Snapshot(
+            callbackEntries: callbackEntryCount,
+            internalStopReturns: internalStopReturnCount,
+            callbackCompletions: callbackCompletionCount,
+            actionRequests: actionRequestCount,
+            externalStopReturns: externalStopReturnCount
+        )
     }
 }
 

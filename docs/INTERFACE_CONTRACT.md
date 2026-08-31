@@ -1,7 +1,64 @@
 # IslandCore Interface Contract
 
-> 最后更新: 2026-08-29 | 版本: v6.59.0
+> 最后更新: 2026-08-31 | 版本: v6.85.0
 > 变更流程: 改 TaskStore 公开 API 前更新此文档,commit 用 `[S][contract]` tag。
+
+---
+
+## 可信代码身份单实例接管（v6.84.0）
+
+- 普通 Finder/LaunchServices 启动必须在创建 IslandWindow、启动本地服务或写入 LaunchHealth 前，
+  枚举当前用户会话中同 `Bundle.main.bundleIdentifier` 的 App 进程；除 Bundle ID、PID 与终止状态外，
+  只允许 Security.framework 由动态 PID 解析有效代码签名的 identifier、Team ID 或 CDHash。不得读取
+  其他进程命令、窗口内容、可执行路径、环境、偏好、IPC 或用户数据，也不得记录代码身份。
+- SwiftUI root `Settings` Scene 必须在 gate 前保持 inert。根 `App.body`、Scene builder、AppDelegate
+  stored-property initializer 与任何 pre-gate closure 求值都不得构造绑定 `TaskStore.shared` 的
+  `SettingsView`，也不得以其他方式触发 TaskStore、SQLite、Keychain、listener、通知或产品窗口。
+  Settings 的真实内容只能在当前进程已确定继续作为 owner 后延迟创建；只证明
+  `applicationDidFinishLaunching` 回调内部 gate 早于 `IslandWindow()`，不足以证明该边界。
+- 当前进程与候选签名 identifier 都必须精确等于自身 Bundle ID。非 ad-hoc 签名必须通过
+  `anchor apple generic`、精确 identifier 与证书 OU 要求，双方再以同一非空 Team ID 建立跨版本
+  Developer ID 边界；只有 signing flags 明确标记为 ad-hoc 时，才允许用非空且完全相同的 CDHash
+  信任同一运行 Mach-O slice 的 byte-identical QA 副本。Team/hash 混合、非 ad-hoc 且无 Team、
+  缺失或不一致全部忽略。
+  当前自身身份无法证明时 fail open。
+- ad-hoc CDHash 是 Security.framework 为当前实际运行的 Mach-O slice 返回的代码身份，不是整个
+  Universal executable 的 SHA-256。即使 App tree byte-identical，native arm64 与 Rosetta x86_64
+  仍有不同 CDHash，必须互不信任并 fail open；live QA 必须记录进程架构和对应 slice CDHash，不能
+  用 Universal executable hash 或另一架构的 CDHash 代替。
+- 选择策略必须确定且有界：同 Bundle 候选最多 32 个，超限直接 fail open；可信 live candidate 中
+  最低正 PID（最早实例）获胜。只有比当前 PID 更早的可信进程可要求当前实例 yield。选出 winner 后
+  必须由同一 PID 再解析一次代码身份，并要求与首次身份逐字一致；进程消失、PID reuse 或身份漂移
+  都必须 fail open。
+- 当前实例只有在 AppKit 成功激活精确、二次验证后的 winner 后才能退出。当前为最早可信实例、
+  winner 消失或激活失败时继续启动，不能让两个实例同时退出，也不能激活不可信的同 Bundle App。
+- yield 实例必须在 Island、status item、TaskStore bootstrap、通知、更新器与 launch-health marker
+  之前终止；其 `applicationWillTerminate` 不得 shutdown 未启动的共享服务或改写 launch-health。
+- `production-launch-smoke` 的精确参数+环境双重 opt-in 必须绕过单实例 gate。这样 CI/维护者可在
+  已安装 App 运行时验证冻结 Production artifact，而不会激活、退出或读取用户 App 状态；该绕过
+  仍保持 TaskStore、SQLite、Keychain、Hook、Manus、通知、Welcome 与 Sparkle 全部 inert。
+- 启动普通 live owner 来验收真实 listener 的测试不具备上述 hermetic 性质。单独设置
+  `CFFIXED_USER_HOME` 不隔离当前用户的 login Keychain；普通 `TaskStore.bootstrap()` 仍可能读取
+  shipping `manus_api_key` 并启动 Manus 网络生命周期。因此这类 run 必须明确标记为 ordinary-live、
+  预先处理真实凭据/网络风险，且不得称为 hermetic 或用来证明 Keychain/网络零访问。
+- 本 gate 不授权 IPC、不接收跨进程 payload，也不终止其他进程。未包含 gate 的旧二进制在新版
+  已运行后主动启动，仍不能由新版安全强退；本地不同 CDHash 的 ad-hoc 版本也会 fail open。正式
+  跨版本唯一 owner 依赖同 Team 的 Developer ID 签名链，不能用 Bundle ID 或产品资源冒充。
+- `single-instance-identity-v2-20260831` artifact 因 root Settings Scene 在 gate 前可能构造
+  TaskStore-backed SettingsView 的 pre-gate Scene 风险拒绝。其签名、依赖闭包、回调内反汇编和
+  进程结果只能保留为诊断材料，不能升级为 v6.84 接受证据，也不能与后续样本合并统计。
+- 修复 inert root Scene 后的 `single-instance-identity-v3-20260831` 是当前 authoritative artifact；
+  `live-identity-matrix-v6` 在锁屏、arm64、ordinary-live 范围内通过。20/20 个 LaunchServices 副本
+  PID 均消失，耗时 min/median/p95/max 为 231/235.5/302/1,155 ms；每轮始终只有一个 App owner
+  和一个 `127.0.0.1:7824` listener，owner 的完整观察 socket 集没有其他 INET socket，duplicate
+  private home 每轮前后为空。不同 ad-hoc CDHash impostor 的 activation count 保持 `0 → 0`，未被
+  激活或终止，真实 App 继续作为唯一 listener owner。该结论只接受同一 arm64 slice 的本地进程级
+  仲裁、服务/状态隔离与不同-CDHash 拒绝，不把 ordinary-live run 描述为 hermetic。
+- v3 仍不证明同 Team Developer ID 跨版本仲裁，也不覆盖 native arm64 与 Rosetta x86_64 的跨-slice
+  互信；后者按契约必须 fail open。显示全程 locked，因此可见 winner 激活、窗口/焦点路由、动效与
+  VoiceOver 仍待解锁验收。LaunchServices 启动返回的 PID 可观察消失，但 harness 不拥有可 `wait()`
+  的 child process，真实退出码（包括是否为 0）不可观察；不得用 PID 消失或另一次 hermetic smoke
+  的 status 0 冒充这 20 轮的退出码证据。
 
 ---
 
@@ -122,12 +179,16 @@ public final class TaskStore {
     // MARK: - Actions
 
     /// 验证并保存 API key,启动所有服务。
-    /// 抛出 ManusError.unauthorized 若 key 无效。
+    /// 若已有 credential，保存 candidate 前必须 join 正在进行的 Disconnect，
+    /// 并使用旧 credential 确认旧 tunnel/Webhook ledger 已完整清理；失败时
+    /// 保留旧 key 与 cleanup owner。抛出 ManusError.unauthorized 若 candidate 无效。
     public func configureAPIKey(_ key: String) async throws
 
-    /// 清除 API key,停止所有服务,清空 tasks。
-    /// 先失效配置代际并停止网络服务，再确认 device-only Keychain 删除。
-    /// 删除失败时抛错，connection 保持 disconnected，但不得声称 key 已移除。
+    /// 清除 API key,停止所有服务,清空 Manus tasks。
+    /// 先失效配置代际并 detach 服务，在凭据仍可用时确认远端 Webhook 已删除，
+    /// 然后才允许删除 device-only Keychain。远端 cleanup 失败时抛错、保留
+    /// credential 与 cleanup owner，并进入可重试的 cleanup-pending degraded 状态；
+    /// Keychain 删除失败时也不得声称 key 已移除。
     public func clearAPIKey() async throws
 
     /// 打开经过策略验证的任务目的地。Manus 只允许与同一 task ID 对应的
@@ -166,8 +227,9 @@ public final class TaskStore {
     @discardableResult
     public func deferActionRequestToAgent(_ requestID: UUID) -> Bool
 
-    /// App 退出时清理服务和所有待恢复的同步 Hook continuation。
-    public func shutdown()
+    /// App 退出时同步 detach ingress/待恢复的 Hook continuation，
+    /// 再 await 同一个低基数、single-flight 服务清理结果。
+    public func shutdown() async -> TaskStoreShutdownResult
 
     /// 立即取消当前重试退避并重新启动本机 Agent 监听器。
     public func retryLocalHookService()
@@ -403,26 +465,95 @@ public enum ManusError: Error, Sendable {
   polling 只证明 API 可达，不得把 polling-only 模式提升为 `.connected`。
 - heartbeat 发现进程死亡后只在新进程和新 webhook 都成功时恢复 realtime；任一步失败
   只通知一次降级并停止 replacement process，不得靠“进程还活着”掩盖注册缺失。
-- stop/suspend 与正在进行的注册允许 actor 重入，但必须使用生命周期代际淘汰旧结果；
-  若已过期的注册晚到，必须删除该 webhook 并停止对应进程，不能遗留公共 endpoint。
+- heartbeat 必须是 tokenized current/retiring retained operation，而不是可被新代句柄覆盖的裸
+  `Task`。start/stop/suspend/wake 在进入后续 transport 生命周期前，必须先 retire 当前 heartbeat、
+  cancel 所有 launch 并停止其已附着 process、strict join 全部 retiring heartbeat，然后再快照并
+  drain heartbeat 尾部发布的 retained lifecycle callback；callback 恰好在 heartbeat 返回前登记时
+  也不能越过 successor promotion 屏障。
+- `onRealtimeUnavailable` callback 必须以独立 token 持有到真实结束，并用 TaskLocal 只识别当前
+  callback。callback 自己调用 `stop()` 时只排除这个精确 callback，避免 callback ↔ single-flight
+  stop 自等待；任一外部 `stop()` 则必须在共享 stop operation 成功或失败后继续 strict join 全部
+  retained callbacks，之后才能返回或抛错。新的 start/wake 也不得在 retiring callback 尚未结束时
+  提升 replacement transport。
+- launch operation 必须在调用 cancellation-unaware 的 `process.start()` **之前**保存具体 process
+  ownership。stop/supersession 因而可以立即终止仍阻塞于 URL/readiness/registration 的 process，
+  同时保留 launch task 以等待晚到 registration ID 的持久化与补偿删除；不能只依赖
+  `activeTransport`，因为 provider 接受前它按契约仍为空。
+- Manus 接受注册并返回 ID 后，必须在任何 post-registration readiness / lifecycle 检查前立即
+  把该 ID 加入 authoritative recovery envelope 的持久 cleanup ledger；旧 `webhookId` / `webhookIds`
+  只做兼容镜像。启动、wake 或 heartbeat replacement 在删除全部遗留 ID 前不得注册新
+  callback。多个交错注册都必须保留各自 ID，后到 ID 不得覆盖仍待删除的旧 ID。
+- 每次 `webhook.create` 在跨越 provider 网络边界**之前**，必须按
+  `set envelope → preferences.synchronize() → decode/readback → compatibility mirrors` 顺序提交单一 versioned
+  `webhookRecoveryStateV1` envelope。权威单元同时包含 known ID ledger、unresolved token，以及
+  token 对应的 exact callback URL SHA-256、`startedAt` 和空 `discoveredWebhookIDs`；不得持久化完整
+  public URL。旧 `webhookId` / `webhookIds` / token / attempt 键仅为兼容镜像，envelope 存在时不得
+  参与恢复决策。409 Conflict、429/rate-limit、取消、timeout、transport loss、5xx 与不可解码
+  success 都按 outcome unknown 保留；损坏、超限、重复 ID/token 或交叉引用不一致同样 fail closed。
+- `GET https://api.manus.ai/v2/webhook.list` 是账号级 recovery inventory，并与 start/stop 共享一个
+  retained single-flight。它只为没有 live launch owner、没有已绑定 ID 的 attempt 做归属：listed
+  row 必须为 `active`，完整 HTTPS URL 的 SHA-256 必须与持久 digest 精确一致，且 `created_at` 位于
+  `startedAt ± 300s`。同一 digest 若对应多个本地 unresolved attempt，则归属有歧义，全部 marker
+  保留且删除零项；inactive、窗外、无关 row 也不得删除。唯一 attempt 可以接收多个 exact provider
+  matches 并全部清理。provider 未承诺 read-after-create 一致性，因此空 list 不能解除 marker，
+  list 失败也必须保留 recovery state。
+- 所有 matched IDs 必须先与 attempt binding、known ID ledger 一起按上述 flush/readback 顺序提交到
+  同一 envelope，之后才允许第一个 provider delete。若删除失败，`discoveredWebhookIDs` 跨进程保留，
+  下次 start/stop 直接重试这些 exact IDs，不再依赖新的 list 归属。只有 2xx + JSON `ok:true`，或
+  来自精确官方 origin、`ok:false` 且 `error.code == "not_found"` 的 404，才证明 delete 后置条件；
+  每个 ID 成功后原子移除，最后一个 discovered ID 清除时才解除对应 token/attempt。旧版只有 token
+  而没有 callback digest 的 marker 无法安全归属，继续 fail closed，绝不做账号级批量删除。
+- cleanup 必须先让对应 cloudflared process 不可达，再调用 provider delete；本地 ID 只有在
+  provider 返回 2xx 且 JSON 明确 `ok == true`，或上述严格 404 `not_found` 后才可清除。其他
+  `ok:false`、缺失/非法确认、transport 或 HTTP 失败都保留 ID 并抛出 `webhookCleanupFailed`，供
+  下一次 start/wake/stop 重试。
+- stop/suspend 与正在进行的注册允许 actor 重入，但必须使用生命周期代际淘汰旧结果。`stop()`
+  先 cancel 已登记 launch、立即停止它在 `process.start()` 前附着的具体 process，并在有界
+  `launchCancellationGrace` 内等待 registration operation。若 cancellation-unaware provider call
+  仍未结束，stop 必须 fail closed 为 cleanup failure，保留 launch ownership、credential 与持久
+  unknown-outcome marker，而不是无界卡住或假装可以释放 credential；若已过期注册随后返回 ID，
+  必须先持久化、再停止对应进程并共享同一 per-ID deletion operation 完成补偿删除。cleanup failure
+  必须优先于 superseded 结果返回；heartbeat 删除失败不得启动 replacement，并降级 polling-only。
+- credential-releasing `stop()` 在首次 suspension 前必须快照 entry-time deletion
+  operations 和 deletion-attempt sequence：先让 active/launch process 不可达并 join 入口时删除，
+  再在有界 grace 内等待 registrations；已完成的晚到 ID 继续 drain deletion，未完成的 unknown
+  outcome 则保留 marker/ownership 并让本次 stop 失败。只有前述步骤闭合后，才对本轮从未真正
+  尝试的 persisted sibling IDs 发起删除。一个 joined ID 失败不能把其他 ID 误标为已尝试；一个已在进行的
+  deletion 结果未知时，`stop()` 不能提前返回并释放 credential。每个 exact token 只在
+  自己的 operation 结束时退役，只有成功才能清除该 ID。不论具体 error 如何
+  在并发 join 中传递，credential-releasing stop 必须在 reconciliation 后执行 terminal gate：known
+  ID、unresolved token、attempt、launch、deletion 与 listing ownership 全部为空，且 recovery
+  envelope 未标记 corrupt，才能成功。任一状态仍存在都必须 fail closed 为可重试 cleanup failure。
 - 当前 Release 的 `ManusRealtimeTrust.liveV2AcceptanceComplete` 固定为 `false`，因此公共
-  realtime 保持 fail-closed；以上契约用于锁定未来经审核启用后的可靠性边界，不等于
-  当前已经启用该数据流。
+  realtime 保持 fail-closed；polling-only 服务仍必须用当前 credential 创建不具备 listener/
+  registration 能力的 cleanup-only manager，恢复同一 preferences ledger 并在 Disconnect 或换 key
+  时删除遗留 ID。该 owner 只恢复清理能力，不能打开公共数据流。
 
 ### Manus 官方 Webhook v2 契约（v3.6.0 加固）
 
-- 注册、删除、公钥分别固定为 `POST /v2/webhook.create`、
+- 注册、枚举、删除、公钥分别固定为 `POST /v2/webhook.create`、`GET /v2/webhook.list`、
   `POST /v2/webhook.delete`、`GET /v2/webhook.publicKey`，origin 为
   `https://api.manus.ai`，鉴权 Header 为 `x-manus-api-key`；不得从偏好或环境覆盖。
-- 公钥响应必须声明 `algorithm == "RSA-SHA256"` 并提供可导入的 RSA PEM；只在当前
+- 公钥响应必须声明 `algorithm == "RSA-SHA256"` 并提供可导入且至少 2,048-bit 的 RSA PEM；只在当前
   `ManusAPIClient` 内存中缓存一小时，不落盘，不允许远端配置替换 API origin。
 - 每次 tunnel URL 建立后、注册前，WebhookServer 必须先绑定完整外部 HTTPS URL 与当前
   公钥；注册测试请求之前未完成绑定时一律拒绝。
+- replay trust generation 必须由 **exact external URL + canonical RSA public-key identity**
+  组成。公钥 identity 使用 Security.framework 导入后导出的 canonical RSA bytes 的 SHA-256，
+  因此同一密钥的 PKCS#1 与 SubjectPublicKeyInfo PEM 形态属于同一 generation；仅格式变化不得
+  清空 live replay IDs。URL 任一字节变化或真实 RSA key 变化才以原 capacity 原子建立新窗口。
+  非法 URL / key 必须在提交前失败，旧 authenticator、URL、generation 与 replay window 均保持。
+- HTTP 请求认证成功后仍携带当时的私有 generation token；若 actor suspension 期间 trust tuple
+  已轮换，`markEventForDelivery` 必须返回 `staleTrustGeneration`、HTTP 401 且零 delivery。旧代
+  `event_id` 不得进入或占用新代 replay window；随后由新 tuple 验证的相同 ID 仍是首次 delivery。
 - Header 固定为 `X-Webhook-Signature` 与 `X-Webhook-Timestamp`。验签内容固定为
   `{timestamp}.{registered_url}.{sha256_hex(raw_body)}`，使用 RSA PKCS#1 v1.5 + SHA-256。
   时间差大于 300 秒、缺失/非十进制时间戳、非法 Base64、URL/正文不一致均返回 401。
 - Payload 固定为 `event_id / event_type / task_detail`；只接受官方登记的
   `task_created`、`task_stopped`。旧猜测 `event / data / task_progress` 必须拒绝。
+- `webhook.delete` 的 HTTP 2xx 只表示 RPC 返回；只有可解码 JSON 中 `ok == true` 才确认远端
+  callback 已删除。`ok: false`、缺失 `ok`、类型错误或空/非法 JSON 都是 `invalidResponse`，调用方
+  必须继续保留 webhook ID 与 credential-backed cleanup 能力。
 - 已验签事件按 `event_id` 做有界内存去重。每个 ID 必须保留到该次已认证签名的真实
   `timestamp + 300s` 到期点；同 ID 的更新签名会延长保留期。1,024 个仍有效 ID 占满窗口时，
   新 ID 返回 503 失败关闭，不得 FIFO 驱逐仍可重放的旧 ID；重复 ID 继续幂等返回 200。
@@ -472,15 +603,84 @@ public enum ManusError: Error, Sendable {
   Task cancellation，但只有最新代际可以保存 Keychain、启动服务或发布账户状态。
 - 两个并发 Connect 采用 latest-operation-wins；先发请求晚到时返回取消，不得覆盖后发
   key。Disconnect 在验证期间发生时，晚到验证不得重新写 key 或重启网络。
+- `configureAPIKey` 首先 join 已存在的 credential-removal operation；若旧 Disconnect cleanup
+  失败，candidate 不得开始拥有配置。candidate 可先完成只读验证，但替换已有 key 前必须使用
+  旧 manager / 旧 credential await 所有旧 Webhook 删除；cleanup 失败时不得调用 Keychain save，
+  必须保留旧 key、旧 `APIKeyStatus` 与 cleanup-pending 状态。只有 cleanup 成功才可覆盖 credential。
 - 每次启动新 key 前必须同步 detach 旧 connector / poller / tunnel、使旧回调失效，并
   await 旧资源清理；旧 key 的晚到 snapshot 不得进入新账户的 live tasks。
-- `clearAPIKey()` 是 async throwing 边界：无论 Keychain 删除是否成功，都先停止 Manus
-  网络并移除 live Manus tasks。若删除失败，Settings 显示固定可操作错误，保留之前的
-  `APIKeyStatus` 以提示 credential 可能仍在设备上，并继续提供 Disconnect 重试；只有
-  删除成功才显示 `.notConfigured`。
+- 替换 key 的旧 callback cleanup 成功后，必须先退役旧 tunnel/poller/connectors、清除
+  Manus snapshot 并发布 `.disconnected`，再尝试保存 candidate。若 Keychain save 失败，
+  candidate 服务不得启动，旧服务也不得 resurrect；必须 read back 持久源：仍有
+  credential 时为 `.valid`，无 credential 时为 `.notConfigured`，read-back 也失败时才
+  保守保留旧 `APIKeyStatus`。之后 Configure/Disconnect 必须可重试，不得对已退役
+  tunnel 二次 stop。
+- 即使 realtime gate 关闭，已验证 credential 的 polling-only 生命周期也必须用内部
+  `CleanupOnlyWebhookServer` 装配普通 `TunnelManager(client:server:preferences:)`，从 production
+  preferences suite 恢复权威 `webhookRecoveryStateV1` envelope；该 server 永远报告 unavailable，manager 不会
+  启动 listener、cloudflared 或 registration，只为 Disconnect/换 key 保留删除能力。
+- `clearAPIKey()` 是 async throwing、同一时刻单 operation 的边界：先同步 detach、失效旧回调、
+  停止 poller、移除 live Manus tasks，再在 credential 仍在 Keychain 时 await tunnel 的完整
+  remote cleanup（包括 join late registration）。cleanup 失败时不得调用 Keychain delete；必须
+  保留原 `APIKeyStatus`、credential 与 tunnel cleanup owner，并让 `ConnectionStatus` 使用固定
+  `Remote callback cleanup pending; retry disconnect` reason。presentation 只把该精确 reason 映射为
+  双语 `Remote callback cleanup pending — retry Disconnect`，不得显示其他 provider/raw reason；
+  下一次 Disconnect 必须重试。
+- 只有 remote cleanup 成功后才允许删除 Keychain。若 device-only Keychain 删除本身失败，网络
+  已断开但仍保留之前的 `APIKeyStatus` 并抛错；只有两段都成功才显示 `.notConfigured`。较新的
+  Configure generation 永远拥有新 credential，旧的 suspended Disconnect 不得将其删除。
 - shipping `TaskStore` 只能使用 live `ManusAPIClient` 与 device-only `KeychainStore`；
   客户端/存储注入边界为 module-internal，仅供 inert `@testable` 生命周期测试，不能成为
   Release 的环境变量、偏好或任意 Keychain namespace 覆盖入口。
+
+### 正常 Quit 的服务清理屏障（v6.85.0）
+
+- `TaskStore.shutdown()` 必须是可 await 的 terminal single-flight 事务，并只返回
+  `TaskStoreShutdownResult.completed` / `.cleanupPending` 两种低基数结果。首个调用者
+  在首次 suspension 前设置 shutdown generation，取消并中立恢复所有 action-request
+  continuations，detach local listener/connector 和 Manus ingress，移除 sleep/wake observers，并发布
+  stopped 状态。启动中的 bootstrap 也必须加入同一所有权屏障，不得在 detach 后晚到
+  重建 SQLite、listener 或 Manus 服务。
+- 完整 shutdown operation 必须被 `TaskStore` 持有并 memoize；并发/后续调用者只 join
+  同一 task，调用者 cancellation 不得取消该共享 cleanup。事务按所有权 join 入口时
+  in-flight Disconnect removal、sleep suspension、poller、tunnel 与 local listener；同一资源不得
+  fire-and-forget 或重复 stop。
+- 已登记但尚未进入 cleanup body 的 Disconnect 也必须被 shutdown terminal generation
+  supersede 并 join；它不得在 Quit 后开始独立删 Keychain。已入队但未运行的本地
+  listener retry/restart task 必须被保留所有权，shutdown 先 join 该 hop、再 stop 具体 server，
+  防止 stop 返回后的晚到 restart。
+- `PollingFallback.stop()` 必须先推进 generation、cancel 并 await 已持有 poll task，即使
+  connector 不响应 cancellation，晚到 snapshot 也必须被拒绝。外部 `LocalHookServer.stop()` 必须
+  await readiness 和 serve-loop tasks；callback-owned 内部 stop 只适用下述精确 self-exclusion，
+  且后续外部 stop 仍需补齐 strict join。`WebhookServer.stop()` 必须 await serve task。外部 stop
+  返回后原 loopback 端口必须可立即重绑，不能依赖进程退出回收。
+- start/restart 不得在 cancel 后丢弃旧 task handle。`PollingFallback` 必须用 tokenized
+  current operation + retiring operations 持有被替代的 cancellation-unaware polls；
+  `LocalHookServer` 必须对 current/retiring serve 与 readiness operations 保持同样所有权。
+  外部 stop 必须快照、cancel 并 await **当前与全部已退役 operations**，不能只 join 最新句柄而让
+  早先 superseded poll/serve/readiness 在屏障后存活或重占端口。每个 operation 只能由
+  自己的 tokenized completion 从 retiring set 移除。
+- `LocalHookEventDelivery` 也必须按 source 保留 tokenized current/retiring drain ownership。
+  listener stop 先停止接收、清空所有 queued entries，并让每个 queued synchronous action barrier
+  以 `false` 中立返回；随后 cancel 且 join 当前和 superseded drains。callback 内部触发 stop 时，
+  TaskLocal 只排除拥有该 callback 的精确 drain/server generation，不能把它从 retiring ownership
+  中删除。
+- 真实 Hummingbird listener 的 callback-owned stop 必须请求 graceful service-group shutdown，
+  让当前 HTTP action route 完成并返回 `{}` 后释放端口，不能用直接 task cancellation 撕裂响应。
+  这个内部 stop 不是 no-more-side-effects 边界；后续无 TaskLocal 身份的外部 stop（包括生产
+  `TaskStore.shutdown()`）仍必须 strict join 被精确排除的 delivery 与 server generation，且重复
+  external stop 看到的 current/retiring 集合必须已经归零。
+- shutdown 不是 Disconnect，不得删除 device-only Keychain credential。任一 remote callback
+  cleanup 失败时返回 `.cleanupPending`，并必须保留 credential 与 authoritative
+  `webhookRecoveryStateV1` envelope，供下次启动重试；其他 listener/poller 仍继续停止。
+- `AppDelegate.applicationShouldTerminate` 对普通 owner 返回 `.terminateLater`，将上述
+  shutdown 与独立两秒 hard timeout 绑定到同一 private token。cleanup completion 与 timeout
+  竞争同一 finish-once reply；超时不得等待一个未响应的 task-group child，也不得触发
+  credential/ledger 清除。cleanup 返回 pending 或两秒超时都允许 AppKit 退出，只是未完成
+  的远端清理保留为下次启动责任。`applicationWillTerminate` 不得再启动第二个 shutdown。
+- `yieldedDuplicate`、`performanceQA` 和 `hermeticLaunchSmoke` 三种无产品服务所有权的进程
+  必须立即 `.terminateNow`，不得调度 cleanup/timeout/reply，也不得因退出路径构造
+  `TaskStore.shared`。
 
 ### 本地用量快照（v2.6.0 新增）
 
@@ -625,6 +825,12 @@ public struct CommercialLicenseDocumentStore: Sendable {
 - 默认 Keychain service 为 `app.devisland.Island`、account 为
   `commercial_license_v1`，可访问级别固定为 `WhenUnlockedThisDeviceOnly`，并显式设置
   `synchronizable = false`；shipping API 不开放任意 service/account 覆盖。
+- `CommercialLicenseDocumentStore` 通过 module-internal storage backend 隔离平台存储；公开
+  initializer 始终装配上述 shipping Keychain adapter。普通 `swift test` 只能注入进程内存
+  backend，并仅对 shipping adapter 的纯 query/attribute builder 验证 device-only 与
+  non-synchronizing 策略；随机 service/account 仍会访问真实登录 Keychain，不能作为 hermetic
+  fixture。任何真实 `SecItem*` 验收都必须是独立、显式、可处置的隔离 macOS 测试账户或 VM
+  门禁，不得运行在维护者日常登录会话或普通 PR 测试图中。
 - `delete()` 是幂等的显式删除边界；错误只能携带低层状态码，禁止包含 License 字节。
 - 在产品所有者确认 Merchant of Record、设备数/离线宽限/退款恢复、MIT 商业关系，且
   完成 production key custody 与 provider sandbox 评审前，App 不得连接此底座。
@@ -668,6 +874,22 @@ public enum CommercialActivationTransportResponse: Equatable, Sendable {
 
 public protocol CommercialActivationTransport: Sendable {
     func exchange(activationCode: CommercialActivationCode) async throws
+        -> CommercialActivationTransportResponse
+}
+
+public enum CommercialActivationHTTPSTransportError: Error, Equatable, Sendable {
+    case invalidEndpoint
+    case unavailable
+    case invalidResponse
+    case responseTooLarge
+}
+
+public struct CommercialActivationHTTPSTransport: CommercialActivationTransport {
+    public static let activationPath: String // /v1/activate
+    public static let licenseContentType: String
+    public static let requestTimeout: TimeInterval // 10 seconds
+    // No public initializer or factory until provider approval.
+    public func exchange(activationCode: CommercialActivationCode) async throws
         -> CommercialActivationTransportResponse
 }
 
@@ -724,6 +946,90 @@ public actor CommercialLicenseActivationService {
   `.secureStorageUnavailable`，transport 原始错误不得穿过结果或日志边界。
 - App 接入前仍需产品所有者批准 provider、seller、试用/退款、设备/恢复和离线宽限，
   加入 code-reviewed production 公钥，并完成 provider sandbox 与真实 UI 验收。
+
+HTTPS transport 约定（v6.81）：
+
+- 只接受 syntactically public DNS 的 `https://<host>/v1/activate`；端口只能省略或为 443，
+  userinfo、其他 path、query、fragment、IP、single-label 和 reserved/local suffix 均拒绝。
+- 使用 ephemeral URLSession 与系统 TLS/hostname validation；禁用 proxy、cookie、cache、ambient
+  URL credential、connectivity waiting 和 redirect，request/resource timeout 固定 10 秒。
+- 激活码只能在 `application/octet-stream` POST body；URL/header 不得出现 code。成功响应必须是
+  exact final URL、HTTP 200 和 `application/vnd.devisland.license`。400/401/404、429、5xx 继续
+  映射为三种低基数拒绝，其他状态/网络错误不得携带原始细节。
+- 200 response 的 declared length 与逐字节 unknown-length stream 必须共享 verifier/store 的
+  32 KiB 上限；第 32 KiB+1 字节到达前失败，不得先完整缓冲。caller cancellation 必须取消
+  URLSession work 并保持 CancellationError 语义。
+- 该类型不 hard-code endpoint，App/AppLib 不得构造。真实 provider DNS/TLS/service、一次性兑换、
+  重放/枚举/速率限制、政策、production key 与 UI 验收完成前，商业模式继续关闭。
+
+v6.82 endpoint construction / cancellation 追加约定：
+
+- `CommercialActivationHTTPSTransport` 不得暴露 `public init` 或 `public static func`；当前 endpoint
+  initializer 只能是 module-internal，且 `IslandCore` shipping source（定义文件之外）、App、AppLib
+  均不得构造。未来 provider 接入必须通过一次单独源码评审添加 no-URL factory，并把唯一 endpoint
+  固定在源码；UI、preferences、environment、remote config 或其他 runtime input 不得提供 URL。
+- caller cancellation 不得只让外层 Swift Task 返回 `CancellationError`。URLProtocol 攻击夹具必须
+  在 response 延迟期间观察其底层 `stopLoading`，证明 URLSession request 已收到取消；actor 的
+  late-response commit invalidation 仍是独立的第二层防线，不能被 transport 合作式取消取代。
+
+---
+
+## 商业激活 pre-provider loopback sandbox（v6.75.0）
+
+- `CommercialActivationSandboxTests` 只属于 `IslandCoreTests`；shipping App、`IslandAppLib` 与
+  `IslandCore` 生产源码不得包含它的 server、transport、ready route 或 runtime 开关。
+- 每次正向闭环使用进程内新生成的 Ed25519 key、合成 License、内存 document backend 与随机
+  numeric `127.0.0.1` 端口，通过真实 Hummingbird TCP/HTTP `POST /v1/activate` 驱动生产
+  `CommercialLicenseActivationService`、验签与 verify-before-save 逻辑。测试不得访问登录
+  Keychain，也不得读取 production trust anchor、provider secret、账号、支付或设备数据。
+- 测试 transport 只接受精确 `http://127.0.0.1:<port>/v1/activate`；HTTPS、`localhost`、非
+  loopback 地址、userinfo、其他 path、query 与 fragment 均在连接前拒绝。URLSession 必须使用
+  ephemeral 配置，禁用 proxy/cookie/cache/redirect，并保持 32 KiB response bound。
+- 正向用例必须证明真实 HTTP 请求体只含 bounded activation-code bytes、返回文档通过生产 verifier
+  后写入内存 backend；未签名响应必须归一化为 `.licenseRejected` 且零存储。该闭环验证的是
+  provider-neutral 客户端 wiring，不验证 TLS、一次性兑换、重放/枚举防护、速率限制、退款/撤销、
+  设备限制、恢复、生产 key custody、真实 Keychain 或任何 seller/provider 行为。
+- `Package.swift` 对 Hummingbird 的新增直接依赖只服务测试 target。每次 fresh Production build
+  仍须复核最终 App 的 Mach-O 依赖闭包与 build-flavor marker，证明 test server/fixture 没有进入
+  shipping Bundle；在 provider、商业政策与生产 trust anchor 获批前，商业模式继续关闭。
+
+v6.76 追加失败关闭矩阵：
+
+- endpoint 必须显式包含 `1...65535` 的端口；省略端口或端口 `0` 与其他非精确 endpoint 一样
+  在创建 transport 时拒绝。
+- 真实 loopback HTTP `400 / 401 / 404` 只映射为 `codeRejected`，`429` 只映射为
+  `rateLimited`，`500...599` 只映射为 `serviceUnavailable`；provider response body 不得进入
+  outcome、日志或存储。
+- `3xx` 即使携带同源 loopback `Location` 也不得跟随；测试必须证明 redirect target 零请求。
+  其他未知状态和超过 32 KiB 的 `200` response 均归一化为 `transportUnavailable` 且零存储。
+- 这组状态映射仍只是 test-only transport 对 provider-neutral contract 的攻击夹具；它不是未来
+  production transport 的实现模板。production transport 必须在读取期间限制 response bytes，
+  不能先完整缓冲；真实 provider 接入还必须使用 HTTPS，并完成证书/域名、timeout、重试、一次性
+  code 与滥用防护评审。
+
+v6.77 追加真实 HTTP operation ownership 矩阵：
+
+- cancellation 回归不得仅依赖 URLSession 合作式取消。测试 transport 的显式攻击模式必须在
+  detached、有 2 秒 request/resource timeout 的任务中继续 loopback 请求，让外层 activation task
+  被取消后仍真实收到签名 response；该模式只允许存在于测试 target。
+- 显式 `cancelPendingActivation()` 必须在 request 已到达 server、签名 response 确实返回后仍得到
+  `.cancelled`，document backend 保持 `.missingDocument`。
+- latest-operation-wins 回归必须让旧、新两个 request 与两个签名 response 都真实完成；旧 operation
+  固定得到 `.superseded`，只有新 operation 能进入 verify-before-save 并成为唯一存储文档。
+- request/response 到达使用 recorder 计数与最长 1 秒 bounded wait 确定，不用任意 sleep 猜测客户端
+  时序；server 的合成 response delay 固定受控在 0...2,000 ms。该测试证明 activation actor 的
+  commit ownership，不证明未来 provider 的取消协议、退款撤销或跨进程存储仲裁。
+
+v6.78 追加 pre-cancelled zero-ownership 边界：
+
+- 已在进入 `activate` 前取消的 caller 不拥有新的 activation operation。可信配置预检后必须直接
+  返回 `.cancelled`，不得先 invalidate/supersede 当前 pending operation，也不得创建 transport task
+  或发送请求；避免一个已经失效的 UI/调用方消耗一次性 activation code。
+- 受控 transport 回归必须证明 pre-cancelled 调用的 request count 保持不变，原 pending operation
+  后续仍能成为 `.activated` 并完成唯一 verify-before-save。
+- 真实 loopback 回归必须在原 request 已到达 server 后发起 pre-cancelled 第二调用，最终 recorder
+  仍只有 1 个 request / 1 个 response，原签名 response 激活成功。该契约不改变 provider-specific
+  timeout/retry/cancellation 协议，也不允许 production transport 使用 detached 请求。
 
 ---
 
@@ -1275,6 +1581,49 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 
 ---
 
+## 自动更新 Ed25519 密码学闭环（v6.69.0 加固）
+
+- Release 凭证预检不得只接受 32-byte 公钥形态。必须让
+  `SPARKLE_PRIVATE_ED_KEY` 经 pinned Sparkle `sign_update --ed-key-file -` 的 stdin-only 通道
+  签固定 `VERSION` payload，再由配置的 `SPARKLE_PUBLIC_ED_KEY` 通过 CryptoKit
+  `Curve25519.Signing.PublicKey` 验证；错配或不可用私钥必须在证书导入和产物构建前失败关闭。
+- 完整资产验证不得信任 workflow 环境中的第二份公钥。必须从 versioned ZIP 的精确
+  `Dev Island.app/Contents/Info.plist` 条目有界提取即将交付用户的 `SUPublicEDKey`，并要求其为
+  canonical base64 32-byte Ed25519 公钥；缺失、畸形或换成另一把合法公钥均失败。
+- `sparkle:edSignature` 必须验证 versioned ZIP 的完整字节；feed 尾部 `edSignature` 必须验证
+  `length` 声明的精确 Appcast byte prefix。CryptoKit 输入只允许 owner-owned、单硬链接、不可
+  group/other 写的普通文件，通过 `O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC` descriptor 有界读取并比较
+  前后 identity/size/time metadata；不得把 Base64 可解码或 64-byte 长度当作密码学成功。
+- 确定性 RFC 8032 fixture 必须证明真实公私钥正例，并拒绝 unrelated 64-byte archive/feed
+  signature、已签 feed prefix 篡改、App 内公钥错配与 credential 公私钥错配。该闭环证明发布
+  资产密码学一致性，仍不替代 Developer ID/公证、GitHub attestation 或旧版到新版安装验收。
+
+---
+
+## 自动更新 disposable old-to-new 真实闭环（v6.70.0 加固）
+
+- PR CI 在依赖解析后、tag Release 在任何凭据加载前，必须离线编译 pinned Sparkle 2.9.6
+  checkout 的真实 `sparkle-cli`；不得下载第二份源码、使用未固定 CLI 或读取生产 Sparkle key。
+- 一次性 v1/v2 `Dev Island.app`、RFC 8032 测试 key、signed feed/ZIP 只允许进入随机 `0700`
+  临时根。HTTP 仅绑定随机 `127.0.0.1:0`，文件名 allowlist、单文件 64 MiB、header 16 KiB；
+  updater 使用私有进程 home、无代理环境、90 秒进程组 deadline，超时必须 TERM→KILL。
+- 正向链必须真实完成 feed 下载、feed/ZIP Ed25519 验签、解压、App code-sign validity 与原路径
+  bundle replacement，并以新 plist version、新 executable marker 和 strict code-sign 复验结果。
+- 四条互斥负向链必须保持旧 App version/executable hash/signature 不变：feed 用另一 key、archive
+  用另一 key、旧 App 内嵌另一 public key、以及 archive 本身正确签名但其中 App executable 在
+  codesign 后被改写。前两类签名归属还必须由 pinned `sign_update --verify` 独立交叉验证。
+- pinned Sparkle 源码必须先复制到 macOS 当前用户的随机 `0700` 临时根；只有 SHA-256 与
+  `2.9.6 @ ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a` 同时匹配，才允许移除无关远程 package
+  引用，并把 cache root、helper launch-job 环境覆盖到一次性 runtime HOME。构建与运行必须使用
+  两个不同的私有 HOME、`__CFPREFERENCES_AVOID_DAEMON=1` 和原生 ad-hoc helper 签名；不得读取
+  或写入维护者真实 HOME/cache/preferences，也不得调用 `defaults write/delete`。失败清理只允许
+  精确匹配当前随机临时根下的 `Autoupdate`/`Updater` 完整命令路径，禁止名称级进程终止。
+- Sparkle 在旧 Ed25519 key 已认证 archive 时明确允许 Apple code-sign identity rotation；因此
+  本门只证明代码签名有效性/破坏拒绝，不得声称 signer equality。生产完成仍要求同一受控
+  Developer ID Team、clean tag、公证/Gatekeeper 与真实已安装旧 Release → 新 Release 验收。
+
+---
+
 ## Settings 控件节奏与视觉证据(v6.7.0 精修)
 
 - General、Notifications、Usage 与 Updates 中的原生 switch 必须使用同一全宽双列行：标题与
@@ -1437,7 +1786,7 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
   依赖 `CONFIG`、Bundle ID、scratch 名称或调用者声明推断真实产物内容。
 - `scripts/ci/verify-performance-fixture-isolation.sh` 是唯一共享验证器：单 App 模式验证三种
   flavor，双 App 模式额外绑定 production / Performance QA Bundle ID 与
-  `DevIslandPerformanceFixture` plist 标记；`--self-test` 必须覆盖每个标记泄漏或缺失的 18 个
+  `DevIslandPerformanceFixture` plist 标记；`--self-test` 必须覆盖每个标记泄漏或缺失的 21 个
   负向用例。安全静态门禁还必须证明每条 App 构建路径都会调用该验证器。
 - 该维护者检查只在本地或 CI 对刚构建的最终可执行文件运行 `/usr/bin/strings`，只查询上述
   固定低基数字面量。原始 strings、源码内容或匹配上下文不得写入日志或证据；它不读取已安装
@@ -1757,6 +2106,61 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 
 ---
 
+## Manus Webhook trust generation 与 cleanup transaction（v6.85.0）
+
+- Webhook trust identity 固定为 **exact external URL + canonical RSA public-key identity**。
+  RSA key 只有经 Security.framework 成功导入、明确至少 2,048-bit，并从 canonical external
+  representation 计算 SHA-256 后才可提交；同一 key 的 PKCS#1/SPKI PEM 等价，真实 key 或 URL
+  改变才原子轮换 generation 和 replay window。所有 candidate 验证先于状态写入。
+- 每个认证成功的 HTTP 请求必须携带认证时的私有 generation UUID 到 replay registration。若期间
+  `configure` 已提交新 tuple，旧请求返回 `staleTrustGeneration` / HTTP 401、零 delivery、零新代
+  replay 占位；这条跨 actor suspension 边界必须由真实 Hummingbird POST + RSA 签名回归覆盖。
+- 所有 Manus 已接受的 registration ID 都是 cleanup capability。返回后必须与对应 unresolved
+  attempt 的解除一起原子写入 `webhookRecoveryStateV1`；legacy `webhookId` / `webhookIds` 仅继续
+  镜像。replacement 前必须逐个删除所有旧 ID，交错生命周期产生的新 ID 不能覆盖正在删除或失败
+  待重试的旧 ID。
+- outcome unknown 的 attempt 可通过官方 `GET /v2/webhook.list` 保守恢复。严格 DTO 最多 1,024
+  项，拒绝重复/不安全 ID、非 canonical HTTPS URL、未知状态、非法 Int64 时间、缺字段、错类型、
+  redirect、超限列表或正文。归属只允许 `active` + exact callback digest + `startedAt ± 300s`，且
+  同 digest 只能有一个 unresolved attempt；歧义、空 list、inactive、窗外与无关 row 均保留 marker
+  且删除零项。并发 start/stop 必须共用 list single-flight。
+- matched IDs 必须先作为 `discoveredWebhookIDs` 与 ledger/attempt 一起原子持久化并 readback，再
+  删除。失败 ID 跨重启直接重试而不再次 list；最后一个 ID 经 2xx `ok:true` 或精确 official 404
+  `not_found` 清除后，才可解除 attempt/token。legacy token-only 或 corrupt envelope 继续 fail closed。
+- 一个 ID 的并发 stop/wake/heartbeat/late-registration cleanup 必须 join 同一个
+  `WebhookDeletionOperation`。provider delete 只有 HTTP 2xx + JSON `response.ok == true` 才成功；
+  先停止对应 process，确认后才清本地 ID。失败保留 ID，单次 stop 不做无界循环，并以
+  `webhookCleanupFailed` 返回；heartbeat 不得注册 replacement，只能通知一次并退到 polling-only。
+- credential-releasing stop 只有在全部已登记 registration operations 已完成、accepted IDs 已先
+  持久化再 rollback、reconciliation 已闭合，且 known IDs、unresolved tokens/attempts、launch、
+  deletion、listing ownership 全空且 envelope 未损坏时才可成功。超过有界 grace 仍未结束的
+  cancellation-unaware operation 继续由 manager 持有，但当前 stop 立即以 cleanup failure 返回并
+  禁止 credential release；晚到 ID 仍走补偿删除。即使旧 start 本应 `lifecycleSuperseded`，delete
+  failure 也优先返回，确保调用方不会把 supersession 误当作已安全释放 credential。
+- `TaskStore` 的 Disconnect **与换 key** 都必须执行 **delete-before-credential-release**。
+  `clearAPIKey()` detach 当前服务、停止 poller、移除 Manus snapshots，在 Keychain credential 仍
+  存在时 await 上述 tunnel stop；`configureAPIKey` 则先 join 已有 removal，并在 candidate Keychain
+  save 前用旧 manager 完成同一 cleanup。失败时保留旧 credential / APIKeyStatus 与 cleanup owner，
+  固定进入 `Remote callback cleanup pending; retry disconnect`；Settings 将其本地化为可操作的
+  Retry Disconnect 文案，重试成功后才允许删除或覆盖 Keychain。
+- realtime gate 关闭不能丢失 ledger ownership：polling-only 服务必须用内部
+  `CleanupOnlyWebhookServer` + 普通 `TunnelManager` 装配一个永不启动 listener/tunnel/registration
+  的 owner，从 shipping preferences 恢复遗留 ID，并让 Disconnect 或换 key 使用当前 credential
+  清理。没有 credential 时不得假装旧 ID 已清理。
+- 定向回归必须覆盖 canonical-equivalent key 不 reset、URL/真实 key reset、弱于 2,048-bit key 与
+  非法 candidate 原子拒绝、旧代请求交错拒绝、多 ID 重叠持久化、遗留 ID 阻止 replacement、
+  `ok:false` 不确认删除、strict 404 `not_found` 幂等完成、registration bounded fail-closed + late-ID
+  compensation、active-only exact-digest `±300s` recovery、同 digest 歧义/空 list fail-closed、
+  discovered-ID 跨重启重试、heartbeat cleanup failure、cleanup-only ledger、
+  credential 保留/Disconnect 重试，以及 replacement key 在旧 cleanup 前零 Keychain overwrite。
+  普通测试只使用 loopback、合成 key、隔离 preferences 与进程内 Keychain backend。
+- 这些事务在代码和 hermetic 测试中闭合，不是 Manus/Cloudflare 公网证据。当前仍缺真实账号
+  create → signed delivery → list/delete 以及 read-after-create/read-after-delete 一致性证据；
+  `ManusRealtimeTrust.liveV2AcceptanceComplete` 继续固定为 `false`。没有新的真实账号 accepted 包，
+  Release 仍只允许声明 polling-only fallback，不能宣称 realtime 或 Manus 集成可商用。
+
+---
+
 ## Plan Review Markdown 单次后台渲染（v6.52.0）
 
 - Claude `ExitPlanMode` Markdown 除 65,536 个 Swift `Character` 外必须同时受 262,144 UTF-8
@@ -1853,8 +2257,9 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
   `retryID`；已经排队的旧回调只能因 generation 不匹配而退出，不能再制造一次无意义的
   AppKit 写入或主线程唤醒。
 - Codex Hook trust 的 production 默认 timeout 继续固定为 3 秒，50 ms 超时回归也保持不变。
-  会创建后台 descendant 并读取 PID 的隔离进程夹具可以使用 5 秒调度预算，让新进程在高负载
-  测试机上先获得一次运行机会；该预算不得进入 production 默认值。
+  所有需要观察真实子进程启动/退出、后台 descendant 或 PID 发布的隔离进程夹具统一使用
+  5 秒调度预算，让新进程在高负载测试机上先获得一次运行机会；这包括 immediate-exit
+  fixture。该预算不得进入 production 默认值，也不得代替独立 50 ms timeout 硬终止回归。
 - 进程组测试仍必须实际读到 fixture 写出的 PID，并证明 descendant 已退出；不能把 PID 缺失
   当作成功。PID 未发布使用明确的 `FixtureError.pidNotPublished`，不得以网络超时错误伪装。
 - 确定性 Dock 回归、Codex 五轮进程边界与全量测试只证明代码和测试调度边界；真实
@@ -2054,6 +2459,93 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 
 ---
 
+## Codex 真实审批证据边界（v6.63.0 加固）
+
+- `run-codex-live-approval-evidence.sh` 只能在已挂载的 `/Volumes/T7 Shield` 下随机创建
+  append-never `0700` 运行目录；`--output` 由 wrapper 独占。每个持久文件最终为当前用户只读，
+  顶层 `SHA256SUMS` 必须完整覆盖固定文件清单。
+- 输入必须显式指定一个 Codex session JSONL、Dev Island SQLite、proof、被测签名 App、Codex CLI
+  及 approval/running/completed 三张截图，并逐字确认
+  `waiting,allow_once,running,completed`。该确认是有名称的人工作业门，不得描述成像素或
+  VoiceOver 自动识别。
+- session 只允许通过 no-follow descriptor 读取 1 byte–16 MiB、当前用户拥有、普通非链接、
+  单硬链接且不可 group/other 写的稳定 UTF-8/LF JSONL；原始 session、developer/user message、
+  reasoning、无关 tool output 均不得复制进证据。
+- 提取器必须证明唯一 session metadata、精确外部 proof prompt、唯一 `require_escalated` 请求、
+  固定 justification、先返回有界 pending cell、同 cell 的单一有界 wait、exit 0、精确
+  `APPROVAL_ROUND_TRIP_COMPLETE` 与 task-complete 顺序；proof 必须位于 session workspace 外并
+  严格等于 `dev-island-real-codex-approval\n`。
+- 同一 session ID 必须在 descriptor 校验过且提取前后 SHA-256 不变的 Dev Island SQLite 中仅有
+  一条 `source=codex,status=completed` 记录；created/updated 必须落在 session 时间边界附近。
+  包内只保存该低基数脱敏行与数据库哈希，不复制数据库或其他会话。
+- App 必须是 `app.devisland.Island`、版本等于仓库 `VERSION` 且通过 strict deep 签名验证；App
+  executable、Codex CLI、session、SQLite、proof、截图分别绑定 SHA-256 与有界字节数；packager、
+  validator 与 T7 wrapper 自身也必须进入 metadata/receipt 哈希，避免未审阅 producer 生成 accepted 包。
+- 包内 transcript 只能是固定 11 行 checkpoint/result；metadata、task record、public receipt、
+  proof、三张 JPEG、`ACCEPTED` 与 checksum manifest 组成精确 allowlist。链接、多硬链接、可写、
+  超限、额外文件、CRLF、字段乱序、内容/哈希/版本漂移均失败关闭。
+- 只有完整包通过独立 `--require-accepted` 校验时才允许生成 `ACCEPTED`。仓库只签入脱敏
+  `docs/CODEX_LIVE_APPROVAL_RECEIPT.txt`，Security gate 以正向合成证据和 session symlink、错误
+  final、proof/transcript/task/JPEG/checksum/权限/版本等攻击夹具验证 packager/validator，tag
+  Release 通过既有 `verify-security-invariants.sh` 强制执行同一门禁。
+- 该机制已经绑定一轮 v0.3.0 Codex `Allow once` 真实闭环，但只证明这一个 action/session；它不
+  证明 Deny、timeout、native fallback、全部 Agent 或 VoiceOver，并且 `worktree_state=dirty` 会在
+  receipt 中如实保留，不能冒充由 clean tag 可重现的正式 Release 证据。
+- 该证据门禁的权威回归必须在同一孤立测试图上执行完整 XCTest 与
+  20/10/20/5/20 轮版本探针、listener、tmux、Codex trust、sleep/wake。Codex immediate-exit
+  进程 fixture 必须使用上述独立 5 秒调度预算，但 `CodexHookTrustProbe` 产品默认 3 秒边界不变。
+
+---
+
+## Codex 真实拒绝与超时分类证据边界（v6.65.0 加固）
+
+- 新增 `run/package/validate-codex-live-decision-evidence` 独立链路，不修改既有 Allow Once
+  receipt。wrapper 只能在已挂载 T7 Shield 的固定根下建立随机、append-never、`0700` 包，禁止
+  调用 classification-only 模式伪造 accepted 输出；失败目录保留但不能出现 `ACCEPTED`。
+- session 分类固定为且只能为四种：`explicit_island_deny`、`neutral_timeout_fallback`、
+  `sandbox_rejection`、`interrupted_attempt`。`turn_aborted`、`<turn_aborted>` 或
+  `aborted by user` 优先判为中断；非交互 `source=exec`、缺少 `require_escalated`、未进入 pending
+  cell 或出现 sandbox/operation-not-permitted 只能判为 sandbox rejection；90 秒及以后才返回的正常
+  拒绝只能判为 neutral timeout fallback。后三类永远不能进入 accepted packager。
+- `explicit_island_deny` 必须来自 `Codex Desktop + source=cli + thread_source=user`，包含精确外部
+  proof prompt、唯一精确 command、审核过的旧/当前 justification、`10,000 ms / 1,000 或 2,000
+  token` 请求边界、同 cell 最多四次有界 wait、1–89 秒内明确 denial、唯一
+  `DENIAL_ROUND_TRIP_COMPLETE` 与 task-complete，且全程不存在 turn abort、sandbox violation 或
+  成功 proof。`workdir` 可省略并严格继承 session workspace；一旦显式提供就必须为非空绝对路径且
+  realpath 与 workspace 相同。
+- Codex 当前可能把 `exec_command` 参数留成严格 JSON，也可能留成 JavaScript object literal。验证器
+  绝不 `eval`：fallback parser 只接受 `cmd/workdir/sandbox_permissions/justification/yield_time_ms/
+  max_output_tokens` 六个无重复字段、两空格缩进、规范逗号，以及 JSON string 或十进制非负整数。
+  表达式、函数调用、嵌套结构、未知/重复字段、畸形字符串一律拒绝且不能产生副作用。
+- proof 路径必须绝对、规范、字符受限、父目录真实且稳定，并位于 session workspace 外。分类前、
+  打包前以及写入 `ACCEPTED` 前都必须 `lstat` 得到 ENOENT；包内只保留路径 SHA-256、检查时间与
+  `result=absent`，不保存路径本身。证明文件存在、父目录 device/inode 漂移或最终检查失败均拒绝。
+- 同一 session 必须在稳定只读 SQLite 中只有一条 completed Codex row，时间落在 session 边界附近；
+  App 版本/Bundle/signature、CLI、session、SQLite、两个脚本层与 wrapper 全部绑定哈希。视觉门固定为
+  `waiting,deny,running`，只是一项有名称的人工复核，不冒充像素/AX 自动识别。
+- accepted 包精确包含两张 JPEG、固定 11 行 transcript、一条脱敏 task record、
+  `PROOF_ABSENCE.txt`、metadata、public receipt、`ACCEPTED` 与完整 `SHA256SUMS`。原始 JSONL、SQLite、
+  prompt、reasoning、command/path 均不复制；链接、多硬链接、可写/额外/超限文件、字段顺序、哈希、
+  版本或分类漂移均失败关闭。
+- 拒绝回执只接受两种逐字审阅结构：旧客户端的完整 `Permission request denied by user` 终止输出，
+  或当前客户端数组输出中逐字绑定同一 reviewed command、`/bin/zsh -lc` 与
+  `CreateProcess { message: "Rejected(\"Denied in Dev Island.\")" }` 的失败正文。宽泛
+  denied/rejected 文本、不同命令或缺失 wrapper 结构均不得作为显式岛内拒绝。
+- Security gate 的合成正例和攻击夹具必须覆盖四类分类、strict JSON 与受限 JavaScript 两种真实格式、
+  executable expression/duplicate field 零执行、已存在 proof、session symlink，以及包内链接、权限、
+  extra file、classification/absence/JPEG/checksum/receipt 伪造。真实样本
+  `01a0517c…` 固定为 `sandbox_rejection`，`01a0517d…` 与 `01a0517e…` 固定为
+  `interrupted_attempt`；不得把 TUI 中曾出现 native prompt 当成 neutral-timeout accepted 证据。
+- 已有一条解锁状态下的真实 Codex session 在岛内按下 **拒绝**，40 秒内正常恢复 Running 并完成；
+  proof 始终不存在，DB/截图/App/CLI/session/脚本哈希一致，T7 wrapper 已产出 accepted 包。仓库只签入
+  脱敏 `docs/CODEX_LIVE_DECISION_RECEIPT.txt`；该事实仍只证明此 action/session，不替代 timeout、
+  native fallback、其他 Agent、clean tag、Developer ID、公证、Sparkle 或商业 owner 审批。
+- 聚合 Security gate 必须直接要求并验证该 checked-in receipt，因此 CI 与 tag Release 共用相同
+  真实证据门；缺失、链接/多硬链接、不安全权限、timeout/rejected 伪装、版本/哈希漂移、CRLF 或缺失
+  末尾 LF 均由独立夹具拒绝。只验证合成 package 而不检查真实 receipt 不满足本契约。
+
+---
+
 ## Manus 验收编译输入闭包（v6.23.0 加固）
 
 - `generate-manus-live-build-inputs.rb` 必须递归枚举 `IslandCore/Sources/IslandCore` 与
@@ -2149,7 +2641,7 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
   前半段写 marker 的命令仍会先执行，随后才 exit 2。Release 因此不能把“最终执行时自然报
   syntax error”当作无副作用保护；Ruby 虽会先整体编译，也进入同一预检闭包。
 - `verify-repository-script-syntax.rb` 必须递归覆盖 `scripts/` 下全部 `.sh` / `.rb`。当前闭包是
-  43 个 Bash 与 15 个 Ruby（包含验证器和夹具自身）；新增同扩展脚本必须自动进入，不维护
+  51 个 Bash 与 24 个 Ruby（包含验证器和夹具自身）；新增同扩展脚本必须自动进入，不维护
   容易漏项的手写列表。脚本总数最多 256，树最多 4,096 项，单文件最多 1 MiB。
 - `scripts/` 全目录树拒绝 symlink、特殊文件、错误 owner 与 group/other 可写目录；脚本使用
   `O_NOFOLLOW|O_NONBLOCK` descriptor，只接受当前用户、普通、单硬链接、不可 group/other 写、
@@ -2170,7 +2662,7 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 
 ## Swift 脚本 stdin-only Parse 闭包（v6.28.0 加固）
 
-- `scripts/` 全量闭包必须同时包含 `.swift`，当前总数为 43 Bash + 15 Ruby + 5 Swift。
+- `scripts/` 全量闭包必须同时包含 `.swift`，当前总数为 51 Bash + 24 Ruby + 9 Swift。
   `scripts/release/generate-sbom.swift` 会在 CI/tag 真实执行，其他品牌、菜单图标、声音与显示
   会话脚本也不得留在发布前语法盲区。
 - Swift 文件继续使用同一 descriptor owner/type/mode/nlink/size/UTF-8/NUL 与目录稳定性边界；
@@ -2202,6 +2694,32 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
   中途失败优先恢复旧代际，无法证明恢复安全时保留两代路径供人工恢复，不做进一步删除。
   成功后才删除已验证 backup 和空 staging root。`build-app.sh` 禁止恢复对最终 `${APP}` 的
   直接 `rm -rf`。
+
+---
+
+## 决策响应回执与 Animation Hitches 分段证据（v6.74.0）
+
+- Action Request 的生产 response 仍必须先同步到 `TaskStore`/Agent，UI 回执不得增加 Hook 延迟。
+  但对应 session 的回执占位必须在同步移除 request 之前以无动画 transaction 建立，防止中间状态
+  构造完整 `TaskCard`。response 返回 false 时必须无动画删除同一 receipt ID；成功时只允许保留
+  既有 0.9 秒 UI cadence，新的同 session request 仍优先于回执。
+- Performance fixture 的 decision marker 必须同时包含 monotonic `uptime=` 与 epoch `wallUnix=`。
+  queued/resolved 各只允许一个，resolved 必须晚于 queued 且两者都必须落在 trace duration 内；
+  `wallUnix` 对齐失败时只能使用声明更大 uncertainty 的旧日志 fallback，不能把估算写成精确对齐。
+- `summarize-animation-hitches.rb` 必须分别读取 TOC、Animation Hitches、SwiftUI update 与
+  Potential Hangs 导出，并分别报告 App-attributed frame、render/GPU-only frame、App update、
+  root update row 与 hang。startup/resolved/steady/recording-tail 不得混算；trace 外数据必须显示
+  excluded count。整段录制最大值不能替代 resolved interaction window 结论。
+- XML 与日志输入拒绝 symlink、DTD/entity、缺失/循环 ref、负数或非有限 timing、重复/错序 marker；
+  JSON 输出必须 exclusive create，拒绝预存在文件与链接。分析器自测和 Performance CI 静态门禁
+  必须同时固定 marker 字段、回执预留顺序、stale rollback 与三类 response 共用路径。
+- accepted 当前源码证据必须真实完成动作、精确命中本次 App、完整覆盖 resolved window，并保留
+  raw trace、四份导出、App log、JSON 与 SHA-256。动作发生在 trace 外、命中 stale/idle 实例、
+  锁屏未完成或只有旧源码的样本只能标为 rejected/incomplete/partial，不能升级为当前体验结论。
+- 当前 Permission Deny accepted trace 证明 resolved App update 从 132.257 ms 降至 21.238 ms，
+  `>33/50/100 ms` 从 `2/2/1` 降为 `0/0/0`，54.802 ms interaction delay 消失；仍保留一帧
+  34.722 ms App-attributed lifetime，因此契约不允许宣称“零慢帧”。Question 与 Plan 必须各自补齐
+  fixed-source unlocked trace 后才能完成整组决策面帧级验收。
 
 ---
 
@@ -2320,3 +2838,22 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-08-29 | v6.57.0 | **Settings Agent 配置全局操作所有权**:唯一 Settings 顶层状态跨 pane 保持单 Agent 与 Disconnect All 互斥；operation ID+kind 拒绝晚到/错类完成，completion generation 统一重扫；全局移除经共享后台 executor 且只返回低基数结果，按钮禁用不再因切页失忆 | `[S][contract] reliability: serialize settings agent mutations across panes` |
 | 2026-08-29 | v6.58.0 | **Manus 签名窗口重放与终态单调性**:event ID 保留到真实认证签名 expiry、更新签名延长窗口；1,024 个 live ID 饱和返回 503 而不驱逐，重复仍幂等 200；Completed/Failed 不再被旧 stopped/ask 拉回 Waiting | `[S][contract] security: fail closed on Manus replay-window saturation` |
 | 2026-08-29 | v6.59.0 | **Manus replay 真实 HTTP transport 回归**:真实 Hummingbird listener + RSA-signed loopback POST 证明首次 200/一次 delivery、duplicate 200/零新增 delivery、饱和新 ID 503、最早 ID 未被驱逐；Production capacity 仍固定 1,024 | `[T][contract] test: exercise Manus replay saturation through live HTTP` |
+| 2026-08-30 | v6.63.0 | **Codex 真实审批机器可验证证据**:T7 append-never 包绑定 no-follow Codex session、同 session SQLite completed 行、外部 proof、App/CLI hash 与三张人工复核截图；固定 transcript/receipt/checksum 和攻击夹具拒绝链接、权限、内容、版本与 accepted 伪造，Security/tag Release 不再只依赖 Markdown 声明；权威图 724 项与 20/10/20/5/20 稳定性闭合，immediate-exit fixture 统一 5 秒调度预算而产品 3 秒默认不变 | `[S][contract] security: make real Codex approval evidence auditable` |
+| 2026-08-30 | v6.65.0 | **Codex 拒绝/超时证据分类**:新增四类互斥 session 分类，只有 90 秒前正常完成的真实岛内 Deny 可生成 accepted 包；严格 JSON 与受限 JavaScript object 均经无执行解析，proof 三阶段保持不存在，T7 包绑定 App/CLI/session/SQLite/脚本与两张人工复核图。合成包及攻击夹具已进入 Security gate，三条真实失败样本保持 sandbox/interrupted，解锁真实 Deny 与 receipt 仍明确 pending | `[S][contract] security: distinguish island denial from timeout and rejected evidence` |
+| 2026-08-30 | v6.67.0 | **Codex 真实岛内拒绝证据闭环**:真实 Codex Desktop CLI session 在岛内 Deny 后 40 秒内恢复 Running、完成且 proof 始终不存在；当前客户端省略 workdir、2,000 token 与数组型 CreateProcess 拒绝回执按精确命令绑定解析，空/错 workdir 和篡改命令夹具失败关闭；T7 accepted 包与脱敏 receipt 已复验并由聚合 Security/tag gate 强制验证 | `[S][contract] security: bind real Codex island denial to auditable evidence` |
+| 2026-08-30 | v6.69.0 | **Sparkle Ed25519 密码学闭环**:发布凭证以 stdin-only 私钥对固定 payload 真签并由配置公钥验签；离线资产门从 ZIP 内交付 App 提取 `SUPublicEDKey`，用 descriptor-backed CryptoKit 对完整 archive 与精确 feed prefix 真验签，拒绝 unrelated 64-byte 签名、prefix 篡改、App key 错配与 credential keypair 错配 | `[S][contract] security: cryptographically verify the complete Sparkle release chain` |
+| 2026-08-30 | v6.70.0 | **Sparkle disposable old-to-new 真实闭环**:离线编译 pinned `sparkle-cli`，以随机 loopback、RFC fixture key 和一次性 v1/v2 App 真正完成 signed feed/archive 下载、解压、code-sign validity 与 bundle 替换；错 feed/archive/key 与破坏 App 签名四链失败关闭，随机偏好/cache 精确清零；不冒充 Developer ID/公证生产更新 | `[S][contract] release: exercise the real Sparkle updater before credentials` |
+| 2026-08-30 | v6.71.0 | **普通测试图 Keychain 零副作用边界**:商业 License 与 Manus API-key 存储抽为注入式 backend；shipping 仍固定 `WhenUnlockedThisDeviceOnly` + 非同步 Keychain，普通 `swift test` 全部改用进程内存并由 Security gate 拒绝测试侧 `SecItem*`/生产静态入口。真实 Keychain 只允许在隔离账户/VM 的显式门禁中验收 | `[S][contract] reliability: keep ordinary tests out of the login Keychain` |
+| 2026-08-30 | v6.72.0 | **岛内决策面一体化与响应回执**:移除模板化内层卡和常驻次级按钮底色；Permission/Question/Plan 在 Agent response 后显示 0.9 秒双语低噪音回执并回到 Running，保留请求优先级、键盘路由与 VoiceOver 聚合标签 | `[S][contract] polish: integrate decisions and acknowledge responses` |
+| 2026-08-31 | v6.73.0 | **Codex Hook 信任旁路与激活指引**:真实复现 Continue without trusting 让审批留在 Codex 且 Hook 不运行；Settings/Live readiness 明确要求用户在 `/hooks` 审阅 Dev Island，禁止 App 自动修改 trust/config，timeout 正常回退继续保持待验收 | `[S][contract] reliability: explain and preserve Codex hook trust` |
+| 2026-08-31 | v6.74.0 | **决策响应帧级分段与回执预留**:Instruments 分开统计 resolved App update/frame/GPU/hang 并以 wallUnix 精确对齐；先预留 receipt 再同步 response，消除瞬态 TaskCard 构造。Permission update 132.257→21.238 ms、54.802 ms delay 消失；Question/Plan 固定源码 trace 仍待解锁 | `[S][contract] performance: remove transient decision-card reconstruction` |
+| 2026-08-31 | v6.75.0 | **商业激活 pre-provider loopback sandbox**:测试 target 以合成 Ed25519 key、随机 numeric loopback、真实 Hummingbird HTTP 和内存存储贯通生产 activation/verifier/store；未签名响应失败关闭，严格拒绝非精确本地 endpoint。shipping App 仍零 server/transport/endpoint/trust anchor/实例化，不构成 provider 或商业验收 | `[S][contract] test: exercise commercial activation over real loopback HTTP` |
+| 2026-08-31 | v6.76.0 | **商业激活 transport 失败关闭矩阵**:真实 loopback 覆盖 code rejection、rate limit、5xx、未知状态、redirect 与超限 body；重定向目标零请求、provider 私有 body 不外泄、所有非成功路径零存储。该测试 transport 不得作为 production HTTPS/streaming 实现模板 | `[S][contract] test: harden commercial transport failure matrix` |
+| 2026-08-31 | v6.77.0 | **商业激活真实 HTTP operation ownership**:取消不敏感的 bounded detached 请求确保签名 response 在 Cancel/Supersede 后真实晚到；显式取消仍零存储，旧/新双响应完成时只有最新 operation 可验签保存。测试时序由 request/response 计数而非猜测 sleep 固定 | `[S][contract] test: prove late HTTP activation responses cannot commit` |
+| 2026-08-31 | v6.78.0 | **商业激活 pre-cancelled zero ownership**:进入 actor 前已经取消的 caller 在可信预检后直接返回 cancelled，不得 supersede 现有 pending operation、创建 transport task 或消耗一次性 code；受控 transport 与真实 loopback 均证明 request count 不增加，原 operation 继续激活 | `[S][contract] fix: reject pre-cancelled activation before operation ownership` |
+| 2026-08-31 | v6.81.0 | **默认关闭的商业激活 HTTPS 流式边界**:新增未配置、未实例化的 shipping transport；严格固定 public-DNS HTTPS `/v1/activate`、ephemeral 无 proxy/cookie/cache/ambient credential、十秒 timeout、零 redirect、body-only secret、final URL/status/media-type 与低基数错误；declared/unknown length 均在读取过程中固定 32 KiB，caller cancellation 保持取消语义。真实 provider/政策/key/UI 仍未批准 | `[S][contract] security: bound commercial activation HTTPS while streaming` |
+| 2026-08-31 | v6.82.0 | **商业激活 endpoint capability seal 与底层取消证据**:HTTPS transport 移除 public initializer/factory，module-internal endpoint 仅供测试和未来源码固定 provider adapter；shipping IslandCore/App/AppLib 继续零构造。取消回归直接观察 URLProtocol `stopLoading`，证明 caller cancellation 到达底层 URLSession request，同时保留 actor late-response 拒绝 | `[S][contract] security: seal activation endpoints and prove request cancellation` |
+| 2026-08-31 | v6.83.0 | **同 Bundle 单实例接管**:普通启动在任何产品窗口、服务与 LaunchHealth 写入前按同 Bundle ID 的最低 live PID 确定唯一 owner；新实例仅在 AppKit 成功激活旧实例后退出，竞态消失则 fail open。退出回调保持零副作用，精确双 opt-in 的 hermetic Production smoke 明确绕过，避免 QA 干扰已安装 App | `[S][contract] reliability: keep one live island per login session` |
+| 2026-08-31 | v6.84.0 | **可信代码身份单实例与 authoritative v3 验收**:Bundle ID 只筛候选，动态签名要求 Apple-anchored 同 Team 或同运行 slice 的明确 ad-hoc CDHash；SwiftUI root Settings Scene 在 gate 前保持 inert。v2 因 pre-gate Scene 风险拒绝；corrected v3 的锁屏 arm64 LaunchServices 矩阵 20/20 保持单 owner、单 listener、无其他观察 socket、duplicate home 空且不同-CDHash impostor activation `0 → 0`。同 Team Developer ID、Rosetta 跨 slice、解锁焦点/VoiceOver 与 LaunchServices 真实退出码继续明确未证明 | `[S][contract] reliability: bind trusted single-instance arbitration to authoritative evidence` |
+| 2026-08-31 | v6.85.0 | **Manus trust generation、credential-safe cleanup 与正常 Quit 屏障**:exact callback URL + canonical ≥2048-bit RSA identity 绑定 replay generation，旧代已认证请求交错返回 401；所有 accepted webhook ID 立即持久化为集合，replacement/late registration/heartbeat/stop 共享可重试删除，只有 2xx + `ok:true` 才清 ID。Disconnect 与换 key 都在远端 cleanup 成功前保留旧 Keychain credential；Quit 同步 detach ingress 并 single-flight join Disconnect/sleep/poller/tunnel/listener，AppKit owner 用 tokenized finish-once 的两秒 `.terminateLater` 屏障，失败/超时保留 credential + ledger；三种无 owner QA/yield 路径直接 `.terminateNow`。Release realtime gate 关闭且无真实账号验收 | `[S][contract] reliability: bound Quit without releasing Manus cleanup capability` |
+| 2026-08-31 | v6.86.0 | **Manus unknown-registration 原子 reconciliation**:官方 `GET /v2/webhook.list` 严格接收最多 1,024 项账号 inventory；单一 `webhookRecoveryStateV1` envelope 将 ID ledger、token、callback digest、±300 秒时间身份与 discovered IDs 一起 flush/readback。只归属 active exact-digest 且唯一 marker 的 row，歧义/空 list/legacy/corrupt 全部失败关闭；bound ID 跨重启直接重试，严格 official 404 `not_found` 完成幂等删除。Release gate 仍关闭，真实 create→signed delivery→list/delete 与一致性证据待补 | `[S][contract] security: reconcile unknown Manus registrations without guessing ownership` |

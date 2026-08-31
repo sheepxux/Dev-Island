@@ -93,9 +93,9 @@ For every `v*` tag, `.github/workflows/release.yml`:
 8. invokes `generate_appcast` only through the repository-owned
    `run-sparkle-appcast-generator.sh`: it moves the private key into a
    non-exported shell buffer, unsets every known release credential variable,
-   starts the pinned Sparkle CLI with an `env -i` allowlist that excludes
-   `HOME`, GitHub tokens and runner metadata, and passes the private key only
-   through `--ed-key-file -` stdin;
+   starts a minimal `env -i` supervisor that remains the pinned Sparkle CLI's
+   clean direct parent, excludes `HOME`, GitHub tokens and runner metadata, and
+   passes the private key only through `--ed-key-file -` stdin;
 9. parses both the archive `sparkle:edSignature` and the signed-feed block,
    then extracts `SUPublicEDKey` from the App inside the exact versioned ZIP and
    uses CryptoKit Ed25519 verification for the complete ZIP bytes and the exact

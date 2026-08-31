@@ -1576,6 +1576,9 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 - 生成器必须由 `env -i` 启动，只允许固定的 `/usr/bin:/bin` PATH 与 `C` locale；不得传递
   `HOME`、GitHub token、runner metadata、签名凭据或任意 workflow 环境。generator 必须是
   非符号链接的普通可执行文件，feed 必须是非符号链接目录，tag 必须通过有界 SemVer 形态校验。
+- `env -i` 下的仓库自有 supervisor 必须保留为 generator 的直接父进程并等待其退出，不能
+  `exec` 覆盖自身；这样 generator 通过 macOS 直接父进程检查时只能看到清洁 allowlist，不能读到
+  最初由 GitHub 注入包装器的私钥环境。supervisor 只通过继承 stdin 转交 key，并转发终止信号。
 - 确定性真实子进程夹具必须同时检查生成器自身和父进程环境、完整 argv 与捕获日志，证明
   私钥只按原字节出现在 stdin；缺 key、不安全 tag 与 symlink generator 必须在签名前失败关闭。
 

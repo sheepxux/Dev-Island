@@ -54,19 +54,35 @@ clear_private_key() {
 trap clear_private_key EXIT INT TERM
 
 # Do not pass HOME, GitHub tokens, runner metadata, signing credentials, or
-# arbitrary workflow variables to Sparkle. The executable and all arguments
-# are already resolved by this repository-owned wrapper; only system command
-# lookup and deterministic locale are required by the pinned CLI.
+# arbitrary workflow variables to Sparkle. A clean shell remains alive as the
+# generator's direct parent instead of execing it, so macOS process inspection
+# cannot expose the secret-bearing wrapper environment through the generator's
+# immediate parent. The private key still reaches only the generator's stdin.
 printf '%s' "$appcast_private_key" \
   | env -i \
       PATH='/usr/bin:/bin' \
       LANG='C' \
       LC_ALL='C' \
-      "$GENERATOR" \
+      /bin/sh -c '
+        set -eu
+        generator_pid=""
+        forward_generator_signal() {
+          if [ -n "$generator_pid" ]; then
+            kill -TERM "$generator_pid" 2>/dev/null || true
+          fi
+        }
+        trap forward_generator_signal HUP INT TERM
+        "$@" <&3 3<&- &
+        generator_pid=$!
+        exec 3<&-
+        wait "$generator_pid"
+      ' dev-island-sparkle-generator-supervisor \
+        "$GENERATOR" \
         --ed-key-file - \
         --download-url-prefix \
           "https://github.com/sheepxux/Dev-Island/releases/download/${RELEASE_TAG}/" \
         --link 'https://devisland.app' \
         --maximum-versions 1 \
         --maximum-deltas 0 \
-        "$FEED_DIRECTORY"
+        "$FEED_DIRECTORY" \
+        3<&0

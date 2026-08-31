@@ -1,5 +1,6 @@
 import Darwin
 import CryptoKit
+import Dispatch
 import Foundation
 import Security
 import XCTest
@@ -17,6 +18,16 @@ final class WebhookAuthenticationTests: XCTestCase {
         XCTAssertNil(WebhookRequestAuthenticator(signaturePublicKeyPEM: ""))
         XCTAssertNil(WebhookRequestAuthenticator(signaturePublicKeyPEM: "  \n  "))
         XCTAssertNil(WebhookRequestAuthenticator(signaturePublicKeyPEM: "not-a-public-key"))
+    }
+
+    func testRSAKeyBelow2048BitsCannotCreateAuthenticator() throws {
+        let weakFixture = try RSAFixture(keySizeInBits: 1_024)
+
+        XCTAssertNil(
+            WebhookRequestAuthenticator(
+                signaturePublicKeyPEM: weakFixture.publicKeyPEM
+            )
+        )
     }
 
     func testMissingSignatureIsRejected() throws {
@@ -313,6 +324,33 @@ final class WebhookAuthenticationTests: XCTestCase {
         XCTAssertFalse(readyAfterStop)
     }
 
+    func testServerStopJoinsServeLoopSoPortCanBeReboundImmediately() async throws {
+        let fixture = try RSAFixture()
+        let port = try availableLoopbackPort()
+        let firstServer = try XCTUnwrap(WebhookServer(
+            port: port,
+            signaturePublicKeyPEM: fixture.publicKeyPEM
+        ))
+        let replacementServer = try XCTUnwrap(WebhookServer(
+            port: port,
+            signaturePublicKeyPEM: fixture.publicKeyPEM
+        ))
+
+        try await firstServer.start(onEvent: { _ in })
+        await firstServer.stop()
+
+        do {
+            try await replacementServer.start(onEvent: { _ in })
+            let replacementReady = await replacementServer.isReady()
+            XCTAssertTrue(replacementReady)
+        } catch {
+            await replacementServer.stop()
+            throw error
+        }
+
+        await replacementServer.stop()
+    }
+
     func testServerStartFailsClosedWithinBoundWhenLoopbackPortIsOccupied() async throws {
         let fixture = try RSAFixture()
         let occupied = try OccupiedWebhookPort()
@@ -335,6 +373,66 @@ final class WebhookAuthenticationTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(startedAt), 3)
         let readyAfterFailure = await server.isReady()
         XCTAssertFalse(readyAfterFailure)
+        await server.stop()
+    }
+
+    func testLiveHTTPRouteRejectsMissingInvalidAndBodyBoundAuthentication() async throws {
+        let fixture = try RSAFixture()
+        let port = try availableLoopbackPort()
+        let server = try XCTUnwrap(WebhookServer(
+            port: port,
+            signaturePublicKeyPEM: fixture.publicKeyPEM
+        ))
+        try await server.configure(
+            externalURL: externalURL,
+            signaturePublicKeyPEM: fixture.publicKeyPEM
+        )
+        let deliveries = WebhookDeliveryRecorder()
+        try await server.start { payload in
+            deliveries.record(payload.eventID)
+        }
+
+        do {
+            let body = webhookCreatedBody(eventID: "event_auth", taskID: "task_auth")
+            let timestamp = String(Int(Date.now.timeIntervalSince1970))
+
+            let missingAuthenticationStatus = try await sendRawWebhook(
+                body,
+                signature: nil,
+                timestamp: nil,
+                port: port
+            )
+            XCTAssertEqual(missingAuthenticationStatus, 401)
+
+            let invalidSignatureStatus = try await sendRawWebhook(
+                body,
+                signature: "not-base64%%%",
+                timestamp: timestamp,
+                port: port
+            )
+            XCTAssertEqual(invalidSignatureStatus, 401)
+
+            let original = webhookCreatedBody(
+                eventID: "event_original",
+                taskID: "task_original"
+            )
+            let bodyBoundSignatureStatus = try await sendRawWebhook(
+                body,
+                signature: try fixture.signature(
+                    for: original,
+                    timestamp: timestamp,
+                    externalURL: externalURL
+                ),
+                timestamp: timestamp,
+                port: port
+            )
+            XCTAssertEqual(bodyBoundSignatureStatus, 401)
+            XCTAssertTrue(deliveries.snapshot.isEmpty)
+        } catch {
+            await server.stop()
+            throw error
+        }
+
         await server.stop()
     }
 
@@ -425,6 +523,268 @@ final class WebhookAuthenticationTests: XCTestCase {
         await server.stop()
     }
 
+    func testLiveHTTPReplayWindowTracksCanonicalTrustGeneration() async throws {
+        let originalKey = try RSAFixture()
+        let replacementKey = try RSAFixture()
+        let port = try availableLoopbackPort()
+        let server = try XCTUnwrap(WebhookServer(
+            port: port,
+            signaturePublicKeyPEM: originalKey.publicKeyPEM,
+            replayCapacity: 2
+        ))
+        let callbackA = "https://generation-a.trycloudflare.com/webhook"
+        let callbackB = "https://generation-b.trycloudflare.com/webhook"
+        try await server.configure(
+            externalURL: callbackA,
+            signaturePublicKeyPEM: originalKey.publicKeyPEM
+        )
+        let deliveries = WebhookDeliveryRecorder()
+        try await server.start { payload in
+            deliveries.record(payload.eventID)
+        }
+
+        do {
+            let timestamp = String(Int(Date.now.timeIntervalSince1970))
+            let event1 = webhookCreatedBody(eventID: "generation_event_1", taskID: "generation_task_1")
+            let event2 = webhookCreatedBody(eventID: "generation_event_2", taskID: "generation_task_2")
+            let event3 = webhookCreatedBody(eventID: "generation_event_3", taskID: "generation_task_3")
+            let event4 = webhookCreatedBody(eventID: "generation_event_4", taskID: "generation_task_4")
+            let event5 = webhookCreatedBody(eventID: "generation_event_5", taskID: "generation_task_5")
+
+            for event in [event1, event2] {
+                let status = try await sendWebhook(
+                    event,
+                    timestamp: timestamp,
+                    fixture: originalKey,
+                    externalURL: callbackA,
+                    port: port
+                )
+                XCTAssertEqual(status, 200)
+            }
+            XCTAssertEqual(
+                deliveries.snapshot,
+                ["generation_event_1", "generation_event_2"]
+            )
+
+            // PKCS#1 and SubjectPublicKeyInfo are two encodings of the same
+            // RSA key. Reconfiguring the same trust tuple must not clear a live
+            // replay window.
+            try await server.configure(
+                externalURL: callbackA,
+                signaturePublicKeyPEM: originalKey.subjectPublicKeyInfoPEM
+            )
+            let equivalentTrustStatus = try await sendWebhook(
+                event3,
+                timestamp: timestamp,
+                fixture: originalKey,
+                externalURL: callbackA,
+                port: port
+            )
+            XCTAssertEqual(equivalentTrustStatus, 503)
+
+            do {
+                try await server.configure(
+                    externalURL: callbackA,
+                    signaturePublicKeyPEM: "not-a-public-key"
+                )
+                XCTFail("Expected invalid trust material")
+            } catch WebhookServerConfigurationError.invalidTrustMaterial {
+                // Expected. The prior authenticator, URL, and replay state stay live.
+            }
+            do {
+                try await server.configure(
+                    externalURL: "http://generation-invalid.example/webhook",
+                    signaturePublicKeyPEM: replacementKey.publicKeyPEM
+                )
+                XCTFail("Expected an invalid external URL")
+            } catch WebhookServerConfigurationError.invalidExternalURL {
+                // Expected. No part of the candidate tuple was committed.
+            }
+            let statusAfterInvalidConfiguration = try await sendWebhook(
+                event3,
+                timestamp: timestamp,
+                fixture: originalKey,
+                externalURL: callbackA,
+                port: port
+            )
+            XCTAssertEqual(statusAfterInvalidConfiguration, 503)
+            XCTAssertEqual(
+                deliveries.snapshot,
+                ["generation_event_1", "generation_event_2"]
+            )
+
+            // A new callback URL is a new replay generation. The same event ID
+            // is delivered once for B, and B receives a fresh two-entry window.
+            try await server.configure(
+                externalURL: callbackB,
+                signaturePublicKeyPEM: originalKey.subjectPublicKeyInfoPEM
+            )
+            let callbackBFirstStatus = try await sendWebhook(
+                event1,
+                timestamp: timestamp,
+                fixture: originalKey,
+                externalURL: callbackB,
+                port: port
+            )
+            XCTAssertEqual(callbackBFirstStatus, 200)
+            let callbackBSecondStatus = try await sendWebhook(
+                event3,
+                timestamp: timestamp,
+                fixture: originalKey,
+                externalURL: callbackB,
+                port: port
+            )
+            XCTAssertEqual(callbackBSecondStatus, 200)
+            let callbackBSaturatedStatus = try await sendWebhook(
+                event4,
+                timestamp: timestamp,
+                fixture: originalKey,
+                externalURL: callbackB,
+                port: port
+            )
+            XCTAssertEqual(callbackBSaturatedStatus, 503)
+
+            // A genuinely different RSA key also rotates the generation even
+            // when the callback URL is unchanged.
+            try await server.configure(
+                externalURL: callbackB,
+                signaturePublicKeyPEM: replacementKey.publicKeyPEM
+            )
+            let priorKeyStatus = try await sendWebhook(
+                event4,
+                timestamp: timestamp,
+                fixture: originalKey,
+                externalURL: callbackB,
+                port: port
+            )
+            XCTAssertEqual(priorKeyStatus, 401)
+            let replacementKeyFirstStatus = try await sendWebhook(
+                event1,
+                timestamp: timestamp,
+                fixture: replacementKey,
+                externalURL: callbackB,
+                port: port
+            )
+            XCTAssertEqual(replacementKeyFirstStatus, 200)
+            let replacementKeySecondStatus = try await sendWebhook(
+                event4,
+                timestamp: timestamp,
+                fixture: replacementKey,
+                externalURL: callbackB,
+                port: port
+            )
+            XCTAssertEqual(replacementKeySecondStatus, 200)
+            let replacementKeySaturatedStatus = try await sendWebhook(
+                event5,
+                timestamp: timestamp,
+                fixture: replacementKey,
+                externalURL: callbackB,
+                port: port
+            )
+            XCTAssertEqual(replacementKeySaturatedStatus, 503)
+
+            XCTAssertEqual(
+                deliveries.snapshot,
+                [
+                    "generation_event_1",
+                    "generation_event_2",
+                    "generation_event_1",
+                    "generation_event_3",
+                    "generation_event_1",
+                    "generation_event_4",
+                ]
+            )
+        } catch {
+            await server.stop()
+            throw error
+        }
+
+        await server.stop()
+    }
+
+    func testLiveHTTPRequestAuthenticatedBeforeRotationCannotEnterNewTrustGeneration() async throws {
+        let originalKey = try RSAFixture()
+        let replacementKey = try RSAFixture()
+        let interlock = WebhookAuthenticationInterlock()
+        let port = try availableLoopbackPort()
+        let server = try XCTUnwrap(WebhookServer(
+            port: port,
+            signaturePublicKeyPEM: originalKey.publicKeyPEM,
+            replayCapacity: 1,
+            afterAuthenticationForTesting: {
+                await interlock.pause()
+            }
+        ))
+        let callbackA = "https://interleaving-a.trycloudflare.com/webhook"
+        let callbackB = "https://interleaving-b.trycloudflare.com/webhook"
+        try await server.configure(
+            externalURL: callbackA,
+            signaturePublicKeyPEM: originalKey.publicKeyPEM
+        )
+        let deliveries = WebhookDeliveryRecorder()
+        try await server.start { payload in
+            deliveries.record(payload.eventID)
+        }
+
+        do {
+            let body = webhookCreatedBody(
+                eventID: "generation_interleaving_event",
+                taskID: "generation_interleaving_task"
+            )
+            let timestamp = String(Int(Date.now.timeIntervalSince1970))
+            let oldGenerationRequest = Task {
+                try await sendWebhook(
+                    body,
+                    timestamp: timestamp,
+                    fixture: originalKey,
+                    externalURL: callbackA,
+                    port: port
+                )
+            }
+
+            guard interlock.waitUntilPaused() else {
+                oldGenerationRequest.cancel()
+                interlock.resume()
+                _ = try? await oldGenerationRequest.value
+                XCTFail("The HTTP request did not reach the post-authentication interlock")
+                await server.stop()
+                return
+            }
+
+            // Rotate the exact callback/key tuple while the live HTTP request
+            // is suspended after successful old-generation authentication but
+            // before its event ID can enter the replay window.
+            try await server.configure(
+                externalURL: callbackB,
+                signaturePublicKeyPEM: replacementKey.publicKeyPEM
+            )
+            interlock.resume()
+
+            let oldGenerationStatus = try await oldGenerationRequest.value
+            XCTAssertEqual(oldGenerationStatus, 401)
+            XCTAssertTrue(deliveries.snapshot.isEmpty)
+
+            // The rejected old request must not reserve its event ID in the
+            // replacement generation. The same ID, authenticated by the new
+            // tuple, remains a first delivery rather than a duplicate.
+            let replacementStatus = try await sendWebhook(
+                body,
+                timestamp: timestamp,
+                fixture: replacementKey,
+                externalURL: callbackB,
+                port: port
+            )
+            XCTAssertEqual(replacementStatus, 200)
+            XCTAssertEqual(deliveries.snapshot, ["generation_interleaving_event"])
+        } catch {
+            interlock.resume()
+            await server.stop()
+            throw error
+        }
+
+        await server.stop()
+    }
+
     private func webhookCreatedBody(eventID: String, taskID: String) -> Data {
         Data(
             """
@@ -440,24 +800,42 @@ final class WebhookAuthenticationTests: XCTestCase {
         externalURL: String,
         port: Int
     ) async throws -> Int {
+        try await sendRawWebhook(
+            body,
+            signature: try fixture.signature(
+                for: body,
+                timestamp: timestamp,
+                externalURL: externalURL
+            ),
+            timestamp: timestamp,
+            port: port
+        )
+    }
+
+    private func sendRawWebhook(
+        _ body: Data,
+        signature: String?,
+        timestamp: String?,
+        port: Int
+    ) async throws -> Int {
         let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/webhook"))
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 2
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(
-            timestamp,
-            forHTTPHeaderField: WebhookSignature.timestampHeaderName
-        )
-        request.setValue(
-            try fixture.signature(
-                for: body,
-                timestamp: timestamp,
-                externalURL: externalURL
-            ),
-            forHTTPHeaderField: WebhookSignature.headerName
-        )
+        if let timestamp {
+            request.setValue(
+                timestamp,
+                forHTTPHeaderField: WebhookSignature.timestampHeaderName
+            )
+        }
+        if let signature {
+            request.setValue(
+                signature,
+                forHTTPHeaderField: WebhookSignature.headerName
+            )
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.connectionProxyDictionary = [:]
         configuration.timeoutIntervalForRequest = 2
@@ -517,6 +895,40 @@ private final class WebhookDeliveryRecorder: @unchecked Sendable {
     }
 }
 
+private final class WebhookAuthenticationInterlock: @unchecked Sendable {
+    private let entered = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var isReleased = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func pause() async {
+        entered.signal()
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if isReleased {
+                lock.unlock()
+                continuation.resume()
+                return
+            }
+            self.continuation = continuation
+            lock.unlock()
+        }
+    }
+
+    func waitUntilPaused() -> Bool {
+        entered.wait(timeout: .now() + .seconds(2)) == .success
+    }
+
+    func resume() {
+        lock.lock()
+        isReleased = true
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
+}
+
 private final class OccupiedWebhookPort: @unchecked Sendable {
     private var descriptor: Int32
     let port: Int
@@ -571,10 +983,10 @@ private struct RSAFixture {
     let publicKeyPEM: String
     let subjectPublicKeyInfoPEM: String
 
-    init() throws {
+    init(keySizeInBits: Int = 2_048) throws {
         let attributes: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeRSA,
-            kSecAttrKeySizeInBits: 2_048,
+            kSecAttrKeySizeInBits: keySizeInBits,
         ]
         var error: Unmanaged<CFError>?
         guard let privateKey = SecKeyCreateRandomKey(attributes as CFDictionary, &error),

@@ -33,6 +33,16 @@ enum ManusEndpoints {
         return req
     }
 
+    static func listWebhooks(apiKey: String) throws -> URLRequest {
+        var req = try authenticatedRequest(
+            url: realtimeBaseURL.appendingPathComponent("v2/webhook.list"),
+            apiKey: apiKey,
+            header: "x-manus-api-key"
+        )
+        req.httpMethod = "GET"
+        return req
+    }
+
     static func deleteWebhook(apiKey: String, webhookId: String) throws -> URLRequest {
         guard validIdentifier(webhookId) else { throw ManusError.invalidURL }
         var req = try authenticatedRequest(

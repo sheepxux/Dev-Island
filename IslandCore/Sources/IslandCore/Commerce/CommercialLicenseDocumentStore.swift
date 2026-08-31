@@ -16,6 +16,17 @@ public enum CommercialLicenseDocumentStoreError: Error, Equatable, Sendable {
     case unexpectedData
 }
 
+/// Small synchronous boundary around the platform secure store.
+///
+/// Production injects the Keychain implementation below. Unit tests inject a
+/// process-local backend so `swift test` never opens, unlocks, adds to, or
+/// deletes from the maintainer/CI login Keychain.
+protocol CommercialLicenseDocumentStorageBackend: Sendable {
+    func save(_ document: Data) throws
+    func load() throws -> Data?
+    func delete() throws
+}
+
 /// Device-local Keychain storage for a verified license document.
 ///
 /// The public import boundary authenticates the exact bytes before persisting
@@ -29,20 +40,21 @@ public struct CommercialLicenseDocumentStore: Sendable {
     static let defaultService = "app.devisland.Island"
     static let defaultAccount = "commercial_license_v1"
 
-    private let service: String
-    private let account: String
+    private let backend: any CommercialLicenseDocumentStorageBackend
     private static let mutationLock = CommercialLicenseStoreMutationLock()
 
     public init() {
-        self.init(service: Self.defaultService, account: Self.defaultAccount)
+        backend = CommercialLicenseKeychainBackend(
+            service: Self.defaultService,
+            account: Self.defaultAccount
+        )
     }
 
-    /// Internal injection keeps tests isolated from the production Keychain
-    /// namespace without making an arbitrary service/account override part of
-    /// the shipping API.
-    init(service: String, account: String) {
-        self.service = service
-        self.account = account
+    /// Tests and future platform adapters inject storage behavior rather than
+    /// merely changing a Keychain service name. A random namespace still
+    /// mutates the real login Keychain and can show an authorization prompt.
+    init(backend: any CommercialLicenseDocumentStorageBackend) {
+        self.backend = backend
     }
 
     /// Authenticate and persist the exact same bytes only when the verifier
@@ -101,7 +113,11 @@ public struct CommercialLicenseDocumentStore: Sendable {
                 }
             }
 
-            try saveAuthenticated(document)
+            guard !document.isEmpty,
+                  document.count <= Self.maximumDocumentBytes else {
+                throw CommercialLicenseDocumentStoreError.invalidDocumentSize
+            }
+            try backend.save(document)
             return evaluation
         }
     }
@@ -116,46 +132,9 @@ public struct CommercialLicenseDocumentStore: Sendable {
         }
     }
 
-    private func saveAuthenticated(_ document: Data) throws {
-        guard !document.isEmpty,
-              document.count <= Self.maximumDocumentBytes else {
-            throw CommercialLicenseDocumentStoreError.invalidDocumentSize
-        }
-
-        let query = baseQuery
-        let updatedAttributes: [CFString: Any] = [
-            kSecValueData: document,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-        ]
-        let updateStatus = SecItemUpdate(
-            query as CFDictionary,
-            updatedAttributes as CFDictionary
-        )
-
-        if updateStatus == errSecItemNotFound {
-            var addQuery = query
-            updatedAttributes.forEach { addQuery[$0.key] = $0.value }
-            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
-            guard addStatus == errSecSuccess else {
-                throw CommercialLicenseDocumentStoreError.saveFailed(addStatus)
-            }
-        } else if updateStatus != errSecSuccess {
-            throw CommercialLicenseDocumentStoreError.saveFailed(updateStatus)
-        }
-    }
-
     private func loadDocument() throws -> Data? {
-        var query = baseQuery
-        query[kSecReturnData] = true
-        query[kSecMatchLimit] = kSecMatchLimitOne
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess else {
-            throw CommercialLicenseDocumentStoreError.loadFailed(status)
-        }
-        guard let document = result as? Data, !document.isEmpty else {
+        guard let document = try backend.load() else { return nil }
+        guard !document.isEmpty else {
             throw CommercialLicenseDocumentStoreError.unexpectedData
         }
         guard document.count <= Self.maximumDocumentBytes else {
@@ -166,19 +145,79 @@ public struct CommercialLicenseDocumentStore: Sendable {
 
     public func delete() throws {
         try Self.mutationLock.withLock {
-            let status = SecItemDelete(baseQuery as CFDictionary)
-            guard status == errSecSuccess || status == errSecItemNotFound else {
-                throw CommercialLicenseDocumentStoreError.deleteFailed(status)
+            try backend.delete()
+        }
+    }
+}
+
+/// Shipping Keychain adapter. Query construction is internal and pure so its
+/// device-only/non-synchronizing policy can be tested without executing any
+/// Security.framework mutation in the ordinary test suite.
+struct CommercialLicenseKeychainBackend: CommercialLicenseDocumentStorageBackend {
+    let service: String
+    let account: String
+
+    func save(_ document: Data) throws {
+        guard !document.isEmpty,
+              document.count <= CommercialLicenseDocumentStore.maximumDocumentBytes else {
+            throw CommercialLicenseDocumentStoreError.invalidDocumentSize
+        }
+
+        let updateStatus = SecItemUpdate(
+            baseQuery as CFDictionary,
+            authenticatedAttributes(for: document) as CFDictionary
+        )
+        if updateStatus == errSecItemNotFound {
+            var addQuery = baseQuery
+            authenticatedAttributes(for: document).forEach {
+                addQuery[$0.key] = $0.value
             }
+            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw CommercialLicenseDocumentStoreError.saveFailed(addStatus)
+            }
+        } else if updateStatus != errSecSuccess {
+            throw CommercialLicenseDocumentStoreError.saveFailed(updateStatus)
         }
     }
 
-    private var baseQuery: [CFString: Any] {
+    func load() throws -> Data? {
+        var query = baseQuery
+        query[kSecReturnData] = true
+        query[kSecMatchLimit] = kSecMatchLimitOne
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else {
+            throw CommercialLicenseDocumentStoreError.loadFailed(status)
+        }
+        guard let document = result as? Data else {
+            throw CommercialLicenseDocumentStoreError.unexpectedData
+        }
+        return document
+    }
+
+    func delete() throws {
+        let status = SecItemDelete(baseQuery as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw CommercialLicenseDocumentStoreError.deleteFailed(status)
+        }
+    }
+
+    var baseQuery: [CFString: Any] {
         [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
             kSecAttrSynchronizable: false,
+        ]
+    }
+
+    func authenticatedAttributes(for document: Data) -> [CFString: Any] {
+        [
+            kSecValueData: document,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
     }
 }

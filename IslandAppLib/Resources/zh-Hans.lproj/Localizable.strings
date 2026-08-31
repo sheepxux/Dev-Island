@@ -217,6 +217,10 @@
 "Preparing the private loopback connection." = "正在准备私有回环连接。";
 "Local Agent events are arriving through this Mac only." = "本地 Agent 事件只通过这台 Mac 传入。";
 "Degraded — %@" = "连接异常 — %@";
+"Verified realtime + polling fallback" = "已验证实时连接 + 轮询保障";
+"Polling only — checking every minute" = "仅轮询 — 每分钟检查一次";
+"Connection unavailable — reconnect to retry" = "连接不可用 — 请重新连接后重试";
+"Remote callback cleanup pending — retry Disconnect" = "远端回调清理待完成 — 请再次断开";
 "Stored key is invalid" = "已存储的密钥无效";
 "Not connected — paste an API key below" = "未连接 — 请在下方粘贴 API 密钥";
 "Disconnected, but the saved key couldn’t be removed. Retry Disconnect before uninstalling." = "连接已断开，但无法移除已存储的密钥。卸载前请再次尝试断开。";
@@ -224,7 +228,7 @@
 "Update available" = "有可用更新";
 "Checking %@ Hook trust…" = "正在检查 %@ Hook 信任状态…";
 "Connected — Hook trust verified by %@" = "已连接 — %@ 已验证 Hook 信任";
-"Configured — open %@ in %@ to review or confirm trust" = "已配置 — 请在 %2$@ 中打开 %1$@ 以检查或确认信任";
+"Configured — review and trust the Dev Island entries in %@ %@" = "已配置 — 请在 %@ %@ 中审阅并信任 Dev Island 条目";
 "Preview connected — requests work in simulation; real CLI check pending" = "预览连接已启用 — 请求可在模拟中使用，仍待真实 CLI 验证";
 "Connected — requests can be handled in the island" = "已连接 — 可直接在灵动岛中处理请求";
 "Preview connected — real CLI acceptance pending" = "预览连接已启用 — 仍待真实 CLI 验收";
@@ -260,6 +264,13 @@
 "Approve plan" = "批准计划";
 "Deny" = "拒绝";
 "Allow once" = "仅允许一次";
+"Allowed once" = "已允许一次";
+"Request denied" = "已拒绝请求";
+"Plan approved" = "计划已批准";
+"Plan rejected" = "计划已拒绝";
+"Decision sent" = "决定已送达";
+"Answers sent" = "回答已送达";
+"Response sent to %@" = "响应已发送给 %@";
 "Select one or more" = "选择一个或多个";
 "This plan cannot be rendered safely." = "此计划无法安全呈现。";
 "This question cannot be rendered safely." = "此问题无法安全呈现。";
@@ -438,7 +449,7 @@
 "The installed %@ version needs a compatibility review." = "已安装的 %@ 版本需要兼容性复核。";
 "Update %@ below." = "请在下方更新 %@。";
 "Enable %@ below." = "请在下方启用 %@。";
-"Review Dev Island Hooks in Codex %@." = "请在 Codex %@ 中审阅 Dev Island Hook。";
+"In Codex %@, review and trust only the Dev Island entries. “Continue without trusting” keeps approvals outside the island." = "请在 Codex %@ 中审阅并仅信任 Dev Island 条目；选择“无信任继续”会让审批留在 Codex，不会进入灵动岛。";
 "Local setup still needs attention." = "本地设置仍需处理。";
 "%@ and %@" = "%@ 和 %@";
 "Checks local CLI versions, managed Hooks, Codex trust, and the private listener without changing configuration." = "检查本地 CLI 版本、受管 Hook、Codex 信任与私有监听器，不会更改配置。";

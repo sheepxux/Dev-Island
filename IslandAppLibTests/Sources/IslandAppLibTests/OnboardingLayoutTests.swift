@@ -13,8 +13,32 @@ final class OnboardingLayoutTests: XCTestCase {
     }
 
     func testSurfaceRadiiCreateAQuietWindowToStageHierarchy() {
-        XCTAssertGreaterThanOrEqual(OnboardingMetrics.stageRadius, 10)
+        XCTAssertGreaterThanOrEqual(OnboardingMetrics.stageRadius, 14)
         XCTAssertGreaterThan(OnboardingMetrics.windowRadius, OnboardingMetrics.stageRadius)
+    }
+
+    func testCompactConnectionStatesDoNotLeakDiagnosticsIntoWelcomeGrid() {
+        XCTAssertEqual(
+            OnboardingConnectionStatusPresentation.compactLabel(
+                state: .configured,
+                hasError: false
+            ),
+            "Configured"
+        )
+        XCTAssertEqual(
+            OnboardingConnectionStatusPresentation.compactLabel(
+                state: .updateRequired,
+                hasError: false
+            ),
+            "Needs update"
+        )
+        XCTAssertEqual(
+            OnboardingConnectionStatusPresentation.compactLabel(
+                state: .connected,
+                hasError: true
+            ),
+            "Try again"
+        )
     }
 
     func testSkipActionDisappearsWhenTheTourHasReachedItsDecisionStep() {

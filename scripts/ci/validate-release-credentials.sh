@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SPARKLE_SIGN_TOOL="$ROOT/.build/artifacts/sparkle/Sparkle/bin/sign_update"
+SPARKLE_SIGNATURE_VERIFIER="$ROOT/scripts/release/verify-sparkle-ed25519-signatures.swift"
+KEY_PAIR_PAYLOAD="$ROOT/VERSION"
+
 fail() {
   echo "::error::$1" >&2
   exit 1
@@ -70,4 +75,60 @@ fi
 is_canonical_base64 "${P12_BASE64}" \
   || fail "SIGNING_CERTIFICATE_P12_BASE64 must be valid base64"
 
-echo "Release credential structure: PASS"
+# Shape alone is not a trust chain: a well-formed public key can still be
+# unrelated to the private key used by generate_appcast. Sign one fixed public
+# repository payload through Sparkle's stdin-only key channel, then verify the
+# result with CryptoKit and the exact configured public key. Neither key is
+# written, printed, or inherited by either child process.
+[[ -f "$SPARKLE_SIGN_TOOL" && ! -L "$SPARKLE_SIGN_TOOL" && -x "$SPARKLE_SIGN_TOOL" ]] \
+  || fail "Pinned Sparkle signing tool is unavailable"
+[[ -f "$SPARKLE_SIGNATURE_VERIFIER" && ! -L "$SPARKLE_SIGNATURE_VERIFIER" ]] \
+  || fail "Repository Ed25519 verifier is unavailable"
+[[ -f "$KEY_PAIR_PAYLOAD" && ! -L "$KEY_PAIR_PAYLOAD" ]] \
+  || fail "Release key-pair challenge payload is unavailable"
+
+sparkle_public_key="$(
+  printf '%s' "${SPARKLE_PUBLIC_ED_KEY}" | tr -d '[:space:]'
+)"
+sparkle_private_key="${SPARKLE_PRIVATE_ED_KEY}"
+unset SPARKLE_PRIVATE_ED_KEY
+
+clear_key_material() {
+  sparkle_public_key=""
+  sparkle_private_key=""
+  unset sparkle_public_key sparkle_private_key
+}
+trap clear_key_material EXIT INT TERM
+
+if ! key_pair_signature="$(
+  printf '%s' "$sparkle_private_key" \
+    | env -i \
+        PATH='/usr/bin:/bin' \
+        LANG='C' \
+        LC_ALL='C' \
+        "$SPARKLE_SIGN_TOOL" \
+          --ed-key-file - \
+          -p \
+          "$KEY_PAIR_PAYLOAD" \
+          2>/dev/null
+)"; then
+  fail "SPARKLE_PRIVATE_ED_KEY could not sign the release key-pair challenge"
+fi
+
+if ! env -i \
+  PATH='/usr/bin:/bin' \
+  LANG='C' \
+  LC_ALL='C' \
+  /usr/bin/swift \
+    "$SPARKLE_SIGNATURE_VERIFIER" \
+    verify-file \
+    --public-key-base64 "$sparkle_public_key" \
+    --signature-base64 "$key_pair_signature" \
+    --input-file "$KEY_PAIR_PAYLOAD" \
+    >/dev/null 2>&1; then
+  fail "SPARKLE_PUBLIC_ED_KEY and SPARKLE_PRIVATE_ED_KEY must form one Ed25519 key pair"
+fi
+key_pair_signature=""
+unset key_pair_signature
+
+echo "Release credential trust chain: PASS"

@@ -554,7 +554,7 @@ for threshold in \
 done
 
 case "$QA_SCENARIO" in
-  idle|compact-running-20|expanded-running-20|expanded-mixed-20|transition-running-20) ;;
+  idle|compact-running-20|expanded-running-20|expanded-mixed-20|transition-running-20|decision-approval|decision-question|decision-plan-review) ;;
   production-launch-smoke)
     QA_PRODUCTION_SMOKE=1
     QA_ALLOW_LOCKED=1

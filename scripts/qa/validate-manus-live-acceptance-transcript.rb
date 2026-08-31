@@ -3,17 +3,24 @@
 MINIMUM_BYTES = 1
 MAXIMUM_BYTES = 64 * 1_024
 
-PREAMBLE = [
+LIVE_PREAMBLE = [
   "[CLI] Manus v2 live acceptance",
   "[CLI] This creates a temporary public tunnel and webhook, then removes both.",
   "[CLI] During the run, create one task that finishes and one task that pauses for input.",
   "[CLI] Provider identifiers, callback addresses, payload text and raw errors are never printed.",
 ].freeze
 
-CHECKPOINTS = [
+RECOVERY_PREAMBLE = [
+  "[CLI] Manus v2 live acceptance recovery",
+  "[CLI] This removes only a webhook proven by one explicit private journal.",
+  "[CLI] Provider identifiers, callback addresses and raw errors are never printed.",
+].freeze
+
+LIVE_CHECKPOINTS = [
   "trust_anchor_validated",
   "server_started",
   "tunnel_started",
+  "recovery_journal_persisted",
   "registration_started",
   "signed_registration_probe",
   "registration_accepted",
@@ -21,11 +28,23 @@ CHECKPOINTS = [
   "task_stopped_finish",
   "task_stopped_ask",
   "webhook_deleted",
+  "recovery_journal_cleared",
   "transports_stopped",
   "manual_webhook_review_required",
 ].freeze
 
-ACCEPTED_CHECKPOINTS = (CHECKPOINTS - ["manual_webhook_review_required"]).freeze
+RECOVERY_CHECKPOINTS = [
+  "recovery_journal_validated",
+  "recovery_inventory_checked",
+  "recovery_webhook_bound",
+  "webhook_deleted",
+  "recovery_journal_cleared",
+  "manual_webhook_review_required",
+].freeze
+
+ACCEPTED_CHECKPOINTS = (
+  LIVE_CHECKPOINTS - ["manual_webhook_review_required"]
+).freeze
 FAILURE_STAGES = %w[
   trust_anchor
   server_startup
@@ -54,16 +73,26 @@ def validate_file_metadata(stat)
     stat.size.between?(MINIMUM_BYTES, MAXIMUM_BYTES)
 end
 
-def terminal_kind(line)
-  fixed = {
+def terminal_kind(line, mode)
+  shared = {
     "[CLI] credential_rejected" => "credential_rejected",
-    "[CLI] result=accepted" => "accepted",
+    "[CLI] result=journal_rejected" => "journal_rejected",
     "[CLI] result=manual_webhook_review_required" => "manual_webhook_review_required",
+  }
+  live = shared.merge(
+    "[CLI] result=accepted" => "accepted",
     "[CLI] result=incomplete_cleanup" => "incomplete_cleanup",
     "[CLI] result=timed_out" => "timed_out",
     "[CLI] result=cancelled" => "cancelled",
-  }
+  )
+  recovery = shared.merge(
+    "[CLI] result=recovered" => "recovered",
+    "[CLI] result=no_recovery_journal" => "no_recovery_journal",
+  )
+  fixed = mode == :live ? live : recovery
   return fixed.fetch(line) if fixed.key?(line)
+
+  return nil unless mode == :live
 
   match = line.match(/\A\[CLI\] result=failed stage=([a-z_]+)\z/)
   return nil unless match && FAILURE_STAGES.include?(match[1])
@@ -140,67 +169,125 @@ reject("transcript must end with exactly one LF") unless text.end_with?("\n")
 reject("transcript must not contain blank lines") if text.include?("\n\n")
 
 lines = text.lines(chomp: true)
-reject("transcript preamble is missing or altered") unless lines.first(PREAMBLE.length) == PREAMBLE
-body = lines.drop(PREAMBLE.length)
+if lines.first(LIVE_PREAMBLE.length) == LIVE_PREAMBLE
+  mode = :live
+  preamble_length = LIVE_PREAMBLE.length
+elsif lines.first(RECOVERY_PREAMBLE.length) == RECOVERY_PREAMBLE
+  mode = :recovery
+  preamble_length = RECOVERY_PREAMBLE.length
+else
+  reject("transcript preamble is missing or altered")
+end
+reject("--require-accepted rejects recovery transcripts") if
+  require_accepted && mode == :recovery
+
+body = lines.drop(preamble_length)
 reject("transcript terminal result is missing") if body.empty?
 
 terminal = body.last
-kind = terminal_kind(terminal)
+kind = terminal_kind(terminal, mode)
 reject("transcript terminal result is not allowlisted") unless kind
 
+allowed_checkpoints = mode == :live ? LIVE_CHECKPOINTS : RECOVERY_CHECKPOINTS
 checkpoint_lines = body[0...-1]
 checkpoints = checkpoint_lines.map do |line|
   match = line.match(/\A\[CLI\] checkpoint=([a-z_]+)\z/)
-  reject("transcript contains a non-allowlisted line") unless match && CHECKPOINTS.include?(match[1])
+  reject("transcript contains a non-allowlisted line") unless
+    match && allowed_checkpoints.include?(match[1])
   match[1]
 end
 reject("transcript contains a duplicate checkpoint") unless checkpoints.uniq.length == checkpoints.length
 
 positions = checkpoints.each_with_index.to_h
-require_predecessor(positions, "server_started", "trust_anchor_validated")
-require_predecessor(positions, "tunnel_started", "server_started")
-require_predecessor(positions, "registration_started", "tunnel_started")
-require_predecessor(positions, "signed_registration_probe", "registration_started")
-require_predecessor(positions, "registration_accepted", "registration_started")
-require_predecessor(positions, "task_created", "registration_accepted")
-require_predecessor(positions, "task_stopped_finish", "task_created")
-require_predecessor(positions, "task_stopped_ask", "task_created")
-require_predecessor(positions, "webhook_deleted", "registration_accepted")
-require_predecessor(positions, "manual_webhook_review_required", "transports_stopped")
+if mode == :live
+  require_predecessor(positions, "server_started", "trust_anchor_validated")
+  require_predecessor(positions, "tunnel_started", "server_started")
+  require_predecessor(positions, "recovery_journal_persisted", "tunnel_started")
+  require_predecessor(positions, "registration_started", "recovery_journal_persisted")
+  require_predecessor(positions, "signed_registration_probe", "registration_started")
+  require_predecessor(positions, "registration_accepted", "registration_started")
+  require_predecessor(positions, "task_created", "registration_accepted")
+  require_predecessor(positions, "task_stopped_finish", "task_created")
+  require_predecessor(positions, "task_stopped_ask", "task_created")
+  require_predecessor(positions, "webhook_deleted", "registration_accepted")
+  require_predecessor(positions, "recovery_journal_cleared", "webhook_deleted")
+  require_predecessor(positions, "manual_webhook_review_required", "transports_stopped")
 
-if positions.key?("signed_registration_probe") && positions.key?("registration_accepted")
-  reject("signed registration probe must precede registration acceptance") unless
-    positions.fetch("signed_registration_probe") < positions.fetch("registration_accepted")
+  if positions.key?("signed_registration_probe") && positions.key?("registration_accepted")
+    reject("signed registration probe must precede registration acceptance") unless
+      positions.fetch("signed_registration_probe") < positions.fetch("registration_accepted")
+  end
+  if positions.key?("recovery_journal_cleared") && positions.key?("transports_stopped")
+    reject("journal cleanup must precede local transport shutdown") unless
+      positions.fetch("recovery_journal_cleared") < positions.fetch("transports_stopped")
+  end
+  if positions.key?("transports_stopped")
+    permitted_after_stop = positions.key?("manual_webhook_review_required") ? 1 : 0
+    reject("transports_stopped must be the final cleanup checkpoint") unless
+      positions.fetch("transports_stopped") == checkpoints.length - 1 - permitted_after_stop
+  end
+
+  manual_checkpoint = positions.key?("manual_webhook_review_required")
+  manual_result = kind == "manual_webhook_review_required"
+  reject("manual-review checkpoint and result must agree") unless
+    manual_checkpoint == manual_result
+  reject("preflight rejection cannot follow lifecycle checkpoints") if
+    %w[credential_rejected journal_rejected].include?(kind) && !checkpoints.empty?
+
+  if kind == "accepted"
+    reject("accepted transcript does not contain the exact required checkpoint set") unless
+      checkpoints.sort == ACCEPTED_CHECKPOINTS.sort
+    reject("accepted transcript has an invalid checkpoint count") unless
+      checkpoints.length == ACCEPTED_CHECKPOINTS.length
+    reject("accepted transcript must persist before registration") unless
+      positions.fetch("recovery_journal_persisted") < positions.fetch("registration_started")
+    reject("accepted transcript must clear journal after deletion") unless
+      positions.fetch("webhook_deleted") < positions.fetch("recovery_journal_cleared")
+    reject("accepted transcript must clear journal before stopping transports") unless
+      positions.fetch("recovery_journal_cleared") < positions.fetch("transports_stopped")
+  end
+else
+  recovered_bound = %w[
+    recovery_journal_validated
+    webhook_deleted
+    recovery_journal_cleared
+  ]
+  recovered_discovered = %w[
+    recovery_journal_validated
+    recovery_inventory_checked
+    recovery_webhook_bound
+    webhook_deleted
+    recovery_journal_cleared
+  ]
+  manual_paths = [
+    %w[manual_webhook_review_required],
+    %w[recovery_journal_validated manual_webhook_review_required],
+    %w[recovery_journal_validated recovery_inventory_checked manual_webhook_review_required],
+    %w[recovery_journal_validated recovery_inventory_checked recovery_webhook_bound manual_webhook_review_required],
+    %w[recovery_journal_validated webhook_deleted manual_webhook_review_required],
+    %w[recovery_journal_validated recovery_inventory_checked recovery_webhook_bound webhook_deleted manual_webhook_review_required],
+  ]
+
+  case kind
+  when "recovered"
+    reject("recovered transcript has an invalid checkpoint path") unless
+      checkpoints == recovered_bound || checkpoints == recovered_discovered
+  when "manual_webhook_review_required"
+    reject("manual-review checkpoint and result must agree") unless
+      manual_paths.include?(checkpoints)
+  when "no_recovery_journal", "credential_rejected", "journal_rejected"
+    reject("recovery preflight result cannot follow checkpoints") unless checkpoints.empty?
+  else
+    reject("recovery transcript terminal result is invalid")
+  end
 end
-if positions.key?("webhook_deleted") && positions.key?("transports_stopped")
-  reject("remote cleanup must precede local transport shutdown") unless
-    positions.fetch("webhook_deleted") < positions.fetch("transports_stopped")
-end
-if positions.key?("transports_stopped")
-  permitted_after_stop = positions.key?("manual_webhook_review_required") ? 1 : 0
-  reject("transports_stopped must be the final cleanup checkpoint") unless
-    positions.fetch("transports_stopped") == checkpoints.length - 1 - permitted_after_stop
-end
 
-manual_checkpoint = positions.key?("manual_webhook_review_required")
-manual_result = kind == "manual_webhook_review_required"
-reject("manual-review checkpoint and result must agree") unless manual_checkpoint == manual_result
-reject("credential rejection cannot follow lifecycle checkpoints") if
-  kind == "credential_rejected" && !checkpoints.empty?
+reject("transcript did not record an accepted live run") if
+  require_accepted && kind != "accepted"
 
-if kind == "accepted"
-  reject("accepted transcript does not contain the exact required checkpoint set") unless
-    checkpoints.sort == ACCEPTED_CHECKPOINTS.sort
-  reject("accepted transcript has an invalid checkpoint count") unless
-    checkpoints.length == ACCEPTED_CHECKPOINTS.length
-  reject("accepted transcript must delete the webhook before stopping transports") unless
-    positions.fetch("webhook_deleted") < positions.fetch("transports_stopped")
-end
-
-reject("transcript did not record an accepted live run") if require_accepted && kind != "accepted"
-
-if kind == "accepted"
+if mode == :live && kind == "accepted"
   puts "Manus live acceptance transcript: ACCEPTED"
 else
-  puts "Manus live acceptance transcript: VALID result=#{kind}"
+  label = mode == :live ? "live acceptance" : "live acceptance recovery"
+  puts "Manus #{label} transcript: VALID result=#{kind}"
 end

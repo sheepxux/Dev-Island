@@ -244,6 +244,11 @@ public actor CommercialLicenseActivationService {
             return .failed(.commercialModeDisabled)
         }
 
+        // A caller that was already cancelled never owns an activation
+        // operation. In particular it must not supersede an existing request
+        // or create a transport task that could consume a one-time code.
+        guard !Task.isCancelled else { return .cancelled }
+
         if let previous = pendingOperation {
             previous.state.invalidate(as: .superseded)
             previous.task.cancel()

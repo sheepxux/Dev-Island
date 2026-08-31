@@ -24,11 +24,17 @@ enum Motion {
     static let hover = Animation.smooth(duration: 0.16, extraBounce: 0)
     /// Content enters after its containing surface has begun to settle.
     static let contentReveal = Animation.easeOut(duration: 0.18)
+    /// Progressive questions replace semantically different pages. Animate
+    /// only the new page's opacity after an animation-free state swap so old
+    /// and new labels never crossfade through each other.
+    static let questionPageReveal = Animation.easeOut(duration: 0.14)
     /// Task-list and empty-state height changes.
     static let layoutDuration: TimeInterval = 0.24
     static let layout = Animation.smooth(duration: layoutDuration, extraBounce: 0)
-    /// Welcome Tour page choreography.
-    static let tourStep = Animation.smooth(duration: 0.28, extraBounce: 0)
+    /// Welcome Tour page choreography. The travel is intentionally short:
+    /// the fixed instrument should feel as though its content is refocusing,
+    /// not as though an entire web carousel is sliding through the window.
+    static let tourStep = Animation.smooth(duration: 0.24, extraBounce: 0)
     /// Tiny controls should acknowledge immediately.
     static let press = Animation.easeOut(duration: 0.08)
     /// Color cross-fade between states.

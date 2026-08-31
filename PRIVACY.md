@@ -3,7 +3,7 @@
 > Engineering-verified draft for owner and legal review. This file is not a
 > substitute for legal advice and has not been published as a new policy.
 
-Last updated: August 29, 2026
+Last updated: August 31, 2026
 
 Dev Island is a local-first macOS application. The Dev Island maintainers do
 not operate an account system, advertising network, product-analytics service,
@@ -187,14 +187,45 @@ live Manus tasks even if Keychain deletion fails. In that failure case the app
 does not claim the credential was removed: it shows a fixed retry message and
 keeps Disconnect available until device-local deletion succeeds.
 
-Public Manus Webhook delivery and the Cloudflare quick tunnel are disabled in
-the current Release configuration. Dev Island implements Manus' documented v2
-flow at `https://api.manus.ai`: an authenticated request retrieves the RSA
-verification key, registration sends the public callback URL, and signed event
-bodies arrive through Cloudflare. The key is cached in memory for at most one
-hour. This flow must not be enabled until registration, signed test delivery,
-lifecycle events, and deletion pass against a real account and the result is
-reviewed. If a future reviewed build enables
+Dev Island's ordinary unit and pull-request tests do not read, add, update, or
+delete items in the signed-in user's Keychain. They inject process-memory
+storage and inspect only the shipping adapter's fixed device-only,
+non-synchronizing query policy. A random Keychain service name is not treated
+as isolation. Any future live Keychain acceptance must be run explicitly in a
+disposable macOS test account or virtual machine, not in a maintainer's normal
+login session.
+
+Public Manus Webhook creation/delivery and the Cloudflare quick tunnel are
+disabled in the current Release configuration. Credential-backed cleanup and
+reconciliation remain available so an earlier callback is not abandoned. Dev
+Island implements Manus' documented v2 flow at `https://api.manus.ai`: an
+authenticated request retrieves the RSA verification key, registration sends
+the public callback URL, and `GET /v2/webhook.list` can return up to 1,024
+account-owned Webhook IDs, exact callback URLs, active/inactive states, and
+creation timestamps. A full listed URL is held only in memory while recovery
+matches it. Before registration crosses the network, one versioned local
+recovery envelope stores the callback URL's SHA-256 digest, a random attempt
+token and start time together with the cleanup-ID ledger; Webhook payloads and
+task content are not stored there. Any IDs discovered during recovery are
+bound into that same envelope and read back before deletion is attempted.
+
+Recovery considers only active entries whose exact URL digest and creation
+time match one uniquely attributable attempt within 300 seconds before or
+after its recorded start. Unrelated entries are never deleted. Multiple local
+attempts with the same digest, malformed or oversized provider inventory, a
+failed/empty list, inactive entries, timestamps outside the window, or corrupt
+or legacy token-only local state remain unresolved and retain the credential.
+Once exact IDs have been durably bound, later retries use those IDs without
+listing the account again. Local state clears only after a 2xx JSON response
+with `ok: true`, or Manus' exact authenticated 404 `not_found` response, confirms
+the desired delete postcondition. A credential-releasing stop succeeds only
+when the ID ledger, attempt/token records, and all registration, listing, and
+deletion ownership are empty and uncorrupted.
+
+The RSA key is cached in memory for at most one hour. This flow must not be
+enabled until a real account proves create, signed delivery, lifecycle events,
+list/delete recovery, and read-after-create/read-after-delete behavior and the
+result is reviewed. If a future reviewed build enables
 that path, Dev Island treats a tunnel as active only after Manus also confirms
 the Webhook registration and a private, bounded loopback challenge proves that
 this Dev Island process owns the local listener. The challenge response is
@@ -241,6 +272,18 @@ be disabled in Dev Island Settings.
 The update feed and archive are verified before installation. Local and CI
 builds without the complete HTTPS and Ed25519 trust configuration do not start
 the updater.
+
+The source repository also includes a maintainer-only disposable old-to-new
+update gate. It uses synthetic Apps, public fixture keys and a loopback-only
+server inside one random current-user `0700` macOS temporary directory. The
+pinned Sparkle source build and updater run receive separate private HOME
+directories, and the runtime receives `__CFPREFERENCES_AVOID_DAEMON=1`; a
+hash-bound source overlay routes helper cache and launch-job state there. The
+gate never reads or writes the maintainer's real preferences/cache, invokes
+`defaults write/delete`, touches an installed Dev Island App, or receives a
+production update key. Its temporary root is removed on exit; failure cleanup
+may signal only helper processes whose complete executable paths remain inside
+that exact random root.
 
 ## 4. Notifications, logs, and diagnostics
 
@@ -295,6 +338,50 @@ variables, credentials, and Dev Island user data are excluded. The summary is
 shown in the GitHub job; on a failed run only, its two-file artifact is retained
 by GitHub for 14 days. Unsafe, linked, oversized, or concurrently changed input
 is omitted rather than copied.
+
+The repository also contains a separate maintainer-only Codex live-approval
+evidence wrapper. It runs only when a maintainer explicitly selects one local
+Codex session, the Dev Island history database, a proof file, the tested App
+and CLI, and three manually reviewed screenshots. The wrapper reads the raw
+session and database through bounded no-follow descriptors but never copies
+either source. It retains only a fixed low-cardinality state transcript, one
+sanitized completed-task record, artifact and executable hashes, exact proof,
+the three screenshots, and an explicit human confirmation of the visual
+`waiting,allow_once,running,completed` sequence in a private `0700` T7 Shield
+package. Symlinks, multiple hard links, unsafe permissions, changed inputs,
+unexpected session events, version drift, invalid App signing, altered hashes,
+or a missing Codex exit-zero/final marker cannot create `ACCEPTED`. A redacted
+receipt is checked into the repository so CI and tagged Release gates can
+require the recorded round trip without receiving raw Codex messages,
+reasoning, unrelated database rows, local paths, or credentials. This is a
+maintainer QA flow and does not inspect a user's installed App.
+
+The repository also has a separate maintainer-only Codex live-decision
+classifier and evidence wrapper for denial and timeout QA. It locally reads one
+explicitly selected Codex session, the expected-absent proof path, one matching
+Dev Island history row, the tested App/CLI, and two manually reviewed images;
+there is no network destination. Raw JSONL, SQLite rows, prompts, reasoning,
+commands, and local paths are never copied. A private T7 Shield package retains
+only fixed checkpoints, a sanitized task row, hashes, two JPEGs, and a
+proof-absence attestation. `explicit_island_deny`,
+`neutral_timeout_fallback`, `sandbox_rejection`, and `interrupted_attempt` are
+separate outcomes; only the first, completed before the 90-second fallback and
+with the proof still absent, may create `ACCEPTED`. The parser never evaluates
+recorded JavaScript. A real unlocked island denial has now passed the complete
+package gate, so the repository contains only its redacted receipt; the raw
+session, database, command, proof path, and local paths remain outside the
+repository. This maintainer QA flow does not inspect a user's installed App or
+change macOS accessibility or appearance settings, and the receipt does not
+turn one dirty-worktree QA session into a clean commercial Release claim.
+
+The Security gate additionally scans bounded UTF-8 App, QA, CI, Release, and
+workflow source locally for commands or APIs that could mutate the
+maintainer's macOS login-session preferences, terminate unrelated processes,
+change launch-service state, or invoke AppleScript. The scan does not execute
+source, access the network, or inspect installed-App or user content. It is a
+repository safeguard, not a runtime sandbox for external automation or manual
+actions; system-toggle QA therefore remains restricted to an isolated macOS
+test account or VM.
 
 Maintainer CI and tagged Release gates also statically parse the checked-in
 workflow YAML and Bash `run` steps. A bounded structural pass rejects
@@ -455,7 +542,7 @@ data flow before the corresponding feature ships. Questions can be sent to
 > 这是经过工程实现核对的草案，仍需产品负责人及法律专业人士审阅；目前尚未作为
 > 新版线上政策发布，也不构成法律意见。
 
-最后更新：2026 年 8 月 29 日
+最后更新：2026 年 8 月 31 日
 
 Dev Island 是一款本地优先的 macOS 应用。维护者没有为 App 运行账号系统、广告
 网络、产品分析服务或由开发者控制的崩溃上报服务。但当用户主动启用某些功能时，
@@ -564,10 +651,31 @@ Key、任务或 Webhook 标识以及停止任务指令，并接收任务标识�
 API Key 作为 macOS 钥匙串项目保存，service 为 `app.devisland.Island`，account 为
 `manus_api_key`，且仅在本机解锁后可访问。断开 Manus 会删除该项目。
 
-当前 Release 配置没有启用公网 Manus Webhook 与 Cloudflare Quick Tunnel。Dev Island
-已按 Manus 当前 v2 文档实现 `https://api.manus.ai` 的鉴权公钥获取、回调注册与签名
-事件处理；公钥最多只在内存缓存一小时。但真实账号仍未完成注册测试投递、生命周期
-事件和删除的端到端验收，因此正式版本继续失败关闭，未完成复核前不得启用。Quick
+Dev Island 的普通单元测试与 PR 测试不会读取、新增、更新或删除当前登录用户的钥匙串项目；
+它们注入进程内存存储，只检查 shipping adapter 固定的 device-only、非同步 query 策略。随机
+Keychain service 名称不视为隔离。未来任何真实 Keychain 验收都必须在显式、可处置的 macOS
+测试账户或虚拟机中运行，不得使用维护者的日常登录会话。
+
+当前 Release 配置没有启用公网 Manus Webhook 创建/投递与 Cloudflare Quick Tunnel；但会保留
+credential-backed 清理与 reconciliation，避免遗弃旧回调。Dev Island 已按 Manus 当前 v2 文档
+实现 `https://api.manus.ai` 的鉴权公钥获取、回调注册与签名事件处理，并可通过
+`GET /v2/webhook.list` 接收账号下最多 1,024 项 Webhook ID、精确回调 URL、active/inactive 状态与
+创建时间。完整 list URL 只在恢复匹配时存在于内存。每次注册跨越网络前，单一 versioned 本机
+recovery envelope 会把回调 URL 的 SHA-256 digest、随机 attempt token、开始时间与 cleanup-ID
+ledger 一起保存；不保存 Webhook payload 或任务内容。恢复发现的 ID 也必须先原子绑定到同一
+envelope 并完成 readback，之后才能删除。
+
+恢复只考虑 active、精确 URL digest 相同、且创建时间位于 attempt 开始时间前后各 300 秒内的
+条目，并且该 digest 必须只属于一个本机 attempt；无关条目永不删除。同 digest 对应多个本机
+attempt、provider list 非法/超限、list 失败或为空、inactive、超出时间窗、损坏 envelope 或只有旧版
+token 的状态都会失败关闭并保留凭据。精确 ID 一旦持久绑定，后续重试不再重新 list 账号。只有
+2xx 且 JSON `ok: true`，或来自同一官方 origin 的精确 404 `not_found`，才能确认删除后置条件并
+清除本机状态。credential-releasing stop 只有在 ID ledger、attempt/token 记录以及全部 registration、
+listing、deletion ownership 均为空且未损坏时才能成功。
+
+公钥最多只在内存缓存一小时。但真实账号仍未完成 create、签名投递、生命周期、list/delete 与
+read-after-create/read-after-delete 一致性的端到端验收，因此正式版本继续失败关闭，未完成复核前
+不得启用。Quick
 Tunnel 启动输出仅在内存中有界读取（最多 1 MiB），不记录、不持久化；验证回调 Origin
 后继续只排空并丢弃。远端注册前还必须用随机私有 challenge 证明本进程拥有本机监听器；
 响应最多 256 字节，禁止重定向、代理与离开本机。静默、超量输出、取消、端口冲突或拒绝
@@ -593,6 +701,14 @@ revision，以及构建前后的 Swift/Xcode/SDK 指纹；只记录哈希与 rev
 压缩包。Dev Island 关闭了 Sparkle 系统画像；GitHub 仍可能依据其隐私政策接收 IP、
 时间与 User-Agent 等普通网络元数据。用户可在设置中关闭自动检查。
 
+源码仓库还包含一条仅供维护者运行的一次性旧版→新版更新门禁。合成 App、公开 fixture key
+和仅回环 server 全部位于 macOS 当前用户的随机 `0700` 临时目录；pinned Sparkle 源码构建与
+更新运行分别收到两个私有 HOME，运行时设置 `__CFPREFERENCES_AVOID_DAEMON=1`，固定哈希
+源码覆盖层把 helper cache 与 launch-job 状态路由到该临时根。门禁不会读取或写入维护者真实
+偏好/cache，不调用 `defaults write/delete`，不触碰已安装 Dev Island，也不接收生产更新私钥。
+退出时删除完整临时根；失败清理只允许向可执行文件完整路径仍位于本次随机根下的 helper 进程
+发送信号。
+
 ## 4. 通知、日志与诊断
 
 获得通知权限后，macOS 通知中心会接收显示通知所需的 Agent 名称、任务标题、阶段或
@@ -615,6 +731,34 @@ Manus 连接状态、本地 Agent 监听器健康状态和聚合数量放到剪�
 正文、环境变量、凭据和 Dev Island 用户数据均不进入诊断。摘要会显示在 GitHub Job 中；
 只有运行失败时，两个脱敏文件组成的 artifact 才由 GitHub 保留 14 天。链接、不安全、
 超限或读取中变化的输入会被省略，而不会被复制。
+
+仓库还包含一套独立的、仅由维护者主动运行的 Codex 真实审批证据包装器。维护者必须显式
+选择一个本机 Codex session、Dev Island 历史数据库、proof 文件、被测 App 与 CLI，以及三张
+已经人工复核的状态截图。包装器通过有界 no-follow descriptor 读取原始 session 与数据库，
+但绝不复制两者；私有 T7 Shield `0700` 证据包只保留固定低基数状态 transcript、一条脱敏的
+Completed 任务记录、产物与可执行文件哈希、精确 proof、三张截图，以及对
+`waiting,allow_once,running,completed` 视觉顺序的显式人工确认。符号链接、多硬链接、不安全权限、
+读取中变化、意外 session 事件、版本漂移、无效 App 签名、哈希变化，或缺少 Codex exit-zero / 最终
+marker 时都不能生成 `ACCEPTED`。仓库只签入脱敏 receipt，供 CI 与 tag Release 强制验证已记录的
+闭环；原始 Codex 消息、reasoning、无关数据库行、本机路径或凭据不会进入仓库。该流程仅用于
+维护者 QA，不检查用户已经安装的 App。
+
+仓库另有一套仅供维护者使用的 Codex 拒绝/超时真实决策分类与证据包装器。它只在本机读取维护者
+明确选择的一条 Codex session、预期始终不存在的 proof 路径、一条匹配的 Dev Island 历史记录、
+被测 App/CLI 与两张人工复核图片，不访问网络。原始 JSONL、SQLite 行、prompt、reasoning、命令
+和本机路径均不复制；私有 T7 Shield 包只保留固定 checkpoint、脱敏任务行、哈希、两张 JPEG 与
+proof 不存在证明。`explicit_island_deny`、`neutral_timeout_fallback`、`sandbox_rejection` 与
+`interrupted_attempt` 四类结果彼此独立；只有在 90 秒原生回退前完成、proof 仍不存在的第一类
+可以生成 `ACCEPTED`。解析器绝不执行 session 中记录的 JavaScript。现已有一条解锁状态真实岛内
+拒绝通过完整 package gate，仓库仅签入其脱敏 receipt；原始 session、数据库、命令、proof 路径和
+本机路径仍不进入仓库。该维护者 QA 流程不检查用户安装的 App，也不改变 macOS 辅助功能或外观设置；
+receipt 也不会把单次 dirty-worktree QA 会话变成 clean 商业 Release 声明。
+
+Security gate 还会在本机对有界 UTF-8 的 App、QA、CI、Release 与 workflow 源码进行静态扫描，
+拒绝可能修改维护者 macOS 登录会话偏好、终止无关进程、改变 launch-service 状态或调用
+AppleScript 的命令/API。扫描不执行源码、不访问网络，也不检查已安装 App 或用户内容。它是仓库
+防护而不是外部自动化或人工操作的运行时沙箱，因此系统开关 QA 仍只允许在隔离 macOS 测试账户
+或 VM 中进行。
 
 已签名 App 还会在 `Contents/Resources/Legal` 中带上本说明与当前使用条款的精确只读副本。
 在设置中打开 **隐私说明** 或 **使用条款** 时，只会读取用户选择的双语 App 资源；不会创建

@@ -24,6 +24,9 @@ OPENCODE_LOGO_LICENSE="scripts/licenses/opencode-MIT-LICENSE"
 HOMEBREW_VERIFIER="scripts/ci/verify-homebrew-distribution.sh"
 ASSET_VERIFIER="scripts/release/verify-release-assets.sh"
 ASSET_VERIFIER_FIXTURES="scripts/ci/verify-release-asset-verifier.sh"
+SPARKLE_SIGNATURE_VERIFIER="scripts/release/verify-sparkle-ed25519-signatures.swift"
+SPARKLE_OLD_TO_NEW_GATE="scripts/ci/verify-sparkle-old-to-new-update.sh"
+SPARKLE_LIVE_GATE_HELPER="scripts/qa/sparkle-live-gate-helper.rb"
 PUBLISHED_RELEASE_VERIFIER="scripts/release/verify-published-release.sh"
 PUBLISHED_RELEASE_METADATA_VALIDATOR="scripts/release/validate-published-release-metadata.rb"
 BUNDLE_DEPENDENCY_VERIFIER="scripts/release/verify-app-bundle-dependencies.rb"
@@ -142,6 +145,12 @@ package_boundary_line="$(rg -n 'git ls-files --error-unmatch Package\.resolved' 
   || fail "Checkout isolation, release gates, and credential preflight ordering is invalid"
 credential_block="$(sed -n "${credential_line},$((keychain_line - 1))p" "$RELEASE")"
 release_gate_block="$(sed -n "${gates_line},$((credential_line - 1))p" "$RELEASE")"
+test -x "$SPARKLE_OLD_TO_NEW_GATE" && test -x "$SPARKLE_LIVE_GATE_HELPER" \
+  || fail "Sparkle old-to-new gate or bounded helper is unavailable"
+rg -Fq './scripts/ci/verify-sparkle-old-to-new-update.sh' "$CI_WORKFLOW" \
+  || fail "PR CI must execute the disposable Sparkle old-to-new gate"
+rg -Fq './scripts/ci/verify-sparkle-old-to-new-update.sh' <<<"$release_gate_block" \
+  || fail "Tagged releases must execute the disposable Sparkle old-to-new gate before credentials"
 rg -Fq './scripts/ci/run-authoritative-tests.sh' "$RELEASE" \
   || fail "Tagged releases must run the isolated authoritative test suite"
 rg -q 'verify-security-invariants\.sh' "$RELEASE" \
@@ -186,6 +195,10 @@ for credential in \
 done
 test -x "$CREDENTIAL_VALIDATOR" \
   || fail "Executable release-credential validator is missing"
+test -f "$SPARKLE_SIGNATURE_VERIFIER" && test ! -L "$SPARKLE_SIGNATURE_VERIFIER" \
+  || fail "CryptoKit Sparkle signature verifier is missing or unsafe"
+rg -Fq 'Curve25519.Signing.PublicKey' "$SPARKLE_SIGNATURE_VERIFIER" \
+  || fail "Sparkle verifier must perform real Ed25519 public-key verification"
 rg -Fq './scripts/ci/validate-release-credentials.sh' <<<"$credential_block" \
   || fail "Release credential preflight must call the repository-owned validator"
 test -x "$SPARKLE_SECRET_RUNNER" \
@@ -201,6 +214,7 @@ for invariant in \
   'APPLE_TEAM_ID must be a 10-character Apple Team ID' \
   'KEYCHAIN_PASSWORD must contain at least 20 characters' \
   'SPARKLE_PUBLIC_ED_KEY must decode to exactly 32 bytes' \
+  'SPARKLE_PUBLIC_ED_KEY and SPARKLE_PRIVATE_ED_KEY must form one Ed25519 key pair' \
   'SIGNING_CERTIFICATE_P12_BASE64 must be valid base64'; do
   rg -Fq "$invariant" "$CREDENTIAL_VALIDATOR" \
     || fail "Release credential validator invariant missing: $invariant"
@@ -397,7 +411,12 @@ dmg_gatekeeper_line="$(rg -nF 'spctl -a -vvv -t open --context context:primary-s
    && "$dmg_stapler_line" -lt "$dmg_gatekeeper_line" ]] \
   || fail "Notarized DMG must pass a hard Gatekeeper assessment before publication"
 
-DUMMY_PUBLIC_KEY="$(printf '0123456789abcdef0123456789abcdef' | base64 | tr -d '\n')"
+FIXTURE_PRIVATE_KEY="$(
+  printf '%s' '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60' \
+    | xxd -r -p | base64 | tr -d '\n'
+)"
+FIXTURE_PUBLIC_KEY='11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo='
+MISMATCHED_PUBLIC_KEY='PUAXw+hDiVqStwqnTRt+vJyYLM8uxJaMwM1V8Sr0Zgw='
 DUMMY_P12="$(printf 'structurally-base64-test-certificate' | base64 | tr -d '\n' | fold -w 8)"
 run_credential_validator() {
   env \
@@ -407,13 +426,13 @@ run_credential_validator() {
     P12_BASE64="${2:-$DUMMY_P12}" \
     P12_PASSWORD='dummy-p12-password' \
     KEYCHAIN_PASSWORD='dummy-keychain-password' \
-    SPARKLE_PUBLIC_ED_KEY="${3:-$DUMMY_PUBLIC_KEY}" \
-    SPARKLE_PRIVATE_ED_KEY="${4-dummy-private-key}" \
+    SPARKLE_PUBLIC_ED_KEY="${3:-$FIXTURE_PUBLIC_KEY}" \
+    SPARKLE_PRIVATE_ED_KEY="${4-$FIXTURE_PRIVATE_KEY}" \
     "$CREDENTIAL_VALIDATOR"
 }
 run_credential_validator >/dev/null \
-  || fail "Structurally valid release credentials must pass preflight"
-if run_credential_validator 'ABCDEF1234' "$DUMMY_P12" "$DUMMY_PUBLIC_KEY" '' >/dev/null 2>&1; then
+  || fail "Cryptographically paired release credentials must pass preflight"
+if run_credential_validator 'ABCDEF1234' "$DUMMY_P12" "$FIXTURE_PUBLIC_KEY" '' >/dev/null 2>&1; then
   fail "Missing release credentials must fail preflight"
 fi
 if run_credential_validator 'bad-team' >/dev/null 2>&1; then
@@ -424,6 +443,11 @@ if run_credential_validator 'ABCDEF1234' "$DUMMY_P12" 'dG9vLXNob3J0' >/dev/null 
 fi
 if run_credential_validator 'ABCDEF1234' 'not-base64%%%' >/dev/null 2>&1; then
   fail "Malformed signing-certificate base64 must fail release credential preflight"
+fi
+if run_credential_validator \
+  'ABCDEF1234' "$DUMMY_P12" "$MISMATCHED_PUBLIC_KEY" "$FIXTURE_PRIVATE_KEY" \
+  >/dev/null 2>&1; then
+  fail "Mismatched Sparkle public/private keys must fail release credential preflight"
 fi
 
 test -x "$HOMEBREW_VERIFIER" \

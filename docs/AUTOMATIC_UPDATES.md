@@ -72,13 +72,16 @@ procedure; never weaken or remove verification to recover quickly.
 
 For every `v*` tag, `.github/workflows/release.yml`:
 
-1. serializes all release tags and reruns dependencies, security/privacy
-   invariants, the full test suite, and diff checks before importing signing
-   credentials;
+1. serializes all release tags and reruns dependencies, the disposable
+   old-to-new updater gate, security/privacy invariants, the full test suite,
+   and diff checks before importing signing credentials;
 2. fails before certificate import unless every Apple, Developer ID, temporary
-   Keychain, and Sparkle credential is present; it also validates the Team ID,
+   Keychain, and Sparkle credential is present; it validates the Team ID,
    minimum temporary-Keychain password length, certificate base64, and exact
-   32-byte Sparkle public-key shape without printing secret values;
+   32-byte Sparkle public-key shape, then has the private key sign the fixed
+   `VERSION` payload through Sparkle's stdin-only channel and requires that
+   signature to verify under the configured public key without printing either
+   key;
 3. requires the public key before building;
 4. embeds the strict update settings before Developer ID signing;
 5. signs Sparkle's nested XPC services and helpers leaf-to-root, without using
@@ -93,7 +96,10 @@ For every `v*` tag, `.github/workflows/release.yml`:
    starts the pinned Sparkle CLI with an `env -i` allowlist that excludes
    `HOME`, GitHub tokens and runner metadata, and passes the private key only
    through `--ed-key-file -` stdin;
-9. verifies both the archive `sparkle:edSignature` and the signed-feed block;
+9. parses both the archive `sparkle:edSignature` and the signed-feed block,
+   then extracts `SUPublicEDKey` from the App inside the exact versioned ZIP and
+   uses CryptoKit Ed25519 verification for the complete ZIP bytes and the exact
+   feed prefix declared by Sparkle;
 10. emits a release-pinned `dev-island.rb` Cask candidate from the same ZIP
     SHA-256 without publishing the external tap automatically;
 11. generates deterministic SPDX 2.3 from the tagged Git revision, all 27
@@ -107,8 +113,9 @@ For every `v*` tag, `.github/workflows/release.yml`:
 13. stages exactly the eight public assets and runs the repository-owned
     offline verifier before upload; it rejects missing, duplicate, extra,
     symbolic-link or mismatched aliases, an incomplete/tampered manifest,
-    inconsistent Cask/Appcast/SBOM metadata, and an SBOM source revision that
-    differs from the tagged commit;
+    inconsistent Cask/Appcast/SBOM metadata, an SBOM source revision that
+    differs from the tagged commit, a malformed/mismatched embedded public key,
+    unrelated 64-byte signatures, or any signed archive/feed byte drift;
 14. asks GitHub to record Sigstore-backed build provenance for every published
     artifact and the integrity manifest;
 15. creates a separate GitHub Sigstore SBOM attestation binding the SPDX
@@ -144,13 +151,57 @@ directly:
   --source-revision TAG_COMMIT_SHA
 ```
 
-The offline check validates signature fields and signed-feed byte boundaries,
-but it does not replace Sparkle's cryptographic Ed25519 verification or the
-old-to-new updater test. `SHA256SUMS` is a convenient digest inventory, not an
-independent signature; repository/workflow-bound GitHub attestations provide
-the independent provenance layer. The SBOM format, inventory scope,
-conservative license semantics, and limitations are documented in
+The offline check now performs independent CryptoKit Ed25519 verification of
+both the archive and signed feed using the public key embedded in the shipped
+App. It still does not replace the production Developer ID/notarized
+old-to-new installation test, Gatekeeper validation, or GitHub provenance
+verification.
+`SHA256SUMS` is a convenient digest inventory, not an independent signature;
+repository/workflow-bound GitHub attestations provide the independent
+provenance layer. The SBOM format, inventory scope, conservative license
+semantics, and limitations are documented in
 `docs/SOFTWARE_BILL_OF_MATERIALS.md`.
+
+## Disposable old-to-new updater gate
+
+After dependency resolution, both PR CI and the tagged Release preflight run:
+
+```sh
+./scripts/ci/verify-sparkle-old-to-new-update.sh
+```
+
+The gate copies the exactly pinned Sparkle 2.9.6 checkout into a random private
+macOS per-user temporary root, verifies every edited source file by SHA-256,
+removes unrelated remote-package references, and builds Sparkle's real framework
+and `sparkle-cli` offline. The source overlay routes Sparkle's cache root and
+launchd-managed helper environment into that disposable root while preserving
+Sparkle's native ad-hoc helper signatures and `application-identifier`. It creates disposable
+version-1 and version-2 `Dev Island.app` fixtures, requires a signed appcast and
+pre-extraction verification, serves feed and ZIP only from a random
+`127.0.0.1` port, then proves a real download, Ed25519 verification,
+extraction, Apple code-signature validation, and in-place bundle replacement.
+Four independent cases must fail without changing the old bundle: a feed
+signed by another key, an archive signed by another key, an old App embedding
+another public key, and an App whose signed executable was modified before the
+ZIP itself was validly signed.
+
+The fixture uses public RFC 8032 test keys and ad-hoc App signatures. Each case
+has a random Bundle ID, a private runtime home, a separate private build home,
+`__CFPREFERENCES_AVOID_DAEMON=1`, a 90-second process-group deadline, and a
+bounded loopback server. No process receives the maintainer's real HOME or
+cache/preferences path, and the gate never invokes `defaults write/delete`.
+Failure cleanup can signal only `Autoupdate` or `Updater` processes whose full
+command path remains inside the current random temporary root. The complete
+root is removed on exit and acceptance requires private writable state with no
+unsafe link or group/other-write permission. No production key, real Dev Island
+installation, Agent state, GitHub Release, or remote endpoint is read or changed.
+
+Sparkle intentionally permits Apple code-signing identity rotation when the
+old Ed25519 key authenticates the archive. The disposable gate therefore tests
+code-signature validity/corruption, not signer equality. The Release workflow
+still binds every delivered App to its configured Developer ID Team ID, and a
+real installed Developer ID/notarized old Release → new Release update remains
+the final production acceptance gate.
 
 ## Verification gates
 
@@ -167,14 +218,19 @@ conservative license semantics, and limitations are documented in
   manifest, complete asset contract, and provenance requirements. Attack
   fixtures cover missing/duplicate/extra assets, symbolic links, manifest tampering,
   byte-alias drift, Cask SHA/version/URL drift, Appcast URL/length/signature
-  failures, malformed/wrong-version SBOMs, missing or hash-drifted OpenCode
-  asset components, and tagged-source mismatch.
+  failures, unrelated archive/feed signatures, signed-prefix tampering,
+  embedded-public-key mismatch, malformed/wrong-version SBOMs, missing or
+  hash-drifted OpenCode asset components, and tagged-source mismatch.
 - `scripts/ci/verify-sparkle-secret-isolation.sh` runs a real fake-generator
   subprocess with all release credential variables populated. It proves the
   exact private-key bytes arrive only on stdin, neither the generator nor its
   parent environment exposes a credential, argv/log output contains no key,
   the immutable download prefix is preserved, and missing keys, unsafe tags,
   or a symbolic-link generator fail closed.
+- `scripts/ci/verify-sparkle-old-to-new-update.sh` exercises Sparkle's real
+  updater, loopback download, signed feed/archive, extraction, code-signature
+  validation and bundle replacement, plus four fail-closed negative chains,
+  without production credentials or a remote destination.
 - PR CI verifies the complete App dependency closure: every Mach-O (including
   Sparkle helpers and XPC services) must be exactly Universal, every non-system
   dependency must resolve inside the bundle, developer-machine paths and

@@ -91,6 +91,17 @@ action and requires explicit owner approval.
       PR CI runs it after Production build, and tag Release repeats it after App
       notarization and before DMG packaging. Locked samples never support a
       performance or smoothness claim.
+- [x] Ordinary launches arbitrate same-Bundle copies before any window,
+      backend or LaunchHealth write. Bundle ID only bounds candidates; valid
+      dynamic code identity must also match by exact identifier plus an
+      Apple-anchored same Team, or by the same CDHash only when signing flags
+      explicitly mark both builds ad-hoc. At most 32 candidates
+      are inspected, and the lowest older trusted PID is revalidated before
+      AppKit activation. Missing/drifting identity, overload, vanished winner
+      or activation failure stays fail-open. The decision reads no path,
+      command, environment, window, preference, credential or IPC payload,
+      persists/transmits/logs nothing, and is bypassed only by the exact inert
+      hermetic Production-smoke opt-in.
 - [x] Settings reads bounded Agent configuration and performs explicit
       Enable/Update/Disable writes through an on-device background worker,
       keeping JSON/TOML parsing and file/directory synchronization off the main
@@ -103,7 +114,11 @@ action and requires explicit owner approval.
       before a complete render or for an empty/over-complex document, while
       Continue in Claude stays available. Render state is memory-only and adds
       no network or persistence destination.
-- [ ] Production Sparkle key custody and signed old-to-new update evidence.
+- [x] Disposable pinned-Sparkle old-to-new transport/install gate with signed
+      feed/archive and four fail-closed corruption/key cases; it uses only
+      public fixture keys and leaves no random preference/cache residue.
+- [ ] Production Sparkle key custody and Developer ID/notarized old-to-new
+      update evidence.
 - [x] Hermetic, production-key-incompatible idle and 20-session performance
       fixture plus descriptor-owned append-never CPU/RSS sampler; the three
       outputs use atomic noclobber creation, `0600` single-link files and
@@ -138,6 +153,34 @@ action and requires explicit owner approval.
       license-document threats and limitations; no production trust anchor.
 - [x] Disconnected, bounded device-only Keychain primitive plus provider-neutral
       activation, storage, refund/revoke, device and recovery threat model.
+- [x] Pre-provider commercial-activation sandbox uses only synthetic keys/codes,
+      random numeric loopback, a real Hummingbird HTTP exchange, the production
+      provider-neutral verifier/activation core, and process-memory storage.
+      Signed success and unsigned fail-closed paths are covered; the shipping
+      App remains statically free of its server/transport/ready route. This is
+      client-wiring evidence, not provider, TLS, checkout, production-key,
+      policy, real-Keychain, refund/revoke, device or recovery acceptance.
+- [x] Real-loopback status/abuse fixtures collapse 400/401/404, 429 and 5xx to
+      the three provider-neutral rejection cases; redirect, unknown status and
+      oversized responses fail closed, never reach the redirect target and
+      never store provider bodies.
+- [x] Disabled HTTPS transport foundation rejects unsafe endpoint shapes,
+      redirects, wrong final URL/media type/status and over-32-KiB declared or
+      streamed bodies; its ephemeral credential-free request is bounded and
+      cancellation-aware. It has no public initializer/factory, no shipping
+      source constructs it, and cancellation evidence observes the underlying
+      URLSession request stop. The selected provider's source-fixed factory,
+      real DNS/TLS/service and one-time-code/abuse behavior remain a
+      provider-specific launch gate.
+- [x] Real-loopback operation-ownership fixtures deliberately ignore caller
+      cancellation until a bounded signed response returns. Explicit Cancel
+      still stores nothing; when old and new signed responses both complete,
+      only the latest activation can commit. The detached mode remains test-only
+      and does not approve a provider cancellation or retry protocol.
+- [x] Pre-cancelled activation is rejected before operation ownership or
+      transport creation. Controlled and real-loopback fixtures prove it sends
+      no additional request, cannot supersede the existing owner, and cannot
+      consume a one-time code through a caller that was already abandoned.
 - [x] Provider-neutral commercial policy record, strict validator, and negative
       fixtures; `--require-approved` fails until owner/legal review evidence and
       every required policy field are present.
@@ -203,7 +246,8 @@ action and requires explicit owner approval.
       PR workflow is not an enforced merge or commercial-release boundary.
 - [ ] Provider-specific checkout, issuer Webhook, activation, storage,
       revocation, refund, device-limit, and recovery threat model.
-- [ ] Sandbox checkout, refund/revoke, device-limit, and recovery evidence.
+- [ ] Provider sandbox activation plus checkout, refund/revoke, device-limit,
+      recovery, expiry/replay/enumeration/rate-limit and outage evidence.
 - [ ] A new real tagged Release for which
       `scripts/release/verify-published-release.sh` verifies the downloaded
       asset contract, GitHub build provenance, and all SBOM attestations before

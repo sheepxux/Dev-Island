@@ -63,6 +63,127 @@ final class LocalHookServerHealthTests: XCTestCase {
         XCTAssertEqual(stoppedState, .unavailable)
     }
 
+    func testStopJoinsServeLoopSoPortCanBeReboundImmediately() async throws {
+        let port = try availableLoopbackPort()
+        let firstServer = makeLocalHookServer(port: port)
+        let replacementServer = makeLocalHookServer(
+            port: port,
+            retryPolicy: LocalHookServerRetryPolicy(
+                maxConsecutiveFailures: 1,
+                delayAfterFailure: { _ in .zero }
+            )
+        )
+
+        await firstServer.start(agents: [.codex], onEvent: { _, _ in })
+        do {
+            try await waitUntil(timeout: 2) {
+                await firstServer.statusSnapshot() == .listening
+            }
+        } catch {
+            await firstServer.stop()
+            throw error
+        }
+
+        await firstServer.stop()
+        await replacementServer.start(agents: [.codex], onEvent: { _, _ in })
+
+        do {
+            try await waitUntil(timeout: 2) {
+                let status = await replacementServer.statusSnapshot()
+                return status == .listening || status == .unavailable
+            }
+            let replacementStatus = await replacementServer.statusSnapshot()
+            XCTAssertEqual(replacementStatus, .listening)
+        } catch {
+            await replacementServer.stop()
+            throw error
+        }
+
+        await replacementServer.stop()
+    }
+
+    func testStopJoinsCurrentAndSupersededServeAndReadinessOperations() async throws {
+        let port = try availableLoopbackPort()
+        let lifecycleProbe = HookLifecycleBlocker()
+        let stopProbe = HookStopProbe()
+        let server = LocalHookServer(
+            port: port,
+            retryPolicy: .production,
+            authorization: localHookTestAuthorization,
+            serveOperation: {
+                await lifecycleProbe.blockServe()
+            },
+            readinessOperation: {
+                await lifecycleProbe.blockReadiness()
+            }
+        )
+
+        await server.start(agents: [.codex], onEvent: { _, _ in })
+        try await waitUntil(timeout: 2) {
+            let snapshot = await lifecycleProbe.snapshot()
+            return snapshot.serveEntries == 1 && snapshot.readinessEntries == 1
+        }
+
+        await server.restart()
+        try await waitUntil(timeout: 2) {
+            let snapshot = await lifecycleProbe.snapshot()
+            return snapshot.serveEntries == 2
+                && snapshot.readinessEntries == 2
+                && snapshot.serveCancellations == 1
+                && snapshot.readinessCancellations == 1
+        }
+
+        let stopTask = Task {
+            await server.stop()
+            await stopProbe.recordReturn()
+        }
+        try await waitUntil(timeout: 2) {
+            let snapshot = await lifecycleProbe.snapshot()
+            return snapshot.serveCancellations == 2
+                && snapshot.readinessCancellations == 2
+        }
+
+        let returnedBeforeOperationsExited = await stopProbe.didReturn
+        let stoppedBeforeOperationsExited = await server.statusSnapshot()
+        XCTAssertFalse(returnedBeforeOperationsExited)
+        XCTAssertEqual(stoppedBeforeOperationsExited, .stopped)
+
+        await lifecycleProbe.releaseOneServe()
+        await lifecycleProbe.releaseOneReadiness()
+        try await waitUntil(timeout: 2) {
+            let snapshot = await lifecycleProbe.snapshot()
+            return snapshot.serveExits == 1 && snapshot.readinessExits == 1
+        }
+        let returnedWithSuccessorsStillBlocked = await stopProbe.didReturn
+        XCTAssertFalse(returnedWithSuccessorsStillBlocked)
+
+        await lifecycleProbe.releaseOneServe()
+        await lifecycleProbe.releaseOneReadiness()
+        await stopTask.value
+
+        let finalLifecycle = await lifecycleProbe.snapshot()
+        let finalStatus = await server.statusSnapshot()
+        let didReturn = await stopProbe.didReturn
+        XCTAssertEqual(finalLifecycle.serveExits, 2)
+        XCTAssertEqual(finalLifecycle.readinessExits, 2)
+        XCTAssertEqual(finalStatus, .stopped)
+        XCTAssertTrue(didReturn)
+
+        // A real listener can take the same port immediately after the
+        // strict join, proving no superseded serve operation outlived stop.
+        let replacementServer = makeLocalHookServer(port: port)
+        await replacementServer.start(agents: [.codex], onEvent: { _, _ in })
+        do {
+            try await waitUntil(timeout: 2) {
+                await replacementServer.statusSnapshot() == .listening
+            }
+        } catch {
+            await replacementServer.stop()
+            throw error
+        }
+        await replacementServer.stop()
+    }
+
     func testExternalReadinessRejectsBrowserOrigin() async throws {
         let port = try availableLoopbackPort()
         let probe = HookStatusProbe()
@@ -344,6 +465,87 @@ private actor HookStatusProbe {
             if case .retrying = status { return true }
             return false
         }
+    }
+}
+
+private actor HookStopProbe {
+    private(set) var didReturn = false
+
+    func recordReturn() {
+        didReturn = true
+    }
+}
+
+private actor HookLifecycleBlocker {
+    struct Snapshot: Sendable {
+        let serveEntries: Int
+        let readinessEntries: Int
+        let serveCancellations: Int
+        let readinessCancellations: Int
+        let serveExits: Int
+        let readinessExits: Int
+    }
+
+    private var serveContinuations: [CheckedContinuation<Void, Never>] = []
+    private var readinessContinuations: [CheckedContinuation<Void, Never>] = []
+    private var serveEntries = 0
+    private var readinessEntries = 0
+    private var serveCancellations = 0
+    private var readinessCancellations = 0
+    private var serveExits = 0
+    private var readinessExits = 0
+
+    func blockServe() async {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                serveContinuations.append(continuation)
+                serveEntries += 1
+            }
+        } onCancel: {
+            Task { await self.recordServeCancellation() }
+        }
+        serveExits += 1
+    }
+
+    func blockReadiness() async {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                readinessContinuations.append(continuation)
+                readinessEntries += 1
+            }
+        } onCancel: {
+            Task { await self.recordReadinessCancellation() }
+        }
+        readinessExits += 1
+    }
+
+    func releaseOneServe() {
+        precondition(!serveContinuations.isEmpty)
+        serveContinuations.removeFirst().resume()
+    }
+
+    func releaseOneReadiness() {
+        precondition(!readinessContinuations.isEmpty)
+        readinessContinuations.removeFirst().resume()
+    }
+
+    func snapshot() -> Snapshot {
+        Snapshot(
+            serveEntries: serveEntries,
+            readinessEntries: readinessEntries,
+            serveCancellations: serveCancellations,
+            readinessCancellations: readinessCancellations,
+            serveExits: serveExits,
+            readinessExits: readinessExits
+        )
+    }
+
+    private func recordServeCancellation() {
+        serveCancellations += 1
+    }
+
+    private func recordReadinessCancellation() {
+        readinessCancellations += 1
     }
 }
 

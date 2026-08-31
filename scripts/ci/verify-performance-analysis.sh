@@ -11,6 +11,7 @@ fail() {
 }
 
 ANALYZER="scripts/qa/summarize-performance-samples.sh"
+ANIMATION_HITCH_ANALYZER="scripts/qa/summarize-animation-hitches.rb"
 SAMPLER="scripts/qa/measure-app-performance.sh"
 SCREEN_PROBE="scripts/qa/display-session-state.swift"
 DOT_MATRIX="IslandAppLib/Views/Components/AnimatedDotMatrixMark.swift"
@@ -50,11 +51,16 @@ HERMETIC_LAUNCH_MODE="IslandCore/Sources/IslandCore/Internal/HermeticAppLaunchMo
 HERMETIC_LAUNCH_MODE_TESTS="IslandCoreTests/Sources/IslandCoreTests/HermeticAppLaunchModeTests.swift"
 TASK_STORE="IslandCore/Sources/IslandCore/TaskStore.swift"
 APP_ENTRY="IslandApp/IslandApp.swift"
+SINGLE_INSTANCE_GATE="IslandAppLib/Support/AppSingleInstanceGate.swift"
+SINGLE_INSTANCE_TESTS="IslandAppLibTests/Sources/IslandAppLibTests/AppSingleInstanceGateTests.swift"
 CI_WORKFLOW=".github/workflows/ci.yml"
 RELEASE_WORKFLOW=".github/workflows/release.yml"
 test -x "$ANALYZER" || fail "Executable performance analyzer is missing"
+test -x "$ANIMATION_HITCH_ANALYZER" || fail "Executable Animation Hitches analyzer is missing"
 test -x "$SAMPLER" || fail "Executable performance sampler is missing"
 test -s "$SCREEN_PROBE" || fail "Display-session state probe is missing"
+test -s "$SINGLE_INSTANCE_GATE" || fail "Single-instance launch gate is missing"
+test -s "$SINGLE_INSTANCE_TESTS" || fail "Single-instance launch regressions are missing"
 test -s "$DOT_MATRIX" || fail "Compositor dot-matrix implementation is missing"
 test -s "$DOT_MATRIX_TESTS" || fail "Dot-matrix rendering regression tests are missing"
 test -s "$ISLAND_WINDOW" || fail "Island window implementation is missing"
@@ -95,7 +101,13 @@ test -s "$APP_ENTRY" || fail "App entry point is missing"
 test -s "$CI_WORKFLOW" || fail "PR CI workflow is missing"
 test -s "$RELEASE_WORKFLOW" || fail "Tag Release workflow is missing"
 
-TEMP_DIR="$(mktemp -d -t dev-island-performance-analysis)"
+if [[ -n "${DEV_ISLAND_QA_TMPDIR:-}" ]]; then
+  [[ "$DEV_ISLAND_QA_TMPDIR" == /* && -d "$DEV_ISLAND_QA_TMPDIR" && ! -L "$DEV_ISLAND_QA_TMPDIR" ]] \
+    || fail "DEV_ISLAND_QA_TMPDIR must be an absolute regular directory"
+  TEMP_DIR="$(mktemp -d "${DEV_ISLAND_QA_TMPDIR%/}/dev-island-performance-analysis.XXXXXX")"
+else
+  TEMP_DIR="$(mktemp -d -t dev-island-performance-analysis)"
+fi
 trap 'rm -rf "$TEMP_DIR"' EXIT
 CSV="$TEMP_DIR/linear.csv"
 
@@ -153,6 +165,25 @@ fi
 [[ "$("$SAMPLER" --self-test-evidence-boundary)" == \
    "Performance evidence and App-input fixtures: PASS (7 cases)" ]] \
   || fail "Performance evidence file boundary fixtures must pass"
+[[ "$("$ANIMATION_HITCH_ANALYZER" --self-test)" == \
+   "Animation hitch summarizer fixtures: PASS (9 cases)" ]] \
+  || fail "Animation Hitches parser and evidence-boundary fixtures must pass"
+ruby -c "$ANIMATION_HITCH_ANALYZER" >/dev/null \
+  || fail "Animation Hitches analyzer is not valid Ruby"
+
+for invariant in \
+  'forbidden DTD or entity declaration' \
+  'File::RDONLY \| File::NOFOLLOW \| File::NONBLOCK' \
+  'File::WRONLY \| File::CREAT \| File::EXCL' \
+  'containment-level' \
+  'render_gpu_only_frame_lifetimes' \
+  'out_of_recording_rows' \
+  'recording_tail' \
+  'wall_unix' \
+  'subsequent_log_timestamp_plus_uptime_delta'; do
+  rg -q "$invariant" "$ANIMATION_HITCH_ANALYZER" \
+    || fail "Animation Hitches evidence invariant missing: $invariant"
+done
 
 mkdir -p "$TEMP_DIR/fake/Dev Island.app/Contents/MacOS"
 printf '#!/bin/sh\nexit 0\n' \
@@ -431,6 +462,47 @@ for invariant in \
 done
 
 for invariant in \
+  'NSWorkspace.shared.runningApplications' \
+  '$0.bundleIdentifier == bundleIdentifier' \
+  'maximumCandidateCount = 32' \
+  'SecCodeCopyGuestWithAttributes' \
+  'SecCodeCheckValidity' \
+  'SecCodeCopyStaticCode' \
+  'SecCodeCopySigningInformation' \
+  'identifier == expectedIdentifier' \
+  'kSecCodeInfoFlags' \
+  'SecCodeSignatureFlags' \
+  'signatureFlags.contains(.adhoc)' \
+  'anchor apple generic and identifier' \
+  'SecRequirementCreateWithString' \
+  'kSecCodeInfoTeamIdentifier' \
+  'kSecCodeInfoUnique' \
+  'identity.isTrustedPeer(of: currentCodeIdentity)' \
+  'revalidatedIdentity == winner.codeIdentity' \
+  '.map(\.processIdentifier)' \
+  '.sorted()' \
+  'return existingApplication.activate(options:'; do
+  rg -Fq -- "$invariant" "$SINGLE_INSTANCE_GATE" \
+    || fail "Single-instance gate invariant missing: $invariant"
+done
+for invariant in \
+  'if !isHermeticLaunchSmoke,' \
+  'AppSingleInstanceGate.activateExistingInstanceIfNeeded()' \
+  'yieldedToExistingInstance = true' \
+  'NSApp.terminate(nil)' \
+  'guard !yieldedToExistingInstance else { return }'; do
+  rg -Fq -- "$invariant" "$APP_ENTRY" \
+    || fail "Single-instance App wiring invariant missing: $invariant"
+done
+/usr/bin/ruby -e '
+  source = File.binread(ARGV.fetch(0))
+  arbitration = source.index("AppSingleInstanceGate.activateExistingInstanceIfNeeded()") or abort
+  launch_health = source.index("LaunchHealthTracker.shared.beginLaunch()") or abort
+  island_window = source.index("let window = IslandWindow()") or abort
+  abort unless arbitration < launch_health && arbitration < island_window
+' "$APP_ENTRY" || fail "Single-instance arbitration must precede LaunchHealth and Island construction"
+
+for invariant in \
   'Build and launch isolated performance fixture' \
   'DEV_ISLAND_PERF_ALLOW_LOCKED=1' \
   './scripts/qa/measure-app-performance.sh' \
@@ -517,11 +589,53 @@ grep -Fqx 'sample_count=8' <<<"$PERFORMANCE_SUMMARY" \
 
 for invariant in \
   'case transitionRunning20 = "transition-running-20"' \
+  'case decisionApproval = "decision-approval"' \
+  'case decisionQuestion = "decision-question"' \
+  'case decisionPlanReview = "decision-plan-review"' \
   'scenario == \.transitionRunning20 \? 0\.8 : nil' \
   'transitionInitialDelay: TimeInterval = 1\.0'; do
   rg -q "$invariant" "$PERFORMANCE_FIXTURE" \
     || fail "Transition performance fixture invariant missing: $invariant"
 done
+rg -q 'PerformanceFixture\.makeActionRequest\(\)' "$TASK_STORE" \
+  || fail "Performance decision request must enter the production TaskStore queue"
+for invariant in \
+  'PerformanceFixture\.signalActionQueued\(request\)' \
+  'PerformanceFixture\.signalActionFinished\(request, response: response\)'; do
+  rg -q "$invariant" "$TASK_STORE" \
+    || fail "Performance action marker boundary missing: $invariant"
+done
+for invariant in \
+  'DEV_ISLAND_PERFORMANCE_ACTION phase=' \
+  'actionMarkerQueue\.async' \
+  'ProcessInfo\.processInfo\.systemUptime' \
+  'Date\(\)\.timeIntervalSince1970' \
+  'wallUnix='; do
+  rg -q "$invariant" "$PERFORMANCE_FIXTURE" \
+    || fail "Performance action marker invariant missing: $invariant"
+done
+[[ "$(rg -c 'let receipt = stageResponseReceipt' "$NOTCH_PANEL")" -eq 2 ]] \
+  || fail "Decision and question responses must both reserve their receipt before store mutation"
+decision_stage_line="$(rg -n 'let receipt = stageResponseReceipt' "$NOTCH_PANEL" | sed -n '1s/:.*//p')"
+answer_stage_line="$(rg -n 'let receipt = stageResponseReceipt' "$NOTCH_PANEL" | sed -n '2s/:.*//p')"
+decision_store_line="$(rg -n 'guard onActionDecision' "$NOTCH_PANEL" | sed -n '1s/:.*//p')"
+answer_store_line="$(rg -n 'guard onQuestionAnswer' "$NOTCH_PANEL" | sed -n '1s/:.*//p')"
+[[ -n "$decision_stage_line" && -n "$answer_stage_line" && \
+   -n "$decision_store_line" && -n "$answer_store_line" && \
+   "$decision_stage_line" -lt "$decision_store_line" && \
+   "$answer_stage_line" -lt "$answer_store_line" ]] \
+  || fail "Response receipts must be staged before TaskStore publishes request removal"
+for invariant in \
+  'questionPageOpacity' \
+  'withTransaction\(replacement\)' \
+  'Motion\.questionPageReveal'; do
+  rg -q "$invariant" "$ACTION_REQUEST_SURFACE" \
+    || fail "Question page replacement invariant missing: $invariant"
+done
+if rg -U -n 'withAnimation\([^)]*\)[^{]*\{[^}]*questionDraft\.(goBack|advanceOrSubmit)' \
+    "$ACTION_REQUEST_SURFACE"; then
+  fail "Question page identity must not animate old and new layouts together"
+fi
 for invariant in \
   'scheduleNextPerformanceTransition' \
   'performanceTransitionWorkItem\?\.cancel\(\)' \
@@ -530,8 +644,14 @@ for invariant in \
   rg -q "$invariant" "$APP_ENTRY" \
     || fail "Transition driver invariant missing: $invariant"
 done
-rg -q 'transition-running-20' "$SAMPLER" \
-  || fail "Performance sampler must allow the transition scenario"
+for scenario in \
+  transition-running-20 \
+  decision-approval \
+  decision-question \
+  decision-plan-review; do
+  rg -q "$scenario" "$SAMPLER" \
+    || fail "Performance sampler must allow scenario: $scenario"
+done
 for invariant in \
   'CGSSessionScreenIsLocked' \
   'kCGSSessionOnConsoleKey' \

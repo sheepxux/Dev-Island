@@ -23,6 +23,23 @@ enum ManusConnectionStatusPolicy {
     }
 }
 
+/// A failed remote cleanup is recoverable only while the credential and the
+/// manager that owns the persisted webhook ID are retained for another
+/// explicit Disconnect attempt. The existing degraded state carries that
+/// distinction without adding a second account-state model.
+public enum ManusCredentialRemovalPolicy {
+    public static let cleanupPendingReason =
+        "Remote callback cleanup pending; retry disconnect"
+}
+
+/// Bounded outcome reported to the app-termination coordinator. Detailed
+/// transport failures remain private; the caller only needs to know whether
+/// a persisted remote callback still requires a later cleanup retry.
+public enum TaskStoreShutdownResult: Equatable, Sendable {
+    case completed
+    case cleanupPending
+}
+
 /// Internal dependency boundary for deterministic Manus account-lifecycle
 /// tests. Shipping construction always uses the live API client and the
 /// device-only Keychain store.
@@ -31,12 +48,40 @@ struct TaskStoreManusDependencies: Sendable {
     let saveAPIKey: @Sendable (String) throws -> Void
     let loadAPIKey: @Sendable () throws -> String?
     let deleteAPIKey: @Sendable () throws -> Void
+    /// Test-only launch boundary for the interval after a Disconnect operation
+    /// is registered but before its cleanup body begins.
+    let awaitCredentialRemovalPermission: @Sendable () async -> Void
+    /// Test-only suspension boundary for proving that immediate Quit owns an
+    /// in-flight cold bootstrap. Shipping construction uses the no-op default.
+    let awaitBootstrapPermission: @Sendable () async -> Void
+    /// `nil` keeps inert tests away from the shipping preferences domain.
+    /// Live construction shares the same ledger with every TunnelManager.
+    let webhookPreferencesSuiteName: String?
+
+    init(
+        makeClient: @escaping @Sendable (String) -> any ManusServiceClientProtocol,
+        saveAPIKey: @escaping @Sendable (String) throws -> Void,
+        loadAPIKey: @escaping @Sendable () throws -> String?,
+        deleteAPIKey: @escaping @Sendable () throws -> Void,
+        awaitCredentialRemovalPermission: @escaping @Sendable () async -> Void = {},
+        awaitBootstrapPermission: @escaping @Sendable () async -> Void = {},
+        webhookPreferencesSuiteName: String? = nil
+    ) {
+        self.makeClient = makeClient
+        self.saveAPIKey = saveAPIKey
+        self.loadAPIKey = loadAPIKey
+        self.deleteAPIKey = deleteAPIKey
+        self.awaitCredentialRemovalPermission = awaitCredentialRemovalPermission
+        self.awaitBootstrapPermission = awaitBootstrapPermission
+        self.webhookPreferencesSuiteName = webhookPreferencesSuiteName
+    }
 
     static let live = TaskStoreManusDependencies(
         makeClient: { ManusAPIClient(apiKey: $0) },
         saveAPIKey: { try KeychainStore.save($0) },
         loadAPIKey: { try KeychainStore.load() },
-        deleteAPIKey: { try KeychainStore.delete() }
+        deleteAPIKey: { try KeychainStore.delete() },
+        webhookPreferencesSuiteName: "app.devisland.Island"
     )
 }
 
@@ -55,6 +100,12 @@ public final class TaskStore {
         store.tasks = PerformanceFixture.makeTasks()
         store.connectionStatus = .connected
         store.apiKeyStatus = .notConfigured
+        if let request = PerformanceFixture.makeActionRequest() {
+            Task { @MainActor [weak store] in
+                guard let store else { return }
+                _ = await store.awaitActionResponse(for: request)
+            }
+        }
         return store
         #else
         if HermeticAppLaunchMode.isEnabledForCurrentProcess {
@@ -109,15 +160,42 @@ public final class TaskStore {
     /// suspension points. The most recent operation is the only one allowed
     /// to persist a key or publish account state.
     private var manusConfigurationGeneration: UInt64 = 0
+    /// Concurrent Disconnect requests share the complete removal transaction.
+    /// Without this barrier, a second request could observe a detached manager
+    /// and erase the credential while the first deletion is unresolved.
+    private struct ManusCredentialRemovalOperation {
+        let id: UUID
+        let task: Task<Void, Error>
+    }
+    private var manusCredentialRemovalOperation: ManusCredentialRemovalOperation?
+    /// App termination is a terminal, single-flight transaction. Retaining
+    /// the completed task makes every later caller observe the exact same
+    /// result without stopping a resource twice.
+    private struct ShutdownOperation {
+        let task: Task<TaskStoreShutdownResult, Never>
+    }
+    private var shutdownOperation: ShutdownOperation?
+    /// Set before the first cleanup suspension so an already-running
+    /// Disconnect can preserve its original tunnel failure for the shutdown
+    /// barrier instead of converting it to an obsolete-generation cancel.
+    private var shutdownRequested = false
     private let manusDependencies: TaskStoreManusDependencies
     /// The only boundary allowed to hand a validated destination to Launch
     /// Services. Injectable only through inert DEBUG fixtures.
     private let openDestination: (URL) -> Bool
+    /// Actor hop used by manual local-listener recovery. Injectable only by an
+    /// inert lifecycle fixture so shutdown ordering can be proven without
+    /// binding a real port.
+    private let restartLocalHookServer: @Sendable (LocalHookServer) async -> Void
 
     // Local agent pipeline (Claude Code, Codex, Cursor) — independent of the
     // Manus API key and of the tunnel/polling lifecycle: it runs for the
     // app's lifetime.
     private var localHookServer: LocalHookServer?
+    /// Both cold-bootstrap ownership and the actor hop that arms the local
+    /// listener are retained so Quit can prove neither can outlive its barrier.
+    private var bootstrapTask: Task<Void, Never>?
+    private var localHookStartTask: Task<Void, Never>?
     private var localConnectors: [String: LocalAgentConnector] = [:]
     private var actionContinuations: [
         UUID: CheckedContinuation<AgentActionResponse?, Never>
@@ -145,13 +223,20 @@ public final class TaskStore {
     private init(
         bootstrap: Bool = true,
         manusDependencies: TaskStoreManusDependencies = .live,
-        openDestination: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }
+        openDestination: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) },
+        restartLocalHookServer: @escaping @Sendable (LocalHookServer) async -> Void = {
+            $0.restart()
+        }
     ) {
         self.manusDependencies = manusDependencies
         self.openDestination = openDestination
+        self.restartLocalHookServer = restartLocalHookServer
         if bootstrap {
             localHookServiceStatus = .starting
-            Task { await self.bootstrap() }
+            bootstrapTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.bootstrap()
+            }
         }
     }
 
@@ -186,19 +271,63 @@ public final class TaskStore {
         return store
     }
 
+    /// Cold-start fixture whose injected bootstrap boundary prevents real
+    /// SQLite, Keychain, listener, and network work until a test releases it.
+    static func bootstrapLifecycleFixture(
+        dependencies: TaskStoreManusDependencies
+    ) -> TaskStore {
+        TaskStore(bootstrap: true, manusDependencies: dependencies)
+    }
+
+    /// Inert listener-retry fixture. The injected operation replaces the
+    /// actual actor restart so tests never bind a port.
+    static func localHookLifecycleFixture(
+        precedingLifecycle: Task<Void, Never>? = nil,
+        restart: @escaping @Sendable (LocalHookServer) async -> Void
+    ) -> TaskStore {
+        let store = TaskStore(
+            bootstrap: false,
+            restartLocalHookServer: restart
+        )
+        store.localHookServer = LocalHookServer(port: 0)
+        store.localHookStartTask = precedingLifecycle
+        store.localHookServiceStatus = .listening
+        return store
+    }
+
     /// Inert power-lifecycle fixture. It owns no listener, storage, Keychain,
     /// API client, or network resource; the injected tunnel is a test actor.
     static func sleepWakeFixture(
         tunnel: any ManusTunnelLifecycleProtocol,
-        dependencies: TaskStoreManusDependencies = .live
+        dependencies: TaskStoreManusDependencies = .live,
+        tasks: [AgentTask] = [],
+        apiKeyStatus: APIKeyStatus = .notConfigured
     ) -> TaskStore {
         let store = TaskStore(
             bootstrap: false,
             manusDependencies: dependencies
         )
         store.tunnelManager = tunnel
+        store.tasks = tasks
         store.connectionStatus = .connected
+        store.apiKeyStatus = apiKeyStatus
         return store
+    }
+
+    /// Deterministic synchronization point for lifecycle tests. Becoming true
+    /// means the complete synchronous shutdown prefix has already run and the
+    /// shared async cleanup operation has been installed.
+    var shutdownStartedForTesting: Bool {
+        shutdownOperation != nil
+    }
+
+    var ownsRuntimeResourcesForTesting: Bool {
+        localHookServer != nil ||
+            tunnelManager != nil ||
+            pollingFallback != nil ||
+            sleepObserver != nil ||
+            wakeObserver != nil ||
+            !localConnectors.isEmpty
     }
     #endif
 
@@ -219,8 +348,19 @@ public final class TaskStore {
 
     /// Validate key, persist to Keychain, then start all services.
     public func configureAPIKey(_ key: String) async throws {
+        guard !shutdownRequested else { throw CancellationError() }
+        // A Disconnect already owns the old credential until its provider
+        // cleanup settles. Joining it before creating a new configuration
+        // generation prevents a candidate key from overwriting the only key
+        // that can still remove an old remote callback.
+        if let removal = manusCredentialRemovalOperation {
+            try await awaitManusCredentialRemoval(removal)
+            guard !shutdownRequested else { throw CancellationError() }
+        }
+
         manusConfigurationGeneration &+= 1
         let configurationGeneration = manusConfigurationGeneration
+        let previousKeyStatus = apiKeyStatus
         let client = manusDependencies.makeClient(key)
 
         // Validate by fetching tasks
@@ -249,8 +389,67 @@ public final class TaskStore {
             throw CancellationError()
         }
 
+        // Replacing a configured key has the same delete-before-release
+        // requirement as Disconnect. The old manager retains its credential in
+        // memory and must confirm every persisted webhook deletion first.
+        if let existingTunnel = tunnelManager {
+            do {
+                try await existingTunnel.stop()
+            } catch {
+                guard configurationGeneration == manusConfigurationGeneration else {
+                    throw CancellationError()
+                }
+                pollingOnlyReason = ManusCredentialRemovalPolicy.cleanupPendingReason
+                apiKeyStatus = previousKeyStatus
+                connectionStatus = .degraded(
+                    reason: ManusCredentialRemovalPolicy.cleanupPendingReason
+                )
+                IslandLogger.store.error(
+                    "Remote callback cleanup failed — existing credential retained"
+                )
+                throw error
+            }
+        }
+        guard configurationGeneration == manusConfigurationGeneration else {
+            throw CancellationError()
+        }
+
+        // The old callback is now confirmed deleted. Retire every service that
+        // belonged to the old credential before replacing it so a persistence
+        // failure cannot leave a stopped manager, live poller, or stale cloud
+        // snapshot represented as connected.
+        let retiredServices = detachManusServices()
+        setTasks(tasks.filter { $0.source != "manus" })
+        connectionStatus = .disconnected
+        // Publish the detached state before this suspension. Otherwise an
+        // obsolete Configure could resume after a newer one and erase the
+        // newer credential's snapshots/status before noticing its generation
+        // had been superseded.
+        await retiredServices.poller?.stop()
+
+        guard configurationGeneration == manusConfigurationGeneration else {
+            throw CancellationError()
+        }
+
         // Persist
-        try manusDependencies.saveAPIKey(key)
+        do {
+            try manusDependencies.saveAPIKey(key)
+        } catch {
+            // Read back the source of truth: an injected backend may fail
+            // before or after changing its stored value. Services stay
+            // detached, so Configure or Disconnect can recover deterministically.
+            do {
+                let persistedKey = try manusDependencies.loadAPIKey()
+                apiKeyStatus = persistedKey == nil ? .notConfigured : .valid
+            } catch {
+                apiKeyStatus = previousKeyStatus
+            }
+            connectionStatus = .disconnected
+            IslandLogger.store.error(
+                "API key persistence failed after previous services were retired"
+            )
+            throw error
+        }
         apiKeyStatus = .valid
         IslandLogger.store.info("Manus API key configured and validated")
         try await startServices(client: client)
@@ -264,8 +463,85 @@ public final class TaskStore {
     }
 
     public func clearAPIKey() async throws {
+        guard !shutdownRequested else { throw CancellationError() }
+        if let removal = manusCredentialRemovalOperation {
+            try await awaitManusCredentialRemoval(removal)
+            return
+        }
+
+        let id = UUID()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.manusDependencies.awaitCredentialRemovalPermission()
+            guard !self.shutdownRequested else { throw CancellationError() }
+            try await self.performClearAPIKey()
+        }
+        let removal = ManusCredentialRemovalOperation(id: id, task: task)
+        manusCredentialRemovalOperation = removal
+        try await awaitManusCredentialRemoval(removal)
+    }
+
+    private func awaitManusCredentialRemoval(
+        _ removal: ManusCredentialRemovalOperation
+    ) async throws {
+        do {
+            try await removal.task.value
+            clearManusCredentialRemovalOperation(ifMatching: removal.id)
+        } catch {
+            clearManusCredentialRemovalOperation(ifMatching: removal.id)
+            throw error
+        }
+    }
+
+    private func performClearAPIKey() async throws {
+        guard !shutdownRequested else { throw CancellationError() }
         manusConfigurationGeneration &+= 1
+        let configurationGeneration = manusConfigurationGeneration
         let previousKeyStatus = apiKeyStatus
+
+        // Detach callbacks first, then stop polling and delete the remote
+        // callback while its credential is still available.
+        let services = detachManusServices()
+        // The provider transport is detached even if its remote callback
+        // still needs cleanup. Remove only cloud-owned snapshots now; local
+        // agent sessions remain live and must never inherit Manus lifecycle.
+        setTasks(tasks.filter { $0.source != "manus" })
+        connectionStatus = .disconnected
+
+        do {
+            await services.poller?.stop()
+            try await services.tunnel?.stop()
+        } catch {
+            // Shutdown has already detached every resource and deliberately
+            // invalidated this Disconnect generation. Preserve a real tunnel
+            // cleanup failure so the shared shutdown operation can report
+            // `cleanupPending`; the credential and persisted webhook ledger
+            // remain untouched for recovery on the next launch.
+            if shutdownRequested {
+                throw error
+            }
+            guard configurationGeneration == manusConfigurationGeneration else {
+                throw CancellationError()
+            }
+            if tunnelManager == nil {
+                tunnelManager = services.tunnel
+            }
+            apiKeyStatus = previousKeyStatus
+            connectionStatus = .degraded(
+                reason: ManusCredentialRemovalPolicy.cleanupPendingReason
+            )
+            IslandLogger.store.error(
+                "Remote callback cleanup failed — credential retained for retry"
+            )
+            throw error
+        }
+
+        // A newer Configure owns the Keychain now. Never let an older,
+        // suspended Disconnect delete the newly validated credential.
+        guard configurationGeneration == manusConfigurationGeneration else {
+            throw CancellationError()
+        }
+
         let deletionError: Error?
         do {
             try manusDependencies.deleteAPIKey()
@@ -273,11 +549,7 @@ public final class TaskStore {
         } catch {
             deletionError = error
         }
-        // Only Manus tasks belong to the API key — local agent sessions
-        // (Claude Code) are unaffected by a disconnect.
-        setTasks(tasks.filter { $0.source != "manus" })
         connectionStatus = .disconnected
-        await stopServices()
 
         if let deletionError {
             // Network ownership is already detached, but the Keychain item
@@ -290,6 +562,11 @@ public final class TaskStore {
 
         apiKeyStatus = .notConfigured
         IslandLogger.store.info("API key cleared")
+    }
+
+    private func clearManusCredentialRemovalOperation(ifMatching id: UUID) {
+        guard manusCredentialRemovalOperation?.id == id else { return }
+        manusCredentialRemovalOperation = nil
     }
 
     /// Resolve a local-agent request from the island. Repeated clicks and
@@ -348,24 +625,34 @@ public final class TaskStore {
         finishActionRequest(requestID, response: nil, restoreSession: false)
     }
 
-    /// Graceful app shutdown. In-flight hooks receive the vendor-neutral
-    /// response instead of hanging until their command timeout expires.
-    public func shutdown() {
+    /// Graceful app shutdown. The synchronous prefix detaches every ingress
+    /// path and resolves in-flight hooks before the first suspension. The
+    /// retained task then joins older account/power transactions and every
+    /// owned service stop, so AppKit can hold termination until cleanup has a
+    /// definitive bounded result.
+    public func shutdown() async -> TaskStoreShutdownResult {
+        if let shutdownOperation {
+            return await shutdownOperation.task.value
+        }
+
+        shutdownRequested = true
         cancelAllActionRequests()
         manusConfigurationGeneration &+= 1
         systemPowerGeneration &+= 1
-        manusSleepSuspension?.task.cancel()
+        let credentialRemoval = manusCredentialRemovalOperation
+        let sleepSuspension = manusSleepSuspension
         manusSleepSuspension = nil
         let manusServices = detachManusServices()
 
         let server = localHookServer
+        let serverStart = localHookStartTask
+        let bootstrap = bootstrapTask
         localHookServer = nil
+        localHookStartTask = nil
+        bootstrapTask = nil
         localConnectors = [:]
-        Task.detached {
-            await manusServices.poller?.stop()
-            await manusServices.tunnel?.stop()
-            await server?.stop()
-        }
+        localHookServiceStatus = .stopped
+        bootstrap?.cancel()
 
         if let sleepObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(sleepObserver)
@@ -375,13 +662,63 @@ public final class TaskStore {
             NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
             self.wakeObserver = nil
         }
+
+        let task = Task<TaskStoreShutdownResult, Never> {
+            var cleanupPending = false
+
+            // A Disconnect that detached the manager before Quit still owns
+            // the only in-memory cleanup transaction. Join it before stopping
+            // resources captured directly by shutdown. Cancellation here is
+            // the expected consequence of the generation advanced above; a
+            // concrete error means remote callback cleanup did not complete.
+            if let credentialRemoval {
+                do {
+                    try await credentialRemoval.task.value
+                } catch is CancellationError {
+                    // Tunnel cleanup completed, but shutdown prevented the
+                    // obsolete Disconnect from deleting the credential.
+                } catch {
+                    cleanupPending = true
+                }
+            }
+
+            // A tunnel must never be stopped while its pre-sleep suspension
+            // is still mutating the same process/session state.
+            await sleepSuspension?.task.value
+            await manusServices.poller?.stop()
+            do {
+                try await manusServices.tunnel?.stop()
+            } catch {
+                cleanupPending = true
+            }
+            // If the actor hop that starts the local listener had not run yet,
+            // stopping first would let it bind after the termination barrier.
+            // Let that hop settle, then stop the concrete server it armed.
+            await serverStart?.value
+            await server?.stop()
+            // Bootstrap may be suspended in storage or provider I/O. Terminal
+            // guards after each await prevent it from publishing state or
+            // creating resources, while this join proves it has actually left.
+            await bootstrap?.value
+
+            return cleanupPending ? .cleanupPending : .completed
+        }
+        shutdownOperation = ShutdownOperation(task: task)
+        return await task.value
     }
 
     /// Re-arm the local Agent listener immediately, cancelling any current
     /// retry backoff. Safe to call repeatedly from Settings.
     public func retryLocalHookService() {
-        guard let server = localHookServer else { return }
-        Task { await server.restart() }
+        guard !shutdownRequested, let server = localHookServer else { return }
+        let precedingLifecycle = localHookStartTask
+        localHookStartTask = Task { @MainActor [weak self] in
+            await precedingLifecycle?.value
+            guard let self,
+                  !self.shutdownRequested,
+                  self.localHookServer === server else { return }
+            await self.restartLocalHookServer(server)
+        }
     }
 
     /// Refresh the bounded, read-only local history page. The page is capped
@@ -558,7 +895,7 @@ public final class TaskStore {
     internal func awaitActionResponse(
         for request: AgentActionRequest
     ) async -> AgentActionResponse? {
-        guard request.expiresAt > .now else { return nil }
+        guard !shutdownRequested, request.expiresAt > .now else { return nil }
 
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
@@ -579,7 +916,9 @@ public final class TaskStore {
         _ request: AgentActionRequest,
         continuation: CheckedContinuation<AgentActionResponse?, Never>
     ) {
-        guard !Task.isCancelled, request.expiresAt > .now else {
+        guard !shutdownRequested,
+              !Task.isCancelled,
+              request.expiresAt > .now else {
             continuation.resume(returning: nil)
             return
         }
@@ -607,6 +946,9 @@ public final class TaskStore {
         actionContinuations[request.id] = continuation
         pendingActionRequests.append(request)
         markSessionWaiting(for: request)
+        #if DEV_ISLAND_PERFORMANCE_QA
+        PerformanceFixture.signalActionQueued(request)
+        #endif
 
         let timeout = max(0, request.expiresAt.timeIntervalSinceNow)
         actionTimeoutTasks[request.id] = Task { @MainActor [weak self] in
@@ -634,6 +976,11 @@ public final class TaskStore {
         let request = pendingActionRequests.first(where: { $0.id == requestID })
         pendingActionRequests.removeAll(where: { $0.id == requestID })
         actionTimeoutTasks.removeValue(forKey: requestID)?.cancel()
+        #if DEV_ISLAND_PERFORMANCE_QA
+        if let request {
+            PerformanceFixture.signalActionFinished(request, response: response)
+        }
+        #endif
         continuation.resume(returning: response)
 
         if restoreSession, let request {
@@ -743,55 +1090,73 @@ public final class TaskStore {
     // MARK: - Bootstrap
 
     private func bootstrap() async {
+        await manusDependencies.awaitBootstrapPermission()
+        guard !shutdownRequested else { return }
+
         // Open SQLite
         let store = SQLiteStore()
         do {
             try await store.open()
+            guard !shutdownRequested else { return }
             sqliteStore = store
             _ = await refreshStoredTaskHistory()
+            guard !shutdownRequested else { return }
         } catch {
+            guard !shutdownRequested else { return }
             sqliteStore = nil
             storedTaskHistoryStatus = .unavailable
             IslandLogger.storage.error("Couldn't open local history storage")
         }
 
         // Local agent pipeline runs regardless of Manus configuration.
+        guard !shutdownRequested else { return }
         startLocalHookPipeline()
 
         // Sleep/wake observers guard the local pipeline too, so they must
         // register even when no Manus key is configured (previously they
         // were only registered at the end of the happy path).
+        guard !shutdownRequested else { return }
         registerSleepWakeObservers()
 
         // Load API key from Keychain
+        guard !shutdownRequested else { return }
         guard let apiKey = try? manusDependencies.loadAPIKey() else {
+            guard !shutdownRequested else { return }
             apiKeyStatus = .notConfigured
             IslandLogger.store.info("No API key found in Keychain")
             return
         }
 
         // Validate key
+        guard !shutdownRequested else { return }
         let client = manusDependencies.makeClient(apiKey)
         do {
             let initialTasks = try await client.listTasks()
+            guard !shutdownRequested else { return }
             apiKeyStatus = .valid
             await applyPollingSnapshot(initialTasks)
+            guard !shutdownRequested else { return }
         } catch ManusError.unauthorized {
+            guard !shutdownRequested else { return }
             apiKeyStatus = .invalid
             IslandLogger.store.warning("Stored API key is invalid")
             return
         } catch ManusError.invalidURL {
+            guard !shutdownRequested else { return }
             apiKeyStatus = .invalid
             IslandLogger.store.warning("Stored API key is not header-safe")
             return
         } catch {
+            guard !shutdownRequested else { return }
             IslandLogger.store.error("Manus bootstrap validation failed")
             // Still try to start services — might be transient network error
         }
 
+        guard !shutdownRequested else { return }
         do {
             try await startServices(client: client)
         } catch {
+            guard !shutdownRequested else { return }
             IslandLogger.store.error("Manus services failed to start")
             connectionStatus = .degraded(reason: "Manus services unavailable; reconnect to retry")
         }
@@ -800,6 +1165,7 @@ public final class TaskStore {
     // MARK: - Local agent pipeline (registry-driven)
 
     private func startLocalHookPipeline() {
+        guard !shutdownRequested else { return }
         // One generic connector per registered agent — the registry is the
         // single source of truth for which agents exist.
         let connectors = Dictionary(uniqueKeysWithValues: LocalAgentRegistry.all.map {
@@ -809,7 +1175,12 @@ public final class TaskStore {
         let server = LocalHookServer()
         localHookServer = server
 
-        Task {
+        let precedingLifecycle = localHookStartTask
+        localHookStartTask = Task { @MainActor [weak self] in
+            await precedingLifecycle?.value
+            guard let self,
+                  !self.shutdownRequested,
+                  self.localHookServer === server else { return }
             await server.start(
                 agents: LocalAgentRegistry.all,
                 onActionRequest: { [weak self] request in
@@ -818,7 +1189,8 @@ public final class TaskStore {
                 },
                 onStatusChange: { [weak self] status in
                     Task { @MainActor [weak self] in
-                        self?.localHookServiceStatus = status
+                        guard let self, !self.shutdownRequested else { return }
+                        self.localHookServiceStatus = status
                     }
                 }
             ) { [weak self] source, event in
@@ -837,6 +1209,7 @@ public final class TaskStore {
         source: String,
         event: LocalAgentEvent
     ) async {
+        guard !shutdownRequested else { return }
         // Look up through the stored map (not a closure capture) so the
         // store's property is the single owner and a future pipeline restart
         // can swap connectors safely.
@@ -853,6 +1226,7 @@ public final class TaskStore {
         }
 
         let snapshot = await connector.apply(event)
+        guard !shutdownRequested else { return }
         await applyLocalSnapshot(source: source, snapshot)
     }
 
@@ -868,6 +1242,16 @@ public final class TaskStore {
 
         let connector = ManusConnector(serviceClient: client)
         connectors = [connector]
+        let webhookPreferences = manusDependencies.webhookPreferencesSuiteName
+            .flatMap { UserDefaults(suiteName: $0) }
+        // Even polling-only mode must retain a credential-backed cleanup owner.
+        // A prior crash or failed delete can leave persisted webhook IDs that
+        // must be removed before Disconnect is allowed to release the key.
+        tunnelManager = TunnelManager(
+            client: client,
+            server: CleanupOnlyWebhookServer(),
+            preferences: TunnelPreferencesHandle(webhookPreferences)
+        )
 
         // The official v2 protocol is implemented, but public exposure stays
         // code-gated until a real account has passed registration, signed test
@@ -888,7 +1272,11 @@ public final class TaskStore {
 
         if let trustAnchor,
            let server = WebhookServer(signaturePublicKeyPEM: trustAnchor) {
-            let tunnel = TunnelManager(client: client, server: server)
+            let tunnel = TunnelManager(
+                client: client,
+                server: server,
+                preferences: TunnelPreferencesHandle(webhookPreferences)
+            )
             tunnelManager = tunnel
 
             do {
@@ -908,22 +1296,20 @@ public final class TaskStore {
                     }
                 )
                 guard serviceGeneration == manusServiceGeneration else {
-                    await tunnel.stop()
+                    try? await tunnel.stop()
                     return
                 }
                 pollingOnlyReason = nil
                 connectionStatus = .connected
                 IslandLogger.store.info("Services started (verified realtime + polling fallback)")
             } catch TunnelError.tooManyRestarts {
-                await tunnel.stop()
+                try? await tunnel.stop()
                 guard serviceGeneration == manusServiceGeneration else { return }
-                tunnelManager = nil
                 IslandLogger.store.warning("Realtime unavailable — falling back to secure polling")
                 enterPollingOnly(reason: ManusRealtimeTrust.pollingOnlyReason)
             } catch {
-                await tunnel.stop()
+                try? await tunnel.stop()
                 guard serviceGeneration == manusServiceGeneration else { return }
-                tunnelManager = nil
                 IslandLogger.store.warning("Realtime start failed — secure polling only")
                 enterPollingOnly(reason: ManusRealtimeTrust.pollingOnlyReason)
             }
@@ -1005,7 +1391,7 @@ public final class TaskStore {
         let tunnel = tunnelManager
         tunnelManager = nil
         IslandLogger.store.warning("Manus authorization expired — reconnect required")
-        await tunnel?.stop()
+        try? await tunnel?.stop()
     }
 
     private func enterPollingOnly(reason: String) {
@@ -1020,10 +1406,9 @@ public final class TaskStore {
     private func handleManusRealtimeUnavailable(serviceGeneration: UInt64) async {
         guard serviceGeneration == manusServiceGeneration,
               let tunnel = tunnelManager else { return }
-        tunnelManager = nil
         enterPollingOnly(reason: ManusRealtimeTrust.pollingOnlyReason)
         IslandLogger.store.warning("Manus realtime unavailable — secure polling only")
-        await tunnel.stop()
+        try? await tunnel.stop()
     }
 
     private var restoredManusConnectionStatus: ConnectionStatus {
@@ -1057,12 +1442,7 @@ public final class TaskStore {
         _ services: DetachedManusServices
     ) async {
         await services.poller?.stop()
-        await services.tunnel?.stop()
-    }
-
-    private func stopServices() async {
-        let services = detachManusServices()
-        await stopDetachedManusServices(services)
+        try? await services.tunnel?.stop()
     }
 
     // MARK: - Sleep / wake
@@ -1071,6 +1451,7 @@ public final class TaskStore {
     /// notification callback. The retained task is the ordering barrier for
     /// the next wake; it is intentionally not detached or fire-and-forget.
     internal func handleSystemWillSleep() {
+        guard !shutdownRequested else { return }
         systemPowerGeneration &+= 1
         cancelAllActionRequests()
         connectionStatus = .disconnected
@@ -1092,11 +1473,13 @@ public final class TaskStore {
     /// await, and a duplicate wake without a pending sleep is a no-op for the
     /// public tunnel so it cannot consume the restart budget.
     internal func handleSystemDidWake() async {
+        guard !shutdownRequested else { return }
         IslandLogger.store.info("System woke — health-checking services")
 
         // Local pipeline recovery is independently idempotent and remains
         // useful for a stray wake notification even without Manus configured.
         await localHookServer?.ensureRunning()
+        guard !shutdownRequested else { return }
 
         guard let pendingSuspension = manusSleepSuspension else { return }
         systemPowerGeneration &+= 1
@@ -1158,6 +1541,7 @@ public final class TaskStore {
     }
 
     private func registerSleepWakeObservers() {
+        guard !shutdownRequested else { return }
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.willSleepNotification,
             object: nil,

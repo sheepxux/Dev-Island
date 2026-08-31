@@ -10,17 +10,14 @@ final class CommercialLicenseDocumentStoreTests: XCTestCase {
     private let firstLicenseID = "f4c24d5b-ff4a-40f8-9315-e489b0cfe2d8"
     private let secondLicenseID = "6aeb8ff8-51d1-4b25-8d87-ed83eac7409b"
 
-    private var service: String!
-    private var account: String!
     private var store: CommercialLicenseDocumentStore!
+    private var storage: InMemoryCommercialLicenseDocumentStorage!
     private var privateKey: Curve25519.Signing.PrivateKey!
     private var verifier: CommercialLicenseVerifier!
 
     override func setUpWithError() throws {
-        service = "app.devisland.Island.tests.\(UUID().uuidString.lowercased())"
-        account = "commercial-license-test"
-        store = CommercialLicenseDocumentStore(service: service, account: account)
-        try? store.delete()
+        storage = InMemoryCommercialLicenseDocumentStorage()
+        store = CommercialLicenseDocumentStore(backend: storage)
 
         privateKey = Curve25519.Signing.PrivateKey()
         verifier = try CommercialLicenseVerifier(
@@ -34,12 +31,10 @@ final class CommercialLicenseDocumentStoreTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        try? store.delete()
         verifier = nil
         privateKey = nil
         store = nil
-        account = nil
-        service = nil
+        storage = nil
     }
 
     func testVerifiedImportRoundTripsAndReplacesDocument() throws {
@@ -272,11 +267,7 @@ final class CommercialLicenseDocumentStoreTests: XCTestCase {
             repeating: 0x61,
             count: CommercialLicenseDocumentStore.maximumDocumentBytes + 1
         )
-        let status = SecItemAdd(
-            keychainQuery(value: oversized) as CFDictionary,
-            nil
-        )
-        XCTAssertEqual(status, errSecSuccess)
+        storage.replaceForTesting(with: oversized)
 
         XCTAssertThrowsError(
             try store.evaluateStored(using: verifier, now: evaluationDate)
@@ -288,29 +279,32 @@ final class CommercialLicenseDocumentStoreTests: XCTestCase {
         }
     }
 
-    func testImportedDocumentUsesDeviceOnlyNonSynchronizingProtection() throws {
+    func testShippingKeychainPolicyIsDeviceOnlyAndNonSynchronizing() throws {
         let document = try makeDocument(licenseID: firstLicenseID)
-        try store.importDocument(document, using: verifier, now: evaluationDate)
-
-        var query = keychainQuery()
-        query[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        query[kSecReturnData] = true
-        query[kSecMatchLimit] = kSecMatchLimitOne
-        var result: AnyObject?
-        XCTAssertEqual(
-            SecItemCopyMatching(query as CFDictionary, &result),
-            errSecSuccess
+        let backend = CommercialLicenseKeychainBackend(
+            service: CommercialLicenseDocumentStore.defaultService,
+            account: CommercialLicenseDocumentStore.defaultAccount
         )
-        XCTAssertEqual(result as? Data, document)
+        let query = backend.baseQuery
+        let attributes = backend.authenticatedAttributes(for: document)
 
-        var synchronizingQuery = keychainQuery()
-        synchronizingQuery[kSecAttrSynchronizable] = true
-        synchronizingQuery[kSecReturnData] = true
-        synchronizingQuery[kSecMatchLimit] = kSecMatchLimitOne
-        result = nil
         XCTAssertEqual(
-            SecItemCopyMatching(synchronizingQuery as CFDictionary, &result),
-            errSecItemNotFound
+            query[kSecClass] as? String,
+            kSecClassGenericPassword as String
+        )
+        XCTAssertEqual(
+            query[kSecAttrService] as? String,
+            CommercialLicenseDocumentStore.defaultService
+        )
+        XCTAssertEqual(
+            query[kSecAttrAccount] as? String,
+            CommercialLicenseDocumentStore.defaultAccount
+        )
+        XCTAssertEqual(query[kSecAttrSynchronizable] as? Bool, false)
+        XCTAssertEqual(attributes[kSecValueData] as? Data, document)
+        XCTAssertEqual(
+            attributes[kSecAttrAccessible] as? String,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String
         )
     }
 
@@ -358,19 +352,6 @@ final class CommercialLicenseDocumentStoreTests: XCTestCase {
         )
     }
 
-    private func keychainQuery(value: Data? = nil) -> [CFString: Any] {
-        var query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service as String,
-            kSecAttrAccount: account as String,
-            kSecAttrSynchronizable: false,
-        ]
-        if let value {
-            query[kSecValueData] = value
-            query[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        }
-        return query
-    }
 }
 
 private final class CommercialStoreErrorCollector: @unchecked Sendable {

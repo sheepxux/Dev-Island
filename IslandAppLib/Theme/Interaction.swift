@@ -174,7 +174,7 @@ private struct TourPrimaryButtonBody: View {
             .foregroundStyle(Palette.tourCanvas.opacity(isEnabled ? 1 : 0.55))
             .frame(width: 142, height: 36)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(background)
             )
             .scaleEffect(reduceMotion ? 1 : scale)
@@ -231,14 +231,14 @@ private struct TourSecondaryButtonBody: View {
             .padding(.horizontal, 14)
             .frame(height: 36)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(
                         Palette.warmWhite.opacity(
                             configuration.isPressed ? 0.04 : (isHovering ? 0.055 : 0.025)
                         )
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .stroke(
                                 Palette.warmWhite.opacity(isHovering ? 0.15 : 0.085),
                                 lineWidth: 0.75

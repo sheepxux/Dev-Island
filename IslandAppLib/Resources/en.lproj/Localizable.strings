@@ -217,6 +217,10 @@
 "Preparing the private loopback connection." = "Preparing the private loopback connection.";
 "Local Agent events are arriving through this Mac only." = "Local Agent events are arriving through this Mac only.";
 "Degraded — %@" = "Degraded — %@";
+"Verified realtime + polling fallback" = "Verified realtime + polling fallback";
+"Polling only — checking every minute" = "Polling only — checking every minute";
+"Connection unavailable — reconnect to retry" = "Connection unavailable — reconnect to retry";
+"Remote callback cleanup pending — retry Disconnect" = "Remote callback cleanup pending — retry Disconnect";
 "Stored key is invalid" = "Stored key is invalid";
 "Not connected — paste an API key below" = "Not connected — paste an API key below";
 "Disconnected, but the saved key couldn’t be removed. Retry Disconnect before uninstalling." = "Disconnected, but the saved key couldn’t be removed. Retry Disconnect before uninstalling.";
@@ -224,7 +228,7 @@
 "Update available" = "Update available";
 "Checking %@ Hook trust…" = "Checking %@ Hook trust…";
 "Connected — Hook trust verified by %@" = "Connected — Hook trust verified by %@";
-"Configured — open %@ in %@ to review or confirm trust" = "Configured — open %@ in %@ to review or confirm trust";
+"Configured — review and trust the Dev Island entries in %@ %@" = "Configured — review and trust the Dev Island entries in %@ %@";
 "Preview connected — requests work in simulation; real CLI check pending" = "Preview connected — requests work in simulation; real CLI check pending";
 "Connected — requests can be handled in the island" = "Connected — requests can be handled in the island";
 "Preview connected — real CLI acceptance pending" = "Preview connected — real CLI acceptance pending";
@@ -260,6 +264,13 @@
 "Approve plan" = "Approve plan";
 "Deny" = "Deny";
 "Allow once" = "Allow once";
+"Allowed once" = "Allowed once";
+"Request denied" = "Request denied";
+"Plan approved" = "Plan approved";
+"Plan rejected" = "Plan rejected";
+"Decision sent" = "Decision sent";
+"Answers sent" = "Answers sent";
+"Response sent to %@" = "Response sent to %@";
 "Select one or more" = "Select one or more";
 "This plan cannot be rendered safely." = "This plan cannot be rendered safely.";
 "This question cannot be rendered safely." = "This question cannot be rendered safely.";
@@ -438,7 +449,7 @@
 "The installed %@ version needs a compatibility review." = "The installed %@ version needs a compatibility review.";
 "Update %@ below." = "Update %@ below.";
 "Enable %@ below." = "Enable %@ below.";
-"Review Dev Island Hooks in Codex %@." = "Review Dev Island Hooks in Codex %@.";
+"In Codex %@, review and trust only the Dev Island entries. “Continue without trusting” keeps approvals outside the island." = "In Codex %@, review and trust only the Dev Island entries. “Continue without trusting” keeps approvals outside the island.";
 "Local setup still needs attention." = "Local setup still needs attention.";
 "%@ and %@" = "%@ and %@";
 "Checks local CLI versions, managed Hooks, Codex trust, and the private listener without changing configuration." = "Checks local CLI versions, managed Hooks, Codex trust, and the private listener without changing configuration.";

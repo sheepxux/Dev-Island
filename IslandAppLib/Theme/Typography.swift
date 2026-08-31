@@ -6,7 +6,7 @@ import SwiftUI
 /// generated landing pages; hierarchy comes from spacing, weight and scale.
 enum Typo {
     // Welcome Tour
-    static let tourDisplay = Font.system(size: 34, weight: .semibold)
+    static let tourDisplay = Font.system(size: 32, weight: .semibold)
     static let tourBody = Font.system(size: 13, weight: .regular)
     static let tourLabel = Font.system(size: 10, weight: .medium, design: .monospaced)
     static let tourStageTitle = Font.system(size: 12, weight: .semibold)

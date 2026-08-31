@@ -1934,22 +1934,11 @@ private struct ManusServiceRow: View {
     }
 
     private var statusLine: String {
-        switch store.apiKeyStatus {
-        case .valid:
-            switch store.connectionStatus {
-            case .connected:           return "Connected"
-            case .reconnecting:        return "Reconnecting…"
-            case .disconnected:        return "Disconnected"
-            case .degraded(let why):
-                return L10n.format(
-                    "Degraded — %@",
-                    language: language,
-                    why
-                )
-            }
-        case .invalid:       return "Stored key is invalid"
-        case .notConfigured: return "Not connected — paste an API key below"
-        }
+        ManusConnectionStatusPresentation.message(
+            apiKeyStatus: store.apiKeyStatus,
+            connectionStatus: store.connectionStatus,
+            language: language
+        )
     }
 
     @ViewBuilder
@@ -2275,10 +2264,10 @@ private struct LocalAgentServiceRow: View {
                 )
             }
             return L10n.format(
-                "Configured — open %@ in %@ to review or confirm trust",
+                "Configured — review and trust the Dev Island entries in %@ %@",
                 language: language,
-                command,
-                descriptor.displayName
+                descriptor.displayName,
+                command
             )
         }
         if descriptor.capabilities.permissionRequests == .bidirectional

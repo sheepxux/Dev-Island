@@ -18,15 +18,17 @@ struct PanelContentHeightKey: PreferenceKey {
 /// decorative panel accent.
 struct NotchPanelView: View {
     let tasks: [AgentTask]
-    let connectionStatus: ConnectionStatus
+    let manusConnectionStatus: ConnectionStatus
+    let localAgentStatus: LocalHookServiceStatus
+    let apiKeyStatus: APIKeyStatus
     /// Layout snapshot of the host display so the panel knows whether to
     /// reserve space for the hardware notch at the top.
     let layout: NotchMetrics.Layout
     let highlightedTask: TaskIdentity?
     var pendingActionRequests: [AgentActionRequest] = []
     let onTaskTap: (AgentTask) -> Void
-    var onActionDecision: (UUID, AgentActionDecision) -> Void = { _, _ in }
-    var onQuestionAnswer: (UUID, [AgentQuestionAnswer]) -> Void = { _, _ in }
+    var onActionDecision: (UUID, AgentActionDecision) -> Bool = { _, _ in false }
+    var onQuestionAnswer: (UUID, [AgentQuestionAnswer]) -> Bool = { _, _ in false }
     var onActionDefer: (UUID) -> Void = { _ in }
     let onSettingsTap: () -> Void
     let onConnectTap: () -> Void
@@ -53,6 +55,7 @@ struct NotchPanelView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.devIslandLanguage) private var language
+    @State private var responseReceipts: [TaskIdentity: ActionResponseReceipt] = [:]
 
     var body: some View {
         let requestPresentation = ActionRequestPresentationSnapshot(
@@ -249,68 +252,70 @@ struct NotchPanelView: View {
 
     @ViewBuilder
     private var connectionDot: some View {
+        let presentation = AgentConnectionIndicatorPresentation.snapshot(
+            localAgentStatus: localAgentStatus,
+            apiKeyStatus: apiKeyStatus,
+            manusStatus: manusConnectionStatus,
+            language: language
+        )
+
         // The same point-field signature used by task status keeps connection
         // state from falling back to a generic system dot.
-        // — keeps the panel header consistent with the rest of the
-        // status palette when reconnecting/degraded states flap.
-        HStack(spacing: 0) {
-            DotMatrixMark(
-                color: connectionColor,
-                size: 8,
-                pattern: connectionPattern,
-                intensity: connectionIntensity
-            )
-        }
-            .animation(Motion.colorTransition, value: connectionStatus)
-            .help(L10n.string(connectionTooltip, language: language))
+        AnimatedDotMatrixMark(
+            color: connectionColor(presentation.state),
+            size: 8,
+            motion: connectionMotion(presentation.state),
+            pattern: connectionPattern(presentation.state),
+            intensity: connectionIntensity(presentation.state),
+            isAnimated: isLive && !reduceMotion
+        )
+            .animation(Motion.colorTransition, value: presentation.state)
+            .help(presentation.help)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-                L10n.string("Agent connections", language: language)
-            )
-            .accessibilityValue(
-                L10n.string(connectionAccessibilityValue, language: language)
-            )
+            .accessibilityLabel(presentation.accessibilityLabel)
+            .accessibilityValue(presentation.accessibilityValue)
     }
 
-    private var connectionColor: Color {
-        switch connectionStatus {
-        case .connected:                 return Palette.stateCompleted.opacity(0.85)
-        case .reconnecting, .degraded:   return Palette.stateWaiting.opacity(0.85)
-        case .disconnected:              return Color.white.opacity(0.20)
+    private func connectionColor(
+        _ state: AgentConnectionIndicatorSnapshot.State
+    ) -> Color {
+        switch state {
+        case .available:       return Palette.stateCompleted.opacity(0.88)
+        case .transitioning:   return Palette.stateRunning.opacity(0.92)
+        case .needsAttention:  return Palette.stateWaiting.opacity(0.94)
+        case .inactive:        return Color.white.opacity(0.20)
         }
     }
 
-    private var connectionPattern: DotMatrixMark.Pattern {
-        switch connectionStatus {
-        case .connected:               return .plus
-        case .reconnecting, .degraded: return .ring
-        case .disconnected:            return .field
+    private func connectionPattern(
+        _ state: AgentConnectionIndicatorSnapshot.State
+    ) -> DotMatrixMark.Pattern {
+        switch state {
+        case .available:       return .plus
+        case .transitioning:   return .orbit
+        case .needsAttention:  return .ring
+        case .inactive:        return .field
         }
     }
 
-    private var connectionIntensity: Double {
-        switch connectionStatus {
-        case .connected:               return 0.78
-        case .reconnecting, .degraded: return 1.00
-        case .disconnected:            return 0.42
+    private func connectionMotion(
+        _ state: AgentConnectionIndicatorSnapshot.State
+    ) -> DotMatrixMark.MotionStyle {
+        switch state {
+        case .transitioning:   return .orbiting
+        case .needsAttention:  return .attention
+        case .available, .inactive: return .still
         }
     }
 
-    private var connectionTooltip: String {
-        switch connectionStatus {
-        case .connected:                 return "Connected"
-        case .reconnecting:              return "Reconnecting…"
-        case .disconnected:              return "Disconnected"
-        case .degraded(let reason):      return reason
-        }
-    }
-
-    private var connectionAccessibilityValue: String {
-        switch connectionStatus {
-        case .connected:                 return "Connected"
-        case .reconnecting:              return "Reconnecting"
-        case .disconnected:              return "Disconnected"
-        case .degraded:                  return "Needs attention"
+    private func connectionIntensity(
+        _ state: AgentConnectionIndicatorSnapshot.State
+    ) -> Double {
+        switch state {
+        case .available:       return 0.92
+        case .transitioning:   return 0.98
+        case .needsAttention:  return 1.00
+        case .inactive:        return 0.42
         }
     }
 
@@ -351,14 +356,27 @@ struct NotchPanelView: View {
                                         .isKeyboardPrimary(request),
                                     initialPlanDocument: initialPlanDocuments[request.id],
                                     onDecision: { decision in
-                                        onActionDecision(request.id, decision)
+                                        resolveDecision(
+                                            request,
+                                            decision: decision,
+                                            for: task.identity
+                                        )
                                     },
                                     onAnswer: { answers in
-                                        onQuestionAnswer(request.id, answers)
+                                        resolveAnswers(
+                                            request,
+                                            answers: answers,
+                                            for: task.identity
+                                        )
                                     },
                                     onDeferToAgent: {
                                         onActionDefer(request.id)
                                     }
+                                )
+                            } else if let receipt = responseReceipts[task.identity] {
+                                ActionResponseReceiptRow(
+                                    snapshot: receipt.snapshot,
+                                    isLive: isLive
                                 )
                             } else {
                                 TaskCard(
@@ -367,9 +385,17 @@ struct NotchPanelView: View {
                                     isLive: isLive,
                                     onTap: { onTaskTap(task) }
                                 )
+                                .transition(.opacity)
                             }
                         }
                         .id(task.identity)
+                        .animation(
+                            Motion.respectingReducedMotion(
+                                reduceMotion,
+                                preferred: Motion.layout
+                            ),
+                            value: requestPresentation.primary(for: task.identity)?.id
+                        )
                     }
 
                     ForEach(requestPresentation.orphanedRequests) { request in
@@ -380,10 +406,10 @@ struct NotchPanelView: View {
                                 .isKeyboardPrimary(request),
                             initialPlanDocument: initialPlanDocuments[request.id],
                             onDecision: { decision in
-                                onActionDecision(request.id, decision)
+                                _ = onActionDecision(request.id, decision)
                             },
                             onAnswer: { answers in
-                                onQuestionAnswer(request.id, answers)
+                                _ = onQuestionAnswer(request.id, answers)
                             },
                             onDeferToAgent: {
                                 onActionDefer(request.id)
@@ -412,6 +438,96 @@ struct NotchPanelView: View {
             }
         }
         .frame(maxHeight: NotchMetrics.panelTaskListMaxHeight)
+    }
+
+    private func resolveDecision(
+        _ request: AgentActionRequest,
+        decision: AgentActionDecision,
+        for identity: TaskIdentity
+    ) {
+        let receipt = stageResponseReceipt(
+            ActionResponseReceiptPresentation.decision(
+                for: request,
+                decision: decision,
+                language: language
+            ),
+            for: identity
+        )
+        guard onActionDecision(request.id, decision) else {
+            discardResponseReceipt(receipt, for: identity)
+            return
+        }
+        scheduleResponseReceiptDismissal(receipt, for: identity)
+    }
+
+    private func resolveAnswers(
+        _ request: AgentActionRequest,
+        answers: [AgentQuestionAnswer],
+        for identity: TaskIdentity
+    ) {
+        let receipt = stageResponseReceipt(
+            ActionResponseReceiptPresentation.answersSent(
+                for: request,
+                language: language
+            ),
+            for: identity
+        )
+        guard onQuestionAnswer(request.id, answers) else {
+            discardResponseReceipt(receipt, for: identity)
+            return
+        }
+        scheduleResponseReceiptDismissal(receipt, for: identity)
+    }
+
+    /// Reserve the post-response row before mutating `TaskStore`. Observation
+    /// publishes the request removal synchronously; without this reservation,
+    /// SwiftUI briefly constructs the full TaskCard between the form and the
+    /// receipt, then throws it away one statement later. Besides being wasted
+    /// work, that transient row can lazily decode brand and system glyphs on
+    /// the interaction frame. The request branch still wins while it exists,
+    /// so staging the receipt is not visible and is safe to roll back when a
+    /// stale response loses the store race.
+    private func stageResponseReceipt(
+        _ snapshot: ActionResponseReceiptSnapshot,
+        for identity: TaskIdentity
+    ) -> ActionResponseReceipt {
+        let receipt = ActionResponseReceipt(snapshot: snapshot)
+        let transaction = Transaction(animation: nil)
+        withTransaction(transaction) {
+            responseReceipts[identity] = receipt
+        }
+        return receipt
+    }
+
+    private func discardResponseReceipt(
+        _ receipt: ActionResponseReceipt,
+        for identity: TaskIdentity
+    ) {
+        guard responseReceipts[identity]?.id == receipt.id else { return }
+        let transaction = Transaction(animation: nil)
+        withTransaction(transaction) {
+            _ = responseReceipts.removeValue(forKey: identity)
+        }
+    }
+
+    private func scheduleResponseReceiptDismissal(
+        _ receipt: ActionResponseReceipt,
+        for identity: TaskIdentity
+    ) {
+        let animation = Motion.respectingReducedMotion(
+            reduceMotion,
+            preferred: Motion.contentReveal
+        )
+
+        // The Hook response has already been delivered. This short UI-only
+        // receipt bridges the decision surface back into the task row without
+        // claiming a resume before the next lifecycle event actually arrives.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            guard responseReceipts[identity]?.id == receipt.id else { return }
+            withAnimation(animation) {
+                _ = responseReceipts.removeValue(forKey: identity)
+            }
+        }
     }
 
     @ViewBuilder
@@ -463,6 +579,58 @@ struct NotchPanelView: View {
 
 }
 
+private struct ActionResponseReceipt: Identifiable, Equatable {
+    let id = UUID()
+    let snapshot: ActionResponseReceiptSnapshot
+}
+
+/// A calm, non-interactive bridge between the decision form and the ordinary
+/// running row. It confirms that the response reached the Agent while the
+/// actual Hook continues immediately in the background.
+private struct ActionResponseReceiptRow: View {
+    let snapshot: ActionResponseReceiptSnapshot
+    let isLive: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 11) {
+            AnimatedDotMatrixMark(
+                color: Palette.stateRunning,
+                size: 9,
+                motion: .orbiting,
+                pattern: .orbit,
+                intensity: 0.96,
+                isAnimated: isLive && !reduceMotion
+            )
+            .frame(width: 9, height: 9)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(snapshot.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.warmWhite.opacity(0.92))
+
+                Text(snapshot.detail)
+                    .font(.system(size: 10.5, weight: .regular))
+                    .foregroundStyle(Palette.textSecondary.opacity(0.82))
+            }
+
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        .background(alignment: .bottom) {
+            Rectangle()
+                .fill(Palette.hairline)
+                .frame(height: 0.5)
+                .padding(.horizontal, 2)
+        }
+        .transition(.opacity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(snapshot.accessibilityLabel)
+    }
+}
+
 // PREVIEWS && DEBUG — these previews reference TaskStore.previewTasks
 // which lives behind a #if DEBUG extension; release builds (CI / Cask
 // release artifact) need the block stripped entirely.
@@ -488,7 +656,9 @@ private let previewLayoutNotched = NotchMetrics.Layout(
 #Preview("Panel — no notch, 3 tasks") {
     NotchPanelView(
         tasks: TaskStore.previewTasks,
-        connectionStatus: .connected,
+        manusConnectionStatus: .connected,
+        localAgentStatus: .listening,
+        apiKeyStatus: .valid,
         layout: previewLayoutNoNotch,
         highlightedTask: nil,
         onTaskTap: { _ in },
@@ -502,7 +672,9 @@ private let previewLayoutNotched = NotchMetrics.Layout(
 #Preview("Panel — notched, 3 tasks") {
     NotchPanelView(
         tasks: TaskStore.previewTasks,
-        connectionStatus: .connected,
+        manusConnectionStatus: .connected,
+        localAgentStatus: .listening,
+        apiKeyStatus: .valid,
         layout: previewLayoutNotched,
         highlightedTask: TaskStore.previewTasks.first?.identity,
         onTaskTap: { _ in },
@@ -516,7 +688,9 @@ private let previewLayoutNotched = NotchMetrics.Layout(
 #Preview("Panel — empty") {
     NotchPanelView(
         tasks: [],
-        connectionStatus: .reconnecting,
+        manusConnectionStatus: .reconnecting,
+        localAgentStatus: .starting,
+        apiKeyStatus: .valid,
         layout: previewLayoutNoNotch,
         highlightedTask: nil,
         onTaskTap: { _ in },

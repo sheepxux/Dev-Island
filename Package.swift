@@ -111,6 +111,7 @@ let package = Package(
             name: "IslandCoreTests",
             dependencies: [
                 "IslandCore",
+                .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "SQLite", package: "SQLite.swift"),
             ],
             path: "IslandCoreTests/Sources/IslandCoreTests"

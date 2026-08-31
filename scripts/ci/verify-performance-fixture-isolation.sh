@@ -8,6 +8,7 @@ PERFORMANCE_MARKERS=(
   'DEV_ISLAND_PERFORMANCE_READY uptime='
   'DEV_ISLAND_PERFORMANCE_SCENARIO'
   'DEV_ISLAND_PERFORMANCE_TRANSITION iteration='
+  'DEV_ISLAND_PERFORMANCE_ACTION phase='
 )
 
 # These literals live in three independent DEBUG-only surfaces: the adaptive
@@ -157,7 +158,13 @@ expect_rejected() {
 }
 
 run_self_test() {
-  SELF_TEST_ROOT="$(mktemp -d -t dev-island-build-flavor)"
+  if [[ -n "${DEV_ISLAND_QA_TMPDIR:-}" ]]; then
+    [[ "$DEV_ISLAND_QA_TMPDIR" == /* && -d "$DEV_ISLAND_QA_TMPDIR" && ! -L "$DEV_ISLAND_QA_TMPDIR" ]] \
+      || fail "DEV_ISLAND_QA_TMPDIR must be an absolute regular directory"
+    SELF_TEST_ROOT="$(mktemp -d "${DEV_ISLAND_QA_TMPDIR%/}/dev-island-build-flavor.XXXXXX")"
+  else
+    SELF_TEST_ROOT="$(mktemp -d -t dev-island-build-flavor)"
+  fi
   chmod 700 "$SELF_TEST_ROOT"
   trap 'rm -rf "$SELF_TEST_ROOT"' EXIT
 
@@ -238,7 +245,7 @@ run_self_test() {
       "$SCRIPT_PATH" --binary debug "$fixture"
   done
 
-  echo "Build-flavor marker fixtures: PASS (18 negative cases)"
+  echo "Build-flavor marker fixtures: PASS (21 negative cases)"
 }
 
 if [[ $# -eq 1 && "$1" == "--self-test" ]]; then

@@ -39,6 +39,30 @@ Developer ID、公证、Staple、Gatekeeper、真实更新链路或真实 Agent 
 本次最终复验时屏幕处于锁定状态，因此同二进制视觉复抓、VoiceOver 以及系统
 Reduce Motion / Increase Contrast 人工验收继续保留为明确未完成项。
 
+## 系统辅助功能验收安全边界（v6.64.0）
+
+系统级 VoiceOver、Reduce Motion、Increase Contrast 与 Reduce Transparency 会影响整个登录
+会话，而不只影响 Dev Island。未来切换只能在隔离 macOS 测试账户或 VM 中进行；维护者日常会话
+只允许运行 `scripts/qa/run-system-accessibility-evidence.sh` 的只读恢复检查，不得把默认值写回、
+终止进程或依赖自动猜测的“原始设置”。
+
+仓库 Security gate 现在把该约束扩大到整个可执行源码面：对 `.sh`、`.rb`、`.swift` 与 workflow
+YAML 做本地、有界 UTF-8 静态扫描，拒绝 `defaults` 写入/删除、进程级终止、`launchctl` 状态修改、
+AppleScript、全局 CFPreferences 写入以及直接修改 universal-access preference 文件。五类攻击
+夹具证明这些入口会被拒绝；扫描不执行源码、不读取用户数据，也不把“静态未发现”冒充对外部
+自动化或人工操作的运行时沙箱。因此真实系统开关验收仍必须在隔离账户或 VM 中完成。
+
+2026-08-30 已完成一个明确受限的真实样本：VoiceOver 进程由操作员观察为运行，Codex 审批面 AX
+顺序正确，`⌘D` 和 `⌘Return` 分别使待批请求返回 Working；系统 Reduce Motion 开启时，间隔
+250 ms 的两帧逐字节相同。接受前，wrapper 另确认 Reduce Motion、Increase Contrast、Reduce
+Transparency 均已关闭，VoiceOver 与 Debug App 均已退出，并且只剩指定 v6.63 Production App。
+
+私有包固定保留在 T7，仓库只保留哈希 receipt。该样本证明 AX 暴露、窗口级快捷键状态转换、一个
+静态 Reduce Motion 状态和环境恢复；它不证明 VoiceOver 实际朗读文本/焦点、所有决策类型、
+Increase Contrast、Save Panel 或可访问性法规合规。证据：
+
+`/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/system-accessibility/run-20260830T065649Z-7gNNo7`
+
 ## Reduce Motion 代码契约补漏（v6.30.0）
 
 2026-08-29 发现“短 fallback 动画”仍会插值宽高、圆角与 scale，和只保留 opacity 的产品
@@ -75,6 +99,33 @@ Settings、Welcome 与 Debug Sandbox 的 Dock lease 语义没有改变：第一�
 同轮捕获的 Codex 进程 fixture 首次调度问题也已与 production 三秒边界分离，并连续五轮通过。
 这些结果不能替代解锁后再次观察 Settings/Welcome 打开关闭、Dock 图标、Command-Tab 和焦点
 交接；它们证明测试不会再因主线程或新子进程未及时获得调度而把正确行为误报为失败。
+
+## 可信代码身份单实例接管（v6.84.0）
+
+真实解锁验收发现 T7 审计副本与 `/Applications` 旧副本可同时运行，导致两个岛、两个菜单栏
+owner 和窗口归属混淆；按 display name 自动化甚至会把当前 Settings 操作路由到旧进程。现在普通
+启动在构造任何 UI/服务前先以同 Bundle ID 找出最多 32 个候选，再以动态代码签名确定可信集合：
+Developer ID 版本要求 Apple-anchored 同 Team，只有签名 flags 明确为 ad-hoc 的本地 QA 才使用
+同 CDHash 规则。最低可信 live PID 是唯一 owner；
+第二个 byte-identical 副本只在 winner 的 PID/身份二次验证和激活都成功后退出。winner 瞬间消失、
+身份漂移、签名不可用、候选过多或激活失败时当前副本继续启动，避免“两个都没了”或误激活伪 App。
+
+该 gate 不接收跨进程数据、不读取候选路径/命令/环境、不记录 Team/CDHash，也不终止另一个进程。
+Repository 的精确双 opt-in Production smoke 明确绕过，因此维护者仍能在安装版运行时验证冻结
+artifact，而不会把 QA 误路由到用户进程。`single-instance-identity-v2-20260831` 因 SwiftUI root
+Settings Scene 可能在 gate 前构造 TaskStore-backed 内容而整体拒绝；修复为 inert Scene 的 v3 是
+唯一 authoritative artifact。
+
+v3 的锁屏 arm64 实机矩阵中，byte-identical ad-hoc 副本 **20/20** 在 gate 后 PID 消失，耗时
+min / median / p95 / max 为 **231 / 235.5 / 302 / 1155 ms**；每轮只保留一个 App owner、一个
+`127.0.0.1:7824` listener，owner 没有其他观察到的 INET socket，duplicate private home 前后为空。
+不同 CDHash impostor 的 activation 保持 `0 → 0`，未被 Dev Island 激活或终止，真实 App 继续独占
+listener。这些只属于进程、签名、socket 与本地状态证据：显示全程 locked，LaunchServices 也没有
+提供可 wait 的真实退出码，因此没有证明可见 Island/status item、焦点路由、动效、VoiceOver 或
+`status 0`。普通 owner 的 `CFFIXED_USER_HOME` 不隔离 login Keychain，不能称为 hermetic。
+
+同 Team 跨版本仍须两个真实 Developer ID artifact；Rosetta/x86_64 同 slice 与真实 simultaneous
+cold launch 仍待专项实测。未包含 gate 的旧 App 在新版之后主动启动，也仍是发布升级问题。
 
 ## GitHub 在线审计结果可信度（v6.33.0）
 
@@ -409,3 +460,24 @@ vendor trust 未验证时继续显示 Configured，不会因为安装调用返�
 hermetic 启动均通过。只读证据：
 
 `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/evidence/performance/onboarding-operation-ownership-v1-20260829/WELCOME_CONNECTION_OPERATION_EVIDENCE.md`
+
+## 决策回执切换帧节奏（v6.74.0）
+
+真实 Instruments 调用栈确认 Permission Deny 的卡顿不是按钮动画本身：请求从 `TaskStore` 同步移除后，
+回执状态尚未写入，SwiftUI 会短暂构造再丢弃完整 `TaskCard`，同一交互帧触发品牌图、系统矢量图与
+辅助功能树的懒加载。现在 Permission、Question 与 Plan 都先以无动画 transaction 预留回执，再调用
+生产 response；stale response 无动画回滚，成功时保持原有 0.9 秒回执节奏，Agent 回应不被 UI 延迟。
+
+修复前 Permission resolved window 的 App update 最大值为 132.257 ms，且存在 54.802 ms
+Potential Interaction Delay；修复后分别为 21.238 ms 与 0，App update 的 `>33/50/100 ms` 为
+`0/0/0`。修复后仍有一帧 App-attributed lifetime 为 34.722 ms，因此结论是主要交互停顿已消除，
+不是“所有帧完美”或整款 App 已完成性能认证。
+
+当前固定源码的 Permission Deny trace、四份导出、精确 `wallUnix` 对齐 JSON、审计报告和
+SHA-256 清单已经保留。修复后的 Question Submit 与 Plan Review 由于 Mac 随后锁屏仍待补录；旧
+完成样本只作为修复前诊断，锁屏/未执行/发生在 trace 尾部之外的三次样本均明确拒绝。735 项权威
+测试、21 项 build-flavor 反例、完整 Security、fresh Universal Production App 与隔离 8-sample
+启动 smoke 已通过；锁屏 smoke 仍不作为丝滑度或视觉结论。
+
+证据：
+`/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/decision-motion-v1-20260831/DECISION_MOTION_AUDIT.md`

@@ -47,6 +47,46 @@ final class VisualSnapshotTests: XCTestCase {
         )
     }
 
+    func testCaptureTaskCardLeadingIdentity() throws {
+        guard let outputDirectory = try snapshotDirectory() else { return }
+        configureApplicationIconForPackageTests()
+
+        let now = Date(timeIntervalSince1970: 1_788_060_000)
+        let statuses: [TaskStatus] = [.running, .waiting, .completed, .failed]
+        let rows = VStack(spacing: 4) {
+            ForEach(Array(LocalAgentRegistry.all.enumerated()), id: \.element.source) {
+                index, descriptor in
+                TaskCard(
+                    task: AgentTask(
+                        id: "brand-row-\(descriptor.source)",
+                        source: descriptor.source,
+                        title: "\(descriptor.displayName) session",
+                        status: statuses[index % statuses.count],
+                        currentPhase: "Checking visual identity",
+                        createdAt: now.addingTimeInterval(-180),
+                        updatedAt: now.addingTimeInterval(-30),
+                        taskURL: "file:///tmp/brand-row"
+                    ),
+                    now: now,
+                    isLive: false,
+                    onTap: {}
+                )
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Palette.notchBlack)
+        .preferredColorScheme(.dark)
+
+        try render(
+            rows,
+            size: NSSize(width: 430, height: 526),
+            to: outputDirectory.appendingPathComponent(
+                "62-task-card-leading-identity.png"
+            )
+        )
+    }
+
     func testCaptureWelcomeTour() throws {
         guard let outputPath = ProcessInfo.processInfo.environment[
             "DEV_ISLAND_VISUAL_SNAPSHOT_DIR"
@@ -298,7 +338,9 @@ final class VisualSnapshotTests: XCTestCase {
 
         let emptyPanel = NotchPanelView(
             tasks: [],
-            connectionStatus: .connected,
+            manusConnectionStatus: .connected,
+            localAgentStatus: .listening,
+            apiKeyStatus: .valid,
             layout: layout,
             highlightedTask: nil,
             onTaskTap: { _ in },
@@ -408,7 +450,9 @@ final class VisualSnapshotTests: XCTestCase {
 
         let view = NotchPanelView(
             tasks: TaskPresentationPolicy.ordered(tasks),
-            connectionStatus: .connected,
+            manusConnectionStatus: .connected,
+            localAgentStatus: .listening,
+            apiKeyStatus: .valid,
             layout: layout,
             highlightedTask: tasks[0].identity,
             onTaskTap: { _ in },
@@ -475,7 +519,9 @@ final class VisualSnapshotTests: XCTestCase {
         )
         let view = NotchPanelView(
             tasks: orderedTasks,
-            connectionStatus: .connected,
+            manusConnectionStatus: .connected,
+            localAgentStatus: .listening,
+            apiKeyStatus: .valid,
             layout: layout,
             highlightedTask: orderedTasks.first?.identity,
             onTaskTap: { _ in },
@@ -802,7 +848,9 @@ final class VisualSnapshotTests: XCTestCase {
 
         let view = NotchPanelView(
             tasks: [task],
-            connectionStatus: .connected,
+            manusConnectionStatus: .connected,
+            localAgentStatus: .listening,
+            apiKeyStatus: .valid,
             layout: layout,
             highlightedTask: task.identity,
             pendingActionRequests: [request],
@@ -882,6 +930,33 @@ final class VisualSnapshotTests: XCTestCase {
         )
     }
 
+    func testCaptureQuestionSelectionMarks() throws {
+        guard let outputDirectory = try snapshotDirectory() else { return }
+
+        let gallery = VStack(alignment: .leading, spacing: 14) {
+            questionSelectionRow(
+                title: "Single selection",
+                allowsMultipleSelection: false
+            )
+            questionSelectionRow(
+                title: "Multiple selection",
+                allowsMultipleSelection: true
+            )
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Palette.notchBlack)
+        .preferredColorScheme(.dark)
+
+        try render(
+            gallery,
+            size: NSSize(width: 320, height: 136),
+            to: outputDirectory.appendingPathComponent(
+                "25-question-selection-marks.png"
+            )
+        )
+    }
+
     func testCapturePlanReviewSurface() throws {
         guard let outputDirectory = try snapshotDirectory() else { return }
         configureApplicationIconForPackageTests()
@@ -944,7 +1019,9 @@ final class VisualSnapshotTests: XCTestCase {
         )
         return NotchPanelView(
             tasks: [task],
-            connectionStatus: .connected,
+            manusConnectionStatus: .connected,
+            localAgentStatus: .listening,
+            apiKeyStatus: .valid,
             layout: layout,
             highlightedTask: task.identity,
             pendingActionRequests: [request],
@@ -956,6 +1033,33 @@ final class VisualSnapshotTests: XCTestCase {
         .padding(22)
         .background(Color(white: 0.16))
         .preferredColorScheme(.dark)
+    }
+
+    private func questionSelectionRow(
+        title: String,
+        allowsMultipleSelection: Bool
+    ) -> some View {
+        HStack(spacing: 14) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Palette.textSecondary)
+                .frame(width: 112, alignment: .leading)
+
+            ForEach([false, true], id: \.self) { selected in
+                HStack(spacing: 7) {
+                    QuestionSelectionMark(
+                        selected: selected,
+                        allowsMultipleSelection: allowsMultipleSelection
+                    )
+                    Text(selected ? "Selected" : "Resting")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(
+                            selected ? Palette.warmWhite : Palette.textTertiary
+                        )
+                }
+                .frame(width: 76, alignment: .leading)
+            }
+        }
     }
 
     private func snapshotDirectory() throws -> URL? {

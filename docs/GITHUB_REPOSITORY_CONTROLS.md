@@ -76,13 +76,31 @@ checked `run` body.
 After both workflow files pass, the same first CI/release gate validates the
 complete repository script closure before dependency resolution; the tag path
 also does so before credential loading. A descriptor-backed walker currently
-collects all 43 Bash, 15 Ruby, and 5 Swift files under `scripts/`, rejects linked,
+collects all 50 Bash, 23 Ruby, and 6 Swift files under `scripts/`, rejects linked,
 writable, unowned, oversized or unstable inputs, then feeds the frozen bytes
 through minimal-environment `/bin/bash -n`, `/usr/bin/ruby -c`, or
 `/usr/bin/swiftc -parse -` stdin. Bash/Ruby require executable bits; Swift is
 invoked through `swift file.swift` and therefore does not. No repository script
 is executed. This closes Bash's real partial-execution
 behavior where commands before a later parse error can otherwise run first.
+
+Before a tag can import the Developer ID certificate, the credential preflight
+also proves that the configured Sparkle private key can sign a fixed repository
+payload and that the configured public key verifies it. Before publication, the
+eight-asset offline gate extracts `SUPublicEDKey` from the App inside the
+versioned ZIP and independently verifies the complete archive signature and
+Sparkle's exact signed-feed prefix with CryptoKit. A well-formed but mismatched
+key, an unrelated 64-byte signature, or signed-byte drift therefore cannot pass
+by satisfying only metadata and Base64 shape checks.
+
+The aggregate Security gate now also executes the Codex live-decision
+classifier/package attack suite. It keeps interactive island denial distinct
+from native timeout fallback, sandbox rejection, and interrupted attempts;
+only `explicit_island_deny` may produce an accepted synthetic package. No
+checked-in live-decision receipt was required until a real unlocked island Deny
+passed the same gate. That real package is now represented by the redacted
+`docs/CODEX_LIVE_DECISION_RECEIPT.txt`; CI validates the receipt but does not
+convert one dirty-worktree QA session into a clean product or Release claim.
 
 This local workflow boundary does not replace the remote controls above. A
 person who can push an arbitrary tag containing a changed workflow can also

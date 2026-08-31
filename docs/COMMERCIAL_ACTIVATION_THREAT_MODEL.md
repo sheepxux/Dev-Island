@@ -3,7 +3,7 @@
 Status: provider-neutral controls defined; provider selection, production
 services, commercial policy, and launch approval remain open.
 
-Date: 2026-08-29
+Date: 2026-08-31
 
 ## Scope and non-goals
 
@@ -44,8 +44,63 @@ repository's MIT license.
   checks document expiry using a fresh commit-time clock after transport.
   It has no URL, provider, account, email, payment data, device identifier, or
   production trust anchor, and the app does not instantiate it.
-- There is no issuer endpoint, activation endpoint, refresh endpoint, checkout
-  Webhook, account recovery path, or administrative entitlement tool.
+- A separate disabled-by-default HTTPS transport foundation now exists in
+  shipping `IslandCore`, but the App and AppLib do not construct it and it has
+  no hard-coded endpoint. It exposes no public initializer or factory; the
+  module-internal endpoint constructor is reachable only from `IslandCore`
+  tests until a reviewed, source-fixed provider factory is deliberately added.
+  No shipping `IslandCore`, App, or AppLib source constructs it. Its initializer
+  rejects non-HTTPS, non-DNS, reserved,
+  alternate-port, userinfo, alternate-path, query and fragment destinations.
+  The ephemeral session disables proxy/cookie/cache/ambient credentials,
+  connectivity waiting and redirect following, uses a ten-second bound, sends
+  the code only in the POST body, rebinds the final URL, validates status/media
+  type, and enforces the shared 32 KiB response limit while iterating bytes.
+  URLSession's normal platform TLS and hostname validation are not overridden;
+  caller-cancellation regression evidence observes the underlying URLProtocol
+  request's `stopLoading`, not merely a cancelled wrapper result.
+- A pre-provider test-only loopback sandbox now drives that actor through a
+  real Hummingbird TCP/HTTP request. It creates an ephemeral Ed25519 key,
+  synthetic privacy-minimal document, random numeric `127.0.0.1` endpoint and
+  process-memory document backend. The transport rejects every non-exact local
+  endpoint and disables proxy, cookie, cache and redirect behavior. A signed
+  response must verify and persist in memory; an unsigned response must become
+  `licenseRejected` with zero storage. None of these types are linked into the
+  shipping App, and the sandbox never accesses the login Keychain.
+- The same real-HTTP fixture now proves 400/401/404 collapse to one code
+  rejection, 429 to rate limiting, and 5xx to service unavailability without
+  returning or storing provider-private bodies. Redirect, unknown-status and
+  oversized-response cases fail as transport unavailable, never reach a
+  redirect target and leave storage empty. Missing or zero ports are rejected
+  alongside every other non-exact endpoint.
+- A cancellation-insensitive attack mode keeps its loopback URLSession request
+  in a detached but two-second-bounded task. The server therefore returns the
+  signed response after explicit Cancel or supersession instead of letting
+  cooperative network cancellation make the test pass. Recorder counts prove
+  one late response is rejected with no document, and that when both old/new
+  responses return only the latest operation reaches verify-before-save.
+- A caller already cancelled before entering the activation actor owns no new
+  operation. Controlled and real-HTTP regressions prove it creates no transport
+  request, cannot supersede the existing owner, and leaves that original signed
+  response eligible to activate.
+- There is no configured issuer/activation endpoint, refresh endpoint, checkout
+  Webhook, account recovery path, administrative entitlement tool, production
+  trust anchor, or runtime commercial-service instantiation.
+
+This loopback sandbox closes only the in-process client-wiring gap between the
+transport protocol and the existing verifier/store. Because it deliberately
+uses plain HTTP on numeric loopback, synthetic one-use inputs and no provider,
+it is not evidence for TLS/server identity, checkout or Webhook authenticity,
+code issuance/expiry/replay/enumeration/rate limits, refunds, revocation,
+device limits, recovery, production key custody, real Keychain behavior or
+operations. Those controls remain mandatory before commercial mode can ship.
+The fixture buffers its synthetic local response before enforcing the 32 KiB
+document limit; it therefore remains only actor-wiring evidence. The shipping
+HTTPS transport independently enforces both declared and unknown response
+lengths while reading, but its URLProtocol fixtures are not evidence for a real
+provider certificate, DNS, endpoint, service behavior or abuse controls.
+The detached cancellation-insensitive mode is an adversarial test mechanism,
+not a production cancellation design or a reason to detach real network work.
 
 ## Required future topology and trust boundaries
 
@@ -54,7 +109,7 @@ repository's MIT license.
 | Browser → checkout provider | Customer and payment data | Provider-hosted checkout; Dev Island must not handle card data |
 | Provider → issuer Webhook | Raw request body, signature, event ID and time | Provider's documented raw-body signature verification, timestamp window, event allowlist, durable replay table, fail-closed parsing |
 | Issuer → entitlement database | Purchase/refund/revoke/transfer events | Idempotent state transition keyed by provider event ID and internal entitlement ID; transactional audit record |
-| App → activation API | Single-use code and optional device registration | Client core already bounds/redacts codes, preflights trust, exposes generic outcomes and rejects stale/cancelled responses; future transport must add TLS, short expiry, one-time redemption, rate limits, non-enumerating errors, and no code in URL/query/logs |
+| App → activation API | Single-use code and optional device registration | Client core bounds/redacts codes, preflights trust, rejects pre-cancelled calls before operation ownership/transport, exposes generic outcomes and rejects stale/cancelled responses. Disabled HTTPS foundation has no public constructor, adds exact body-only endpoint, platform TLS, no redirect/cookie/cache/credentials, ten-second timeout and streaming response bound, and propagates caller cancellation to URLSession work; provider must still add a source-fixed factory and prove its exact domain/certificate, short expiry, one-time redemption, rate limits and non-enumerating behavior |
 | Issuer → signed license | Tier, features, validity, opaque license ID and generation | Isolated Ed25519 key custody, domain-separated canonical document, stable ID per entitlement lineage, strictly increasing generation/supersession policy |
 | Signed license → app verifier | Bearer document controlled by the user | Authenticate before parsing semantics or persisting; pin issuer/product/key ID; bound size and canonical encoding |
 | App → Keychain | Authenticated bearer document | Dedicated account, `WhenUnlockedThisDeviceOnly`, no sync, no clipboard/log/diagnostic inclusion, monotonic same-license replacement, one-process writer until an inter-process protocol exists, explicit removal |
@@ -92,7 +147,7 @@ server-side value must be authorized on the server.
 | Medium | Device identifier becomes a stable cross-service tracking ID | Current schema contains no device ID | If binding is chosen, generate a random per-install pseudonym in device-only Keychain; never use serial number, MAC address, advertising ID, username, or hardware fingerprint |
 | Medium | Activation/account enumeration enables credential attacks | No public endpoint exists | Uniform responses and timing, per-IP/account/code rate limits, abuse monitoring, bounded payloads, no customer existence in errors |
 | Medium | Local clock rollback extends an expired document | Offline verifier uses wall clock and documents the limitation | Bound offline validity; record last trusted server time without treating local state as tamper-proof; refresh when policy requires |
-| Medium | Invalid or oversized document exhausts parsing/storage or replaces a valid one | 32 KiB envelope bound, authenticate-before-semantic-parse, activation response pre-bound, verify-before-save Keychain API; deterministic tests preserve the last valid document | Provider-specific fuzz and corrupt-input tests |
+| Medium | Invalid or oversized document exhausts parsing/storage or replaces a valid one | 32 KiB envelope bound, authenticate-before-semantic-parse, HTTPS response bound while streaming, verify-before-save Keychain API; deterministic tests preserve the last valid document | Provider-specific fuzz, corrupt-input and real-service streaming tests |
 | Medium | Older signed document rolls back a refresh/refund/downgrade across launches | Positive signed generation, byte-identical equal-generation rule, nondecreasing issuance time, and process-serialized compare/write reject rollback for one stable license ID | Issuer must preserve the ID across one entitlement lineage; provider tests must prove ordered refresh/refund/revoke documents and recovery semantics |
 | Medium | Older concurrent or explicitly cancelled activation returns late and replaces newer state | Activation actor cancels and invalidates previous operation; only the still-current operation reaches synchronous verify-before-save and uses commit-time validity | Preserve latest-operation-wins, in-flight expiry, and late-response regression tests in every provider integration |
 | Low/Medium | A second process races the same Keychain item | The current client serializes writers only inside one process; Security.framework exposes no generic-password compare-and-swap | Keep one shipping writer or add and attack-test an explicit inter-process ownership protocol before any helper/CLI writes this account |
@@ -149,7 +204,10 @@ decision reaches the approval gate.
 2. Sandbox tests prove valid payment, duplicate and out-of-order Webhooks,
    forged signature, stale timestamp, unknown event, refund, chargeback,
    cancellation, and provider outage behavior.
-3. Current client tests prove code format/redaction, verifier preflight,
+3. Current client tests prove code format/redaction, HTTPS endpoint policy,
+   exact body/header contract, redirect refusal, status/media-type/final-URL
+   validation, declared/unknown-length streaming bounds, cancellation,
+   verifier preflight,
    normalized failures, verified-before-save, Keychain round-trip,
    same-license generation monotonicity under concurrent imports,
    latest-operation-wins, commit-time expiry, and cancelled late-response

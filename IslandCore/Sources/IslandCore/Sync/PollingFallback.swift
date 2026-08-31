@@ -4,10 +4,20 @@ import Foundation
 /// unsafely shared task slot and a lifecycle generation suppresses late
 /// connector results after stop or restart.
 actor PollingFallback {
+    private struct PollingOperation {
+        let token: UInt64
+        let task: Task<Void, Never>
+    }
+
     private let connector: any AgentConnector
     private let interval: TimeInterval
-    private var pollingTask: Task<Void, Never>?
+    private var pollingOperation: PollingOperation?
+    /// Superseded polls remain owned until their cancellation-unaware
+    /// connector call really returns. Completed operations remove themselves
+    /// by token, so this contains only genuinely in-flight work.
+    private var retiringPollingOperations: [UInt64: Task<Void, Never>] = [:]
     private var lifecycleGeneration: UInt64 = 0
+    private var nextOperationToken: UInt64 = 0
 
     init(connector: any AgentConnector, interval: TimeInterval = 60) {
         self.connector = connector
@@ -22,8 +32,11 @@ actor PollingFallback {
     ) {
         lifecycleGeneration &+= 1
         let generation = lifecycleGeneration
-        pollingTask?.cancel()
-        pollingTask = Task { [weak self] in
+        retireCurrentPollingOperation()
+
+        nextOperationToken &+= 1
+        let token = nextOperationToken
+        let task = Task { [weak self] in
             await self?.run(
                 generation: generation,
                 onSnapshot: onSnapshot,
@@ -31,13 +44,19 @@ actor PollingFallback {
                 onNetworkRestored: onNetworkRestored,
                 onUnauthorized: onUnauthorized
             )
+            await self?.pollingOperationDidFinish(token: token)
         }
+        pollingOperation = PollingOperation(token: token, task: task)
     }
 
-    func stop() {
+    func stop() async {
         lifecycleGeneration &+= 1
-        pollingTask?.cancel()
-        pollingTask = nil
+        retireCurrentPollingOperation()
+        let tasks = Array(retiringPollingOperations.values)
+        tasks.forEach { $0.cancel() }
+        for task in tasks {
+            await task.value
+        }
         IslandLogger.sync.info("Polling stopped")
     }
 
@@ -49,11 +68,6 @@ actor PollingFallback {
         onUnauthorized: @escaping @Sendable () async -> Void
     ) async {
         var wasOffline = false
-        defer {
-            if generation == lifecycleGeneration {
-                pollingTask = nil
-            }
-        }
 
         while isCurrent(generation) {
             do {
@@ -103,5 +117,20 @@ actor PollingFallback {
 
     private func isCurrent(_ generation: UInt64) -> Bool {
         generation == lifecycleGeneration && !Task.isCancelled
+    }
+
+    private func retireCurrentPollingOperation() {
+        guard let operation = pollingOperation else { return }
+        operation.task.cancel()
+        retiringPollingOperations[operation.token] = operation.task
+        pollingOperation = nil
+    }
+
+    private func pollingOperationDidFinish(token: UInt64) {
+        if pollingOperation?.token == token {
+            pollingOperation = nil
+        } else {
+            retiringPollingOperations.removeValue(forKey: token)
+        }
     }
 }

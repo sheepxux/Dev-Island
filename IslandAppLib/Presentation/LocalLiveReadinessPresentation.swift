@@ -204,7 +204,7 @@ enum LocalLiveReadinessPresentation {
                 && ($0.hook == .configured || $0.activation == .reviewRequired)
         }) {
             return L10n.format(
-                "Review Dev Island Hooks in Codex %@.",
+                "In Codex %@, review and trust only the Dev Island entries. “Continue without trusting” keeps approvals outside the island.",
                 language: language,
                 "/hooks"
             )

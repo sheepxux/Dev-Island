@@ -27,8 +27,12 @@ for invariant in \
   'Process\.uid' \
   'MAXIMUM_BYTES = 64 \* 1_024' \
   'signed registration probe must precede registration acceptance' \
+  'accepted transcript must persist before registration' \
+  'accepted transcript must clear journal after deletion' \
+  '--require-accepted rejects recovery transcripts' \
+  'Manus v2 live acceptance recovery' \
   'accepted transcript does not contain the exact required checkpoint set'; do
-  rg -q "$invariant" "$VALIDATOR" \
+  rg -q -- "$invariant" "$VALIDATOR" \
     || fail "Manus transcript validator invariant is missing: $invariant"
 done
 for invariant in \
@@ -55,6 +59,12 @@ for invariant in \
   'TRANSCRIPT_REMOVED' \
   'handle_build_signal' \
   'record_live_signal' \
+  'LIVE_RECOVERY_JOURNAL_RESULT' \
+  'Private recovery journal (excluded from evidence)' \
+  'manus-live-acceptance-recover' \
+  '--journal "$LIVE_JOURNAL_PATH"' \
+  '--recover ABSOLUTE_PRIVATE_JOURNAL' \
+  '"$LIVE_RECOVERY_JOURNAL_RESULT" == "cleared"' \
   'ACCEPTED'; do
   rg -Fq -- "$invariant" "$WRAPPER" \
     || fail "Manus live-acceptance evidence invariant is missing: $invariant"
@@ -237,6 +247,7 @@ printf '%s\n' \
   '[CLI] checkpoint=trust_anchor_validated' \
   '[CLI] checkpoint=server_started' \
   '[CLI] checkpoint=tunnel_started' \
+  '[CLI] checkpoint=recovery_journal_persisted' \
   '[CLI] checkpoint=registration_started' \
   '[CLI] checkpoint=signed_registration_probe' \
   '[CLI] checkpoint=registration_accepted' \
@@ -244,6 +255,7 @@ printf '%s\n' \
   '[CLI] checkpoint=task_stopped_ask' \
   '[CLI] checkpoint=task_stopped_finish' \
   '[CLI] checkpoint=webhook_deleted' \
+  '[CLI] checkpoint=recovery_journal_cleared' \
   '[CLI] checkpoint=transports_stopped' \
   '[CLI] result=accepted' >"$ACCEPTED"
 chmod 600 "$ACCEPTED"
@@ -270,6 +282,71 @@ expect_rejected() {
   fi
 }
 
+RECOVERY_PREAMBLE=(
+  '[CLI] Manus v2 live acceptance recovery'
+  '[CLI] This removes only a webhook proven by one explicit private journal.'
+  '[CLI] Provider identifiers, callback addresses and raw errors are never printed.'
+)
+RECOVERED_BOUND="$TEMP_ROOT/recovered-bound.txt"
+printf '%s\n' \
+  "${RECOVERY_PREAMBLE[@]}" \
+  '[CLI] checkpoint=recovery_journal_validated' \
+  '[CLI] checkpoint=webhook_deleted' \
+  '[CLI] checkpoint=recovery_journal_cleared' \
+  '[CLI] result=recovered' >"$RECOVERED_BOUND"
+chmod 600 "$RECOVERED_BOUND"
+"$VALIDATOR" --transcript "$RECOVERED_BOUND" >/dev/null \
+  || fail "valid bound-journal recovery transcript was rejected"
+if "$VALIDATOR" --transcript "$RECOVERED_BOUND" --require-accepted >/dev/null 2>&1; then
+  fail "recovery transcript was accepted as live-account evidence"
+fi
+
+RECOVERED_DISCOVERED="$TEMP_ROOT/recovered-discovered.txt"
+printf '%s\n' \
+  "${RECOVERY_PREAMBLE[@]}" \
+  '[CLI] checkpoint=recovery_journal_validated' \
+  '[CLI] checkpoint=recovery_inventory_checked' \
+  '[CLI] checkpoint=recovery_webhook_bound' \
+  '[CLI] checkpoint=webhook_deleted' \
+  '[CLI] checkpoint=recovery_journal_cleared' \
+  '[CLI] result=recovered' >"$RECOVERED_DISCOVERED"
+chmod 600 "$RECOVERED_DISCOVERED"
+"$VALIDATOR" --transcript "$RECOVERED_DISCOVERED" >/dev/null \
+  || fail "valid discovered-journal recovery transcript was rejected"
+
+RECOVERY_MANUAL="$TEMP_ROOT/recovery-manual.txt"
+printf '%s\n' \
+  "${RECOVERY_PREAMBLE[@]}" \
+  '[CLI] checkpoint=recovery_journal_validated' \
+  '[CLI] checkpoint=recovery_inventory_checked' \
+  '[CLI] checkpoint=manual_webhook_review_required' \
+  '[CLI] result=manual_webhook_review_required' >"$RECOVERY_MANUAL"
+chmod 600 "$RECOVERY_MANUAL"
+"$VALIDATOR" --transcript "$RECOVERY_MANUAL" >/dev/null \
+  || fail "valid manual-review recovery transcript was rejected"
+
+NO_RECOVERY_JOURNAL="$TEMP_ROOT/no-recovery-journal.txt"
+printf '%s\n' \
+  "${RECOVERY_PREAMBLE[@]}" \
+  '[CLI] result=no_recovery_journal' >"$NO_RECOVERY_JOURNAL"
+chmod 600 "$NO_RECOVERY_JOURNAL"
+"$VALIDATOR" --transcript "$NO_RECOVERY_JOURNAL" >/dev/null \
+  || fail "valid empty recovery transcript was rejected"
+
+RECOVERY_MISSING_BIND="$TEMP_ROOT/recovery-missing-bind.txt"
+rg -v 'checkpoint=recovery_webhook_bound' \
+  "$RECOVERED_DISCOVERED" >"$RECOVERY_MISSING_BIND"
+chmod 600 "$RECOVERY_MISSING_BIND"
+expect_rejected "$RECOVERY_MISSING_BIND" \
+  "a discovered recovery transcript without durable binding"
+
+RECOVERY_MANUAL_MISMATCH="$TEMP_ROOT/recovery-manual-mismatch.txt"
+sed 's/result=manual_webhook_review_required/result=recovered/' \
+  "$RECOVERY_MANUAL" >"$RECOVERY_MANUAL_MISMATCH"
+chmod 600 "$RECOVERY_MANUAL_MISMATCH"
+expect_rejected "$RECOVERY_MANUAL_MISMATCH" \
+  "a recovery transcript whose manual checkpoint and result disagree"
+
 MISSING="$TEMP_ROOT/missing-checkpoint.txt"
 rg -v 'checkpoint=task_stopped_ask' "$ACCEPTED" >"$MISSING"
 chmod 600 "$MISSING"
@@ -288,6 +365,55 @@ sed \
   || ruby -e 's=File.binread(ARGV[0]); a="checkpoint=signed_registration_probe"; b="checkpoint=registration_accepted"; s.sub!(a,"__swap__"); s.sub!(b,a); s.sub!("__swap__",b); File.binwrite(ARGV[1],s)' "$ACCEPTED" "$OUT_OF_ORDER"
 chmod 600 "$OUT_OF_ORDER"
 expect_rejected "$OUT_OF_ORDER" "an out-of-order signed registration probe"
+
+PERSISTED_AFTER_REGISTRATION="$TEMP_ROOT/persisted-after-registration.txt"
+ruby -e '
+s = File.binread(ARGV.fetch(0))
+a = "checkpoint=recovery_journal_persisted"
+b = "checkpoint=registration_started"
+s.sub!(a, "__swap__")
+s.sub!(b, a)
+s.sub!("__swap__", b)
+File.binwrite(ARGV.fetch(1), s)
+' "$ACCEPTED" "$PERSISTED_AFTER_REGISTRATION"
+chmod 600 "$PERSISTED_AFTER_REGISTRATION"
+expect_rejected "$PERSISTED_AFTER_REGISTRATION" \
+  "a registration checkpoint before durable journal persistence"
+
+CLEARED_BEFORE_DELETE="$TEMP_ROOT/cleared-before-delete.txt"
+ruby -e '
+s = File.binread(ARGV.fetch(0))
+a = "checkpoint=webhook_deleted"
+b = "checkpoint=recovery_journal_cleared"
+s.sub!(a, "__swap__")
+s.sub!(b, a)
+s.sub!("__swap__", b)
+File.binwrite(ARGV.fetch(1), s)
+' "$ACCEPTED" "$CLEARED_BEFORE_DELETE"
+chmod 600 "$CLEARED_BEFORE_DELETE"
+expect_rejected "$CLEARED_BEFORE_DELETE" \
+  "a journal clear before remote webhook deletion"
+
+TRANSPORTS_BEFORE_CLEAR="$TEMP_ROOT/transports-before-clear.txt"
+ruby -e '
+s = File.binread(ARGV.fetch(0))
+a = "checkpoint=recovery_journal_cleared"
+b = "checkpoint=transports_stopped"
+s.sub!(a, "__swap__")
+s.sub!(b, a)
+s.sub!("__swap__", b)
+File.binwrite(ARGV.fetch(1), s)
+' "$ACCEPTED" "$TRANSPORTS_BEFORE_CLEAR"
+chmod 600 "$TRANSPORTS_BEFORE_CLEAR"
+expect_rejected "$TRANSPORTS_BEFORE_CLEAR" \
+  "transport shutdown before durable journal clearing"
+
+UNCLEARED_ACCEPTED="$TEMP_ROOT/uncleared-accepted.txt"
+rg -v 'checkpoint=recovery_journal_cleared' \
+  "$ACCEPTED" >"$UNCLEARED_ACCEPTED"
+chmod 600 "$UNCLEARED_ACCEPTED"
+expect_rejected "$UNCLEARED_ACCEPTED" \
+  "an accepted claim with a retained recovery journal"
 
 URL_INJECTION="$TEMP_ROOT/url-injection.txt"
 sed '$d' "$ACCEPTED" >"$URL_INJECTION"

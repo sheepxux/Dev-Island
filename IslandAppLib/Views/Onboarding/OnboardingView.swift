@@ -5,13 +5,13 @@ import SwiftUI
 enum OnboardingMetrics {
     static let width: CGFloat = 760
     static let height: CGFloat = 500
-    static let windowRadius: CGFloat = 16
+    static let windowRadius: CGFloat = 18
     static let contentHorizontalPadding: CGFloat = 32
     static let editorialWidth: CGFloat = 264
     static let editorialSpacing: CGFloat = 28
     static let stageWidth: CGFloat = 404
     static let stageHeight: CGFloat = 253
-    static let stageRadius: CGFloat = 10
+    static let stageRadius: CGFloat = 14
 }
 
 enum OnboardingNavigationPolicy {
@@ -73,7 +73,7 @@ struct OnboardingView: View {
             footer
         }
         .frame(width: OnboardingMetrics.width, height: OnboardingMetrics.height)
-        .background(Palette.tourCanvas)
+        .background(tourCanvas)
         .clipShape(
             RoundedRectangle(
                 cornerRadius: OnboardingMetrics.windowRadius,
@@ -85,7 +85,17 @@ struct OnboardingView: View {
                 cornerRadius: OnboardingMetrics.windowRadius,
                 style: .continuous
             )
-            .stroke(Palette.hairline, lineWidth: 0.75)
+            .stroke(
+                LinearGradient(
+                    colors: [
+                        Palette.warmWhite.opacity(0.15),
+                        Palette.warmWhite.opacity(0.055),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: 0.75
+            )
         }
         .preferredColorScheme(.dark)
         .onAppear(perform: loadInstalledSources)
@@ -95,6 +105,21 @@ struct OnboardingView: View {
             // result or a late read-only scan.
             connectionOperation.invalidate()
         }
+    }
+
+    /// A near-achromatic studio canvas. The value shift is deliberately
+    /// quieter than the state colors and exists only to separate the fixed
+    /// chrome, editorial copy and live specimen without adding decoration.
+    private var tourCanvas: some View {
+        LinearGradient(
+            stops: [
+                .init(color: Palette.tourCanvasRaised, location: 0),
+                .init(color: Palette.tourCanvas, location: 0.42),
+                .init(color: Palette.notchBlack.opacity(0.96), location: 1),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 
     // MARK: - Window chrome
@@ -279,6 +304,10 @@ struct OnboardingView: View {
                     width: OnboardingMetrics.stageWidth,
                     height: OnboardingMetrics.stageHeight
                 )
+                .background(stageSurface)
+                .clipShape(stageShape)
+                .overlay { stageRim }
+                .shadow(color: .black.opacity(0.34), radius: 18, y: 10)
                 .frame(maxHeight: .infinity, alignment: .center)
         }
         .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
@@ -309,7 +338,6 @@ struct OnboardingView: View {
             rowDivider
             signalRow(title: "Completed", detail: "2 today", state: .completed)
         }
-        .background(stageSurface)
         .accessibilityElement(children: .contain)
     }
 
@@ -438,13 +466,6 @@ struct OnboardingView: View {
                 }
             }
         }
-        .background(stageSurface)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: OnboardingMetrics.stageRadius,
-                style: .continuous
-            )
-        )
     }
 
     /// The Welcome flow stays intentionally bounded even as the connector
@@ -581,7 +602,6 @@ struct OnboardingView: View {
             .padding(.horizontal, 16)
             .frame(height: 52, alignment: .leading)
         }
-        .background(stageSurface)
     }
 
     private func notificationRow(
@@ -654,13 +674,35 @@ struct OnboardingView: View {
             .frame(height: 1)
     }
 
+    private var stageShape: RoundedRectangle {
+        RoundedRectangle(
+            cornerRadius: OnboardingMetrics.stageRadius,
+            style: .continuous
+        )
+    }
+
     private var stageSurface: some View {
-        RoundedRectangle(cornerRadius: OnboardingMetrics.stageRadius, style: .continuous)
-            .fill(Palette.tourPanel)
-            .overlay {
-                RoundedRectangle(cornerRadius: OnboardingMetrics.stageRadius, style: .continuous)
-                    .stroke(Palette.hairline, lineWidth: 0.75)
-            }
+        stageShape.fill(
+            LinearGradient(
+                colors: [Palette.tourPanelRaised, Palette.tourPanel],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+    }
+
+    private var stageRim: some View {
+        stageShape.stroke(
+            LinearGradient(
+                colors: [
+                    Palette.warmWhite.opacity(0.12),
+                    Palette.warmWhite.opacity(0.045),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            lineWidth: 0.75
+        )
     }
 
     // MARK: - Navigation
@@ -721,8 +763,8 @@ struct OnboardingView: View {
     private var stepTransition: AnyTransition {
         guard !reduceMotion else { return .opacity }
         return .asymmetric(
-            insertion: .opacity.combined(with: .offset(x: CGFloat(direction * 10))),
-            removal: .opacity.combined(with: .offset(x: CGFloat(direction * -6)))
+            insertion: .opacity.combined(with: .offset(x: CGFloat(direction * 6))),
+            removal: .opacity.combined(with: .offset(x: CGFloat(direction * -3)))
         )
     }
 
@@ -955,21 +997,10 @@ private struct OnboardingAgentCell: View {
     }
 
     private var statusLabel: String {
-        if errorMessage != nil { return "Try again" }
-        switch connectionState {
-        case nil: return "Checking…"
-        case .connected: return "Connected"
-        case .configured:
-            return descriptor.hookActivationRequirement.reviewCommand.map {
-                L10n.format(
-                    "Configured · review %@",
-                    language: language,
-                    $0
-                )
-            } ?? "Configured"
-        case .updateRequired: return "Needs update"
-        case .disconnected: return "Not connected"
-        }
+        OnboardingConnectionStatusPresentation.compactLabel(
+            state: connectionState,
+            hasError: errorMessage != nil
+        )
     }
 
     private var compactDisplayName: String {
@@ -1010,6 +1041,25 @@ private struct OnboardingAgentCell: View {
             language: language,
             descriptor.displayName
         )
+    }
+}
+
+enum OnboardingConnectionStatusPresentation {
+    /// Welcome is a 202-point-wide specimen cell, not a diagnostics screen.
+    /// Keep the visible state scannable and leave review commands to the
+    /// existing accessibility description and full Settings surface.
+    static func compactLabel(
+        state: LocalAgentHookConnectionState?,
+        hasError: Bool
+    ) -> String {
+        if hasError { return "Try again" }
+        switch state {
+        case nil: return "Checking…"
+        case .connected: return "Connected"
+        case .configured: return "Configured"
+        case .updateRequired: return "Needs update"
+        case .disconnected: return "Not connected"
+        }
     }
 }
 

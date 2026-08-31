@@ -6,6 +6,7 @@ require "time"
 STEP_ORDER = %w[
   toolchain
   dependencies
+  sparkle-update
   security
   tests
   performance-build
@@ -20,6 +21,7 @@ STEP_ORDER = %w[
 STEP_LABELS = {
   "toolchain" => "Toolchain",
   "dependencies" => "Dependency resolution",
+  "sparkle-update" => "Disposable Sparkle old-to-new update",
   "security" => "Security and privacy invariants",
   "tests" => "Swift tests",
   "performance-build" => "Performance fixture build + launch smoke",
@@ -34,6 +36,7 @@ STEP_LABELS = {
 REPRODUCE = {
   "toolchain" => "xcodebuild -version && swift --version",
   "dependencies" => "git ls-files --error-unmatch VERSION scripts/release/validate-product-version.rb Package.resolved && ./scripts/release/validate-product-version.rb --version-file VERSION && swift package resolve && git diff --exit-code -- Package.resolved",
+  "sparkle-update" => "./scripts/ci/verify-sparkle-old-to-new-update.sh",
   "security" => "./scripts/ci/verify-security-invariants.sh",
   "tests" => "./scripts/ci/run-authoritative-tests.sh",
   "performance-build" => "DEV_ISLAND_PERFORMANCE_QA=1 BUILD_DIR=/tmp/dev-island-performance ./scripts/build-app.sh && DEV_ISLAND_PERF_ALLOW_LOCKED=1 ./scripts/qa/measure-app-performance.sh '/tmp/dev-island-performance/Dev Island.app/Contents/MacOS/IslandApp' idle /tmp/dev-island-launch-smoke.csv 0 8",

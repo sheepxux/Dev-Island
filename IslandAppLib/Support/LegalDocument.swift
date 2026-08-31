@@ -408,9 +408,19 @@ enum LegalDocumentLinkPolicy {
         switch scheme {
         case "mailto":
             guard url.query == nil, url.fragment == nil else { return false }
-            return allowedSupportAddresses.contains(
-                url.path.removingPercentEncoding?.lowercased() ?? ""
-            )
+            // Foundation does not expose opaque URL paths consistently across
+            // supported macOS releases. Match the canonical payload instead of
+            // relying on `URL.path`, which is empty for `mailto:` on macOS 14.
+            let absoluteString = url.absoluteString
+            let schemePrefix = "mailto:"
+            guard absoluteString.count >= schemePrefix.count,
+                  absoluteString.prefix(schemePrefix.count)
+                    .caseInsensitiveCompare(schemePrefix) == .orderedSame,
+                  let address = String(absoluteString.dropFirst(schemePrefix.count))
+                    .removingPercentEncoding else {
+                return false
+            }
+            return allowedSupportAddresses.contains(address.lowercased())
         case "https":
             return url.host?.lowercased() == "devisland.app"
                 && url.user == nil

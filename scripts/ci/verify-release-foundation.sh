@@ -105,14 +105,17 @@ ci_repository_script_lines="$(rg -n './scripts/release/verify-repository-script-
 ci_repository_script_count="$(wc -l <<<"$ci_repository_script_lines" | tr -d ' ')"
 ci_repository_script_line="$(tail -1 <<<"$ci_repository_script_lines")"
 ci_dependency_line="$(rg -n 'name: Resolve dependencies' "$CI_WORKFLOW" | cut -d: -f1)"
+ci_ripgrep_bootstrap_line="$(rg -nF 'HOMEBREW_NO_AUTO_UPDATE=1 brew install ripgrep' "$CI_WORKFLOW" | cut -d: -f1)"
 [[ "$ci_workflow_shell_count" -eq 2 \
    && -n "$ci_workflow_shell_last_line" \
    && "$ci_repository_script_count" -eq 1 \
    && -n "$ci_repository_script_line" \
    && -n "$ci_dependency_line" \
+   && -n "$ci_ripgrep_bootstrap_line" \
+   && "$ci_ripgrep_bootstrap_line" -lt "$ci_workflow_shell_last_line" \
    && "$ci_workflow_shell_last_line" -lt "$ci_repository_script_line" \
    && "$ci_repository_script_line" -lt "$ci_dependency_line" ]] \
-  || fail "PR CI must syntax-check workflows and repository scripts before dependency resolution"
+  || fail "PR CI must bootstrap ripgrep, then syntax-check workflows and repository scripts before dependency resolution"
 
 gates_line="$(rg -n 'name: Repository release gates' "$RELEASE" | cut -d: -f1)"
 credential_line="$(rg -n 'name: Validate release credentials' "$RELEASE" | cut -d: -f1)"
@@ -126,6 +129,7 @@ repository_script_guard_lines="$(rg -n './scripts/release/verify-repository-scri
 repository_script_guard_count="$(wc -l <<<"$repository_script_guard_lines" | tr -d ' ')"
 repository_script_guard_line="$(tail -1 <<<"$repository_script_guard_lines")"
 package_boundary_line="$(rg -n 'git ls-files --error-unmatch Package\.resolved' "$RELEASE" | cut -d: -f1)"
+release_ripgrep_bootstrap_line="$(rg -nF 'HOMEBREW_NO_AUTO_UPDATE=1 brew install ripgrep' "$RELEASE" | cut -d: -f1)"
 [[ -n "$gates_line" \
    && -n "$credential_line" \
    && -n "$keychain_line" \
@@ -136,6 +140,8 @@ package_boundary_line="$(rg -n 'git ls-files --error-unmatch Package\.resolved' 
    && "$repository_script_guard_count" -eq 1 \
    && -n "$repository_script_guard_line" \
    && -n "$package_boundary_line" \
+   && -n "$release_ripgrep_bootstrap_line" \
+   && "$release_ripgrep_bootstrap_line" -lt "$gates_line" \
    && "$gates_line" -lt "$checkout_guard_line" \
    && "$checkout_guard_line" -lt "$workflow_shell_guard_first_line" \
    && "$workflow_shell_guard_last_line" -lt "$repository_script_guard_line" \
@@ -143,6 +149,16 @@ package_boundary_line="$(rg -n 'git ls-files --error-unmatch Package\.resolved' 
    && "$gates_line" -lt "$credential_line" \
    && "$credential_line" -lt "$keychain_line" ]] \
   || fail "Checkout isolation, release gates, and credential preflight ordering is invalid"
+for workflow in "$CI_WORKFLOW" "$RELEASE"; do
+  for invariant in \
+    'if ! command -v rg >/dev/null 2>&1; then' \
+    'command -v brew >/dev/null 2>&1' \
+    'HOMEBREW_NO_AUTO_UPDATE=1 brew install ripgrep' \
+    'rg --version'; do
+    [[ "$(rg -Fc "$invariant" "$workflow")" -eq 1 ]] \
+      || fail "Workflow must bootstrap and identify ripgrep exactly once before repository gates: $workflow ($invariant)"
+  done
+done
 credential_block="$(sed -n "${credential_line},$((keychain_line - 1))p" "$RELEASE")"
 release_gate_block="$(sed -n "${gates_line},$((credential_line - 1))p" "$RELEASE")"
 test -x "$SPARKLE_OLD_TO_NEW_GATE" && test -x "$SPARKLE_LIVE_GATE_HELPER" \

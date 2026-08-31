@@ -84,6 +84,15 @@ invoked through `swift file.swift` and therefore does not. No repository script
 is executed. This closes Bash's real partial-execution
 behavior where commands before a later parse error can otherwise run first.
 
+GitHub's macOS runner image does not guarantee that `ripgrep` is preinstalled,
+while the reviewed repository gates deliberately use `rg` for fixed-string and
+bounded source checks. CI and tagged Release therefore test for `rg` and, only
+when it is absent, install the runner's Homebrew `ripgrep` formula with Homebrew
+auto-update disabled. They print the resolved tool version and complete this
+bootstrap before executing any repository-owned gate. The release-foundation
+fixtures bind the bootstrap shape and ordering so a runner-image change fails
+at the tool boundary instead of silently skipping later security checks.
+
 Before a tag can import the Developer ID certificate, the credential preflight
 also proves that the configured Sparkle private key can sign a fixed repository
 payload and that the configured public key verifies it. Before publication, the

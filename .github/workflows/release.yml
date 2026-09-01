@@ -610,7 +610,7 @@ jobs:
       # by this repository's tagged workflow without trusting copied checksum
       # text in release notes.
       - name: Attest release build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             ${{ steps.dmg.outputs.stable }}
@@ -623,7 +623,7 @@ jobs:
             ${{ steps.integrity.outputs.path }}
 
       - name: Attest release SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             ${{ steps.dmg.outputs.stable }}
@@ -633,7 +633,7 @@ jobs:
           sbom-path: ${{ steps.sbom.outputs.path }}
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           name: Dev Island ${{ steps.version.outputs.version }}

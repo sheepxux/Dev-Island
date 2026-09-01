@@ -47,6 +47,8 @@ REPOSITORY_SCRIPT_VALIDATOR="scripts/release/verify-repository-script-syntax.rb"
 REPOSITORY_SCRIPT_FIXTURES="scripts/ci/verify-repository-script-syntax.sh"
 CI_WORKFLOW=".github/workflows/ci.yml"
 VERSION="$(cat VERSION)"
+ATTEST_ACTION="actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
+RELEASE_ACTION="softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64"
 
 for workflow in "${WORKFLOWS[@]}"; do
   while IFS= read -r use; do
@@ -268,10 +270,13 @@ publication_line="$(rg -n 'name: Create GitHub Release' "$RELEASE" | cut -d: -f1
    && "$attestation_line" -lt "$sbom_attestation_line" \
    && "$sbom_attestation_line" -lt "$publication_line" ]] \
   || fail "SBOM, integrity, complete asset verification, and both attestations must complete before publication"
-rg -q 'uses: actions/attest-build-provenance@[0-9a-f]{40}' "$RELEASE" \
-  || fail "Build provenance action must be pinned to a full commit SHA"
-rg -q 'uses: actions/attest-sbom@[0-9a-f]{40}' "$RELEASE" \
-  || fail "SBOM attestation action must be pinned to a full commit SHA"
+[[ "$(rg -Fc "uses: ${ATTEST_ACTION}" "$RELEASE")" -eq 2 ]] \
+  || fail "Both Release attestations must use the reviewed Node 24 actions/attest commit"
+if rg -q 'uses: actions/(attest-build-provenance|attest-sbom)@' "$RELEASE"; then
+  fail "Deprecated attestation wrapper Actions must not re-enter the Release workflow"
+fi
+[[ "$(rg -Fc "uses: ${RELEASE_ACTION}" "$RELEASE")" -eq 1 ]] \
+  || fail "GitHub Release publication must use the reviewed Node 24 action commit"
 test -x "$INTEGRITY_GENERATOR" \
   || fail "Executable release integrity generator is missing"
 test -x "$SBOM_GENERATOR" \

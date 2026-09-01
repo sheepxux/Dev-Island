@@ -32,13 +32,24 @@ complete, PR CI is implemented but is not an enforced merge boundary.
 - allow GitHub-owned Actions;
 - do not allow every verified Marketplace publisher;
 - allow only the reviewed external action at its exact commit:
-  `softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65`;
+  `softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64`;
 - require Actions to be pinned to a full commit SHA;
 - keep the default workflow token permission at read-only; and
 - prohibit workflows from approving pull requests.
 
 The workflow declares its exceptional Release permissions explicitly. A broad
 default token is therefore unnecessary.
+
+The checked-in Release workflow separately fixes both build-provenance and SBOM
+steps to the same GitHub-owned Node 24 action,
+`actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6`
+(`v4.2.2`). With only `subject-path`, it emits SLSA build provenance; with the
+existing `subject-path` plus `sbom-path`, it emits the SPDX SBOM attestation.
+This replaces the older `attest-build-provenance` and now-deprecated
+`attest-sbom` wrappers without widening inputs or permissions. Release
+publication uses the reviewed Node 24 `softprops/action-gh-release` commit
+listed above. GitHub-hosted `macos-15` satisfies the Node 24 Actions runner
+minimum; a future self-hosted runner would need version 2.327.1 or newer.
 
 The tag Release checkout also uses `persist-credentials: false`. A dedicated
 safe-YAML validator is the first repository command and runs before dependency

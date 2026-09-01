@@ -97,7 +97,7 @@ elsif actions["allowed_actions"] != "selected"
 else
   add.call("A03", "GitHub-owned Actions are not allowed") unless selected["github_owned_allowed"] == true
   add.call("A04", "all verified Marketplace Actions are allowed instead of an exact list") unless selected["verified_allowed"] == false
-  expected_external_action = "softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65"
+  expected_external_action = "softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64"
   patterns = selected["patterns_allowed"]
   unless patterns.is_a?(Array) && patterns == [expected_external_action]
     add.call("A05", "the only third-party Action must be the exact reviewed release-action commit")

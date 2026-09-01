@@ -100,7 +100,7 @@ safe_selected = {
   "github_owned_allowed" => true,
   "verified_allowed" => false,
   "patterns_allowed" => [
-    "softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65",
+    "softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64",
   ],
 }
 safe_workflow = {
@@ -237,7 +237,7 @@ case "$endpoint" in
     printf '%s\n' '{"required_status_checks":{"strict":true,"checks":[{"context":"Tests, security, universal build","app_id":15368}]},"required_pull_request_reviews":{"required_approving_review_count":1,"dismiss_stale_reviews":true,"require_last_push_approval":true},"enforce_admins":{"enabled":true},"required_conversation_resolution":{"enabled":true},"required_linear_history":{"enabled":true},"allow_force_pushes":{"enabled":false},"allow_deletions":{"enabled":false}}'
     ;;
   */actions/permissions/selected-actions)
-    printf '%s\n' '{"github_owned_allowed":true,"verified_allowed":false,"patterns_allowed":["softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65"]}'
+    printf '%s\n' '{"github_owned_allowed":true,"verified_allowed":false,"patterns_allowed":["softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64"]}'
     ;;
   */actions/permissions/workflow)
     printf '%s\n' '{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}'

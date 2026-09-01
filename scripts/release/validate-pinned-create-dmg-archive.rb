@@ -9,6 +9,7 @@ module PinnedCreateDMGArchive
   class ValidationError < StandardError; end
 
   MAX_COMPRESSED_BYTES = 1_048_576
+  ARCHIVE_HASH_CHUNK_BYTES = 65_536
   MAX_ENTRY_BYTES = 524_288
   MAX_LOGICAL_BYTES = 1_048_576
   MAX_PATH_BYTES = 512
@@ -127,8 +128,9 @@ module PinnedCreateDMGArchive
   end
 
   class Validator
-    def initialize(archive:, commit:, runtime_hashes:)
+    def initialize(archive:, archive_sha256:, commit:, runtime_hashes:)
       @archive = archive
+      @archive_sha256 = archive_sha256
       @commit = commit
       @runtime_hashes = runtime_hashes
     end
@@ -136,6 +138,9 @@ module PinnedCreateDMGArchive
     def validate!
       PinnedCreateDMGArchive.validate_archive_path!(@archive)
       @archive = File.expand_path(@archive)
+      unless @archive_sha256.match?(/\A[0-9a-f]{64}\z/)
+        PinnedCreateDMGArchive.reject!("archive SHA-256 must be lowercase 64hex")
+      end
       PinnedCreateDMGArchive.reject!("commit must be one lowercase full SHA") unless @commit.match?(/\A[0-9a-f]{40}\z/)
       unless @runtime_hashes.keys.sort == RUNTIME_SIZES.keys.sort
         PinnedCreateDMGArchive.reject!("runtime hash inventory is incomplete")
@@ -160,6 +165,15 @@ module PinnedCreateDMGArchive
         unless PinnedCreateDMGArchive.same_metadata?(path_before, opened_before)
           PinnedCreateDMGArchive.reject!("archive identity changed while opening")
         end
+
+        archive_digest = Digest::SHA256.new
+        while (chunk = archive_io.read(ARCHIVE_HASH_CHUNK_BYTES))
+          archive_digest.update(chunk)
+        end
+        unless archive_digest.hexdigest == @archive_sha256
+          PinnedCreateDMGArchive.reject!("compressed archive SHA-256 mismatch")
+        end
+        archive_io.rewind
 
         validate_tar_stream!(archive_io)
 
@@ -299,8 +313,9 @@ module PinnedCreateDMGArchive
   def parse_options(arguments)
     options = { runtime_hashes: {} }
     parser = OptionParser.new do |config|
-      config.banner = "Usage: validate-pinned-create-dmg-archive.rb --archive PATH --commit SHA [runtime SHA options]"
+      config.banner = "Usage: validate-pinned-create-dmg-archive.rb --archive PATH --archive-sha256 SHA --commit SHA [runtime SHA options]"
       config.on("--archive PATH") { |value| options[:archive] = value }
+      config.on("--archive-sha256 SHA") { |value| options[:archive_sha256] = value }
       config.on("--commit SHA") { |value| options[:commit] = value }
       config.on("--script-sha256 SHA") { |value| options[:runtime_hashes]["create-dmg"] = value }
       config.on("--sentinel-sha256 SHA") { |value| options[:runtime_hashes][".this-is-the-create-dmg-repo"] = value }
@@ -310,6 +325,7 @@ module PinnedCreateDMGArchive
     parser.parse!(arguments)
     reject!("unexpected positional arguments") unless arguments.empty?
     reject!("--archive is required") unless options[:archive]
+    reject!("--archive-sha256 is required") unless options[:archive_sha256]
     reject!("--commit is required") unless options[:commit]
     options
   rescue OptionParser::ParseError => error

@@ -209,8 +209,13 @@ RUBY
 
 run_validator() {
   local archive="$1"
+  local archive_sha256="${2:-}"
+  if [[ -z "$archive_sha256" ]]; then
+    archive_sha256="$(/usr/bin/shasum -a 256 "$archive" | /usr/bin/awk '{print $1}')"
+  fi
   "$VALIDATOR" \
     --archive "$archive" \
+    --archive-sha256 "$archive_sha256" \
     --commit "$COMMIT" \
     --script-sha256 "$SCRIPT_SHA256" \
     --sentinel-sha256 "$SENTINEL_SHA256" \
@@ -222,6 +227,21 @@ VALID_ARCHIVE="$TEMP_ROOT/valid.tar.gz"
 build_fixture valid "$VALID_ARCHIVE"
 [[ "$(run_validator "$VALID_ARCHIVE")" == "Pinned create-dmg archive: PASS" ]] \
   || fail "Reviewed archive fixture did not pass"
+
+WRONG_ARCHIVE_SHA256="$(printf '0%.0s' {1..64})"
+WRONG_ARCHIVE_SHA_LOG="$TEMP_ROOT/wrong-archive-sha.log"
+if run_validator "$VALID_ARCHIVE" "$WRONG_ARCHIVE_SHA256" >"$WRONG_ARCHIVE_SHA_LOG" 2>&1; then
+  fail "wrong expected compressed-archive SHA-256 unexpectedly passed"
+fi
+grep -Fq "compressed archive SHA-256 mismatch" "$WRONG_ARCHIVE_SHA_LOG" \
+  || fail "wrong expected compressed-archive SHA-256 failed for the wrong reason"
+
+INVALID_ARCHIVE_SHA_LOG="$TEMP_ROOT/invalid-archive-sha.log"
+if run_validator "$VALID_ARCHIVE" "ABC" >"$INVALID_ARCHIVE_SHA_LOG" 2>&1; then
+  fail "malformed expected compressed-archive SHA-256 unexpectedly passed"
+fi
+grep -Fq "archive SHA-256 must be lowercase 64hex" "$INVALID_ARCHIVE_SHA_LOG" \
+  || fail "malformed expected compressed-archive SHA-256 failed for the wrong reason"
 
 expect_rejected() {
   local label="$1"

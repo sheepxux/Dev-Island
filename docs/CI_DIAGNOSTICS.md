@@ -387,7 +387,8 @@ GitHub job summary.
 `actions/upload-artifact` is:
 
 - GitHub-owned;
-- fixed to commit `ea165f8d65b6e75b540449e92b4886f43607fa02`;
+- fixed to the signed v7.0.1 commit
+  `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` and its Node 24 runtime;
 - invoked only on `failure()`;
 - scoped only to the sanitized output directory;
 - configured to fail if the bundle is missing; and

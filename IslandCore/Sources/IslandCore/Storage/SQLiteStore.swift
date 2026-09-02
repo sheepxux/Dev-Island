@@ -262,6 +262,42 @@ actor SQLiteStore {
         } ?? TaskHistoryPage(tasks: [], totalCount: 0)
     }
 
+    struct DailyActivityAggregate: Equatable, Sendable {
+        let sessionCount: Int
+        let activeSeconds: TimeInterval
+    }
+
+    /// Content-free aggregate over sessions that started inside
+    /// `[dayStart, dayEnd)`: how many, and how long each stayed active
+    /// (`updated_at - created_at`, clamped at zero). Only the two timestamp
+    /// columns are materialized; no title, ID, or URL leaves the actor.
+    func dailyActivity(dayStart: Date, dayEnd: Date) throws -> DailyActivityAggregate {
+        let start = dayStart.timeIntervalSince1970
+        let end = dayEnd.timeIntervalSince1970
+        guard start.isFinite, end.isFinite, end > start else {
+            return DailyActivityAggregate(sessionCount: 0, activeSeconds: 0)
+        }
+        return try performVerifiedRead { db in
+            let rows = tasksTable
+                .select(colCreatedAt, colUpdatedAt)
+                .filter(Expression<Bool>(literal: Self.boundedTaskRowSQLPredicate))
+                .filter(colCreatedAt >= start && colCreatedAt < end)
+            var sessionCount = 0
+            var activeSeconds: TimeInterval = 0
+            for row in try db.prepare(rows) {
+                let createdAt = row[colCreatedAt]
+                let updatedAt = row[colUpdatedAt]
+                guard createdAt.isFinite, updatedAt.isFinite else { continue }
+                sessionCount += 1
+                activeSeconds += max(0, updatedAt - createdAt)
+            }
+            return DailyActivityAggregate(
+                sessionCount: sessionCount,
+                activeSeconds: activeSeconds
+            )
+        } ?? DailyActivityAggregate(sessionCount: 0, activeSeconds: 0)
+    }
+
     /// Remove every persisted task and progress row in one transaction while
     /// keeping the database open for subsequent live snapshots. The in-memory
     /// TaskStore is intentionally untouched, so clearing history never makes

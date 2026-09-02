@@ -456,6 +456,14 @@
 "Preparing plan…" = "正在准备计划…";
 "Preparing Claude Code plan" = "正在准备 Claude Code 计划";
 
+/* Daily activity summary */
+"Today: %@" = "今天：%@";
+"%lld approval" = "%lld 次审批";
+"%lld approvals" = "%lld 次审批";
+"under a minute of agent time" = "Agent 运行不足 1 分钟";
+"%lldm of agent time" = "Agent 运行 %lld 分钟";
+"%lldh %lldm of agent time" = "Agent 运行 %lld 小时 %lld 分钟";
+
 /* Global decision shortcuts */
 "Decide from Anywhere" = "随时随地做决定";
 "Press ⌃⌥⌘Y to allow or ⌃⌥⌘N to deny the request at the front of the island while any app is active. Questions and plan reviews open the island instead." = "在任何应用中按 ⌃⌥⌘Y 允许、按 ⌃⌥⌘N 拒绝岛中排在最前的请求。问题与计划审阅会改为打开岛。";

@@ -236,6 +236,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // loop; we just kick it off once.
         if !isHermeticLaunchSmoke {
             TaskNotifier.shared.start()
+            // System-wide ⌃⌥⌘Y / ⌃⌥⌘N for the front permission request. Carbon
+            // hot keys reach a background app without Accessibility access.
+            GlobalDecisionShortcutService.shared.start()
         }
         #endif
 
@@ -351,6 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // mistaken for an interrupted startup on the next run.
         if !isHermeticLaunchSmoke {
             LaunchHealthTracker.shared.markStartupReady()
+            GlobalDecisionShortcutService.shared.stop()
         }
         #endif
         if let observer = screenChangeObserver {

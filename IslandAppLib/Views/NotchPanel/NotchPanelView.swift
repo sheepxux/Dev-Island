@@ -91,6 +91,24 @@ struct NotchPanelView: View {
         }
         .frame(width: panelWidth)
         .fixedSize(horizontal: false, vertical: true)
+        // A decision made with the system-wide shortcut never passes through
+        // the in-panel buttons, so mirror the same short receipt here.
+        .onReceive(NotificationCenter.default.publisher(for: .islandGlobalDecisionApplied)) { note in
+            guard isLive,
+                  let request = note.userInfo?[GlobalDecisionShortcutService.requestUserInfoKey]
+                    as? AgentActionRequest,
+                  let decision = note.userInfo?[GlobalDecisionShortcutService.decisionUserInfoKey]
+                    as? AgentActionDecision else { return }
+            let shortcutReceipt = stageResponseReceipt(
+                ActionResponseReceiptPresentation.decision(
+                    for: request,
+                    decision: decision,
+                    language: language
+                ),
+                for: request.taskIdentity
+            )
+            scheduleResponseReceiptDismissal(shortcutReceipt, for: request.taskIdentity)
+        }
     }
 
     // MARK: - Top row (header)

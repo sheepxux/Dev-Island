@@ -455,3 +455,7 @@
 "Checks local CLI versions, managed Hooks, Codex trust, and the private listener without changing configuration." = "Checks local CLI versions, managed Hooks, Codex trust, and the private listener without changing configuration.";
 "Preparing plan…" = "Preparing plan…";
 "Preparing Claude Code plan" = "Preparing Claude Code plan";
+
+/* Global decision shortcuts */
+"Decide from Anywhere" = "Decide from Anywhere";
+"Press ⌃⌥⌘Y to allow or ⌃⌥⌘N to deny the request at the front of the island while any app is active. Questions and plan reviews open the island instead." = "Press ⌃⌥⌘Y to allow or ⌃⌥⌘N to deny the request at the front of the island while any app is active. Questions and plan reviews open the island instead.";

@@ -1,6 +1,6 @@
 # IslandCore Interface Contract
 
-> 最后更新: 2026-08-31 | 版本: v6.85.0
+> 最后更新: 2026-09-02 | 版本: v6.87.0
 > 变更流程: 改 TaskStore 公开 API 前更新此文档,commit 用 `[S][contract]` tag。
 
 ---
@@ -75,6 +75,12 @@
   自然接管。`⌘↩` 执行当前主要动作，`⌘D` 只用于存在拒绝语义的审批/Plan Review，
   `⌘O` 只用于回到 Claude Code 的问题/Plan Review；`Esc` 永远只收起岛，不得作出
   Allow、Deny、Approve、Reject 或 Submit 决策。
+- 系统级快捷键（v6.87.0）：`⌃⌥⌘Y` / `⌃⌥⌘N` 通过 Carbon `RegisterEventHotKey` 注册，
+  不依赖辅助功能授权，在任何 App 前台时都作用于 `pendingActionRequests.first`。
+  只有 `.permission` 请求可被快捷键直接 Allow / Deny；`.question` 与 `.planReview`
+  只会展开岛并高亮该会话，不得盲目 Approve、Reject 或 Submit。队列为空时快捷键只展开岛。
+  快捷键成功交付决策后必须发布 `islandGlobalDecisionApplied`，面板据此显示与岛内点击相同的
+  回执。开关键 `island.shortcuts.globalDecisions` 默认开启，关闭后立即注销热键。
 - 一个会话存在可处理的 `AgentActionRequest` 时，决策面替代该会话的普通可点击 TaskCard；
   决策面必须保留 Agent、安全的本地 Session 指纹和会话标题。不得同时堆叠两张重复
   会话卡，也不得把决策按钮嵌入跳回会话的 Button。请求解决后恢复普通 TaskCard。
@@ -2929,3 +2935,4 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-08-31 | v6.84.0 | **可信代码身份单实例与 authoritative v3 验收**:Bundle ID 只筛候选，动态签名要求 Apple-anchored 同 Team 或同运行 slice 的明确 ad-hoc CDHash；SwiftUI root Settings Scene 在 gate 前保持 inert。v2 因 pre-gate Scene 风险拒绝；corrected v3 的锁屏 arm64 LaunchServices 矩阵 20/20 保持单 owner、单 listener、无其他观察 socket、duplicate home 空且不同-CDHash impostor activation `0 → 0`。同 Team Developer ID、Rosetta 跨 slice、解锁焦点/VoiceOver 与 LaunchServices 真实退出码继续明确未证明 | `[S][contract] reliability: bind trusted single-instance arbitration to authoritative evidence` |
 | 2026-08-31 | v6.85.0 | **Manus trust generation、credential-safe cleanup 与正常 Quit 屏障**:exact callback URL + canonical ≥2048-bit RSA identity 绑定 replay generation，旧代已认证请求交错返回 401；所有 accepted webhook ID 立即持久化为集合，replacement/late registration/heartbeat/stop 共享可重试删除，只有 2xx + `ok:true` 才清 ID。Disconnect 与换 key 都在远端 cleanup 成功前保留旧 Keychain credential；Quit 同步 detach ingress 并 single-flight join Disconnect/sleep/poller/tunnel/listener，AppKit owner 用 tokenized finish-once 的两秒 `.terminateLater` 屏障，失败/超时保留 credential + ledger；三种无 owner QA/yield 路径直接 `.terminateNow`。Release realtime gate 关闭且无真实账号验收 | `[S][contract] reliability: bound Quit without releasing Manus cleanup capability` |
 | 2026-08-31 | v6.86.0 | **Manus unknown-registration 原子 reconciliation**:官方 `GET /v2/webhook.list` 严格接收最多 1,024 项账号 inventory；单一 `webhookRecoveryStateV1` envelope 将 ID ledger、token、callback digest、±300 秒时间身份与 discovered IDs 一起 flush/readback。只归属 active exact-digest 且唯一 marker 的 row，歧义/空 list/legacy/corrupt 全部失败关闭；bound ID 跨重启直接重试，严格 official 404 `not_found` 完成幂等删除。Release gate 仍关闭，真实 create→signed delivery→list/delete 与一致性证据待补 | `[S][contract] security: reconcile unknown Manus registrations without guessing ownership` |
+| 2026-09-02 | v6.87.0 | **系统级决策快捷键**:`⌃⌥⌘Y` / `⌃⌥⌘N` 经 Carbon `RegisterEventHotKey` 注册，无需辅助功能授权，任何 App 前台时作用于 `pendingActionRequests.first`；仅 `.permission` 可被直接 Allow/Deny，`.question` 与 `.planReview` 只展开岛并高亮会话，空队列只展开岛。成功交付后发布 `islandGlobalDecisionApplied`，面板显示与岛内点击相同回执。开关 `island.shortcuts.globalDecisions` 默认开启，关闭即注销热键；`Esc` 语义不变 | `[C][contract] feat(app): decide the front permission request from any app` |

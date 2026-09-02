@@ -2334,6 +2334,8 @@ private struct GeneralSection: View {
     @State private var canObserveGlobalKeys = InputPermissions.canObserveGlobalKeys
     @AppStorage(DevIslandLanguage.preferenceKey)
     private var storedLanguage = DevIslandLanguage.system.rawValue
+    @AppStorage(GlobalDecisionShortcutPreferences.enabledKey)
+    private var globalDecisionShortcutsEnabled = true
     @Environment(\.devIslandLanguage) private var language
 
     private var selectedLanguage: DevIslandLanguage {
@@ -2426,6 +2428,14 @@ private struct GeneralSection: View {
                     ))
                 }
                 .padding(16)
+
+                settingsDivider.padding(.leading, 16)
+
+                SettingsToggleRow(
+                    title: "Decide from Anywhere",
+                    subtitle: "Press ⌃⌥⌘Y to allow or ⌃⌥⌘N to deny the request at the front of the island while any app is active. Questions and plan reviews open the island instead.",
+                    isOn: $globalDecisionShortcutsEnabled
+                )
 
                 if let lastError {
                     Text(lastError)

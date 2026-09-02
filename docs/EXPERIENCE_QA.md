@@ -170,6 +170,10 @@ lock。第二个入口不排队、不调用 Swift、不复用半构建产物，�
 动效的帧节奏、hover/press、键盘焦点、VoiceOver 朗读或 Reduce Motion 切换；这些仍必须在解锁的
 同一 QA App 上手工复验。
 
+Tour 现为四页：Overview、Connections、Attention 与新增的最终页 **Light up your island**
+（`Light up` / `your island.`，简中 `现在，` / `点亮你的岛。`）。第 4 页复用同一
+`editorialPage` 几何与 `404×253` 标本尺寸，快照循环与导航策略回归已扩展到 `0..<4`。
+
 ## 产品级 Increase Contrast 回归（v6.38.0）
 
 此前只有岛内决策面显式处理 Increase Contrast，Welcome、Settings、History、展开岛边界、
@@ -481,3 +485,22 @@ SHA-256 清单已经保留。修复后的 Question Submit 与 Plan Review 由于
 
 证据：
 `/Volumes/T7 Shield/MacMini/CodexFiles/DevIsland-Optimization/qa/decision-motion-v1-20260831/DECISION_MOTION_AUDIT.md`
+
+## Welcome 第四步：点亮你的岛
+
+新用户在安装后三分钟内应当运行一条真实命令并看到岛做出反应，而不是只看三页说明。Tour 现在以
+**Light up your island**（`04 / 04`）收尾：左侧编辑栏保持同一语气与几何，右侧标本先显示
+`Your first signal · Listening` 与 idle 点阵；根据第 2 页读取到的连接状态给出一条逐字命令
+（Claude Code `claude -p "say hi"`，Codex `codex exec "say hi"`）和 **Copy** 按钮，Codex 仅
+`configured` 时改为两段式 `codex` → `/hooks` 信任说明，Cursor 提示在 Cursor 内开始对话，
+其他已连接 Agent 给出通用会话提示，无连接则指回上一步。listener 尚未 `listening` 时只显示
+“本地监听器正在启动…”，不给任何命令，避免用户在静默的岛前空等。
+
+第一条事件到达时，点阵从 idle 交叉淡入 Running 并显示“Your island is live.”；该来源会话报告
+完成后再淡入 Completed。锁存由纯值类型 `OnboardingLiveSignalState` 决定，只前进不回退：
+Claude Code 的 `SessionEnd` 删除任务后标本仍保持已达状态。8 项 `OnboardingLiveSignalTests`
+固定来源过滤、seen/completed 推进、失败不完成、删除不回退以及命令选择顺序；导航策略回归改为
+`stepCount: 4`，快照循环覆盖四页。Welcome 不执行命令、不写 Hook、不订阅 transition 回调。
+
+当前只有源码测试与 CI 静态门禁证据；真实终端运行、点阵交叉淡入的帧节奏、Copy 反馈、
+VoiceOver 朗读与 Reduce Motion 仍需在解锁实机上复验。

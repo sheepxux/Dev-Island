@@ -103,11 +103,12 @@ final class VisualSnapshotTests: XCTestCase {
         )
         let hookSnapshot = LocalAgentHookDiagnostics.snapshot()
 
-        for step in 0..<3 {
+        for step in 0..<4 {
             let view = OnboardingView(
                 onFinish: { _ in },
                 initialStep: step,
-                initialHookSnapshot: hookSnapshot
+                initialHookSnapshot: hookSnapshot,
+                liveSignalStore: TaskStore.presentationFixture()
             )
 
             let destination = outputDirectory.appendingPathComponent(
@@ -129,11 +130,12 @@ final class VisualSnapshotTests: XCTestCase {
         configureApplicationIconForPackageTests()
 
         let hookSnapshot = LocalAgentHookDiagnostics.snapshot()
-        for step in 0..<3 {
+        for step in 0..<4 {
             let view = OnboardingView(
                 onFinish: { _ in },
                 initialStep: step,
-                initialHookSnapshot: hookSnapshot
+                initialHookSnapshot: hookSnapshot,
+                liveSignalStore: TaskStore.presentationFixture()
             )
             try render(
                 view,

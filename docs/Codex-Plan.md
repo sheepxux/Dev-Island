@@ -2402,3 +2402,35 @@ Dependabot security updates 六项控制；未经明确授权未修改远端设�
   需要同时改两份文档与三个门禁，本轮未采用，留待 owner 决定。
 - [ ] 本轮未 commit、push、tag、notarize 或发布；本地分支仍比 `origin/codex/v6.60-visual-polish`
   多 4 个未推送提交（`992966a`…`d51ce7c`）。
+
+## 2026-09-02 Vibe Island 方向：先发版、岛内动手、按项目思考
+
+- [x] Owner 授权后，`codex/v6.60-visual-polish` 已 commit 并推送到 PR #19：create-dmg 收口
+  （`8d9c9f0`）、启动器阶段诊断（`d585cf8`）、全局决策快捷键（`fb43818`）、roadmap 校准
+  （`8f3c2f9`）、夹具 chmod 修复（`eb5a59a`）、项目分支标签（`d1da997`）、今日活动汇总
+  （`c7666d7`）与 Welcome 第四步。ROADMAP「当前优化目标」改为 Vibe Island 方向：先发版再打磨、
+  只真实验收 Claude Code / Codex / Cursor、冻结五个 Preview 连接器与商业底座。
+- [x] PR CI 两次失败均由新 create-dmg 执行边界夹具引起：runner 上 `File.rename` 一个 0500 目录
+  返回 EACCES（本地 Darwin 27 允许，runner Darwin 24 拒绝）。启动器 `SystemCallError` 诊断现在
+  带阶段标记但不带路径；夹具在原子替换前先 `chmod 0700`，verifier 已返回，证明面不变。
+- [x] 全局决策快捷键 `⌃⌥⌘Y` / `⌃⌥⌘N`：Carbon `RegisterEventHotKey`，无需辅助功能授权；只对
+  `pendingActionRequests.first` 的 `.permission` 直接 Allow/Deny，问题与 Plan Review 只展开岛；
+  成功后发布 `islandGlobalDecisionApplied` 复用岛内回执；Settings › General 默认开启开关；
+  契约 v6.87.0。
+- [x] TaskCard 显示项目 git 分支：`ProjectBranchReader` 是 App 内唯一打开用户项目文件的路径
+  （≤8 层向上、O_NOFOLLOW、当前用户、≤4 KiB `HEAD`），`ProjectBranchCache` 30 秒内存刷新；
+  PRIVACY / DATA_FLOW / 契约同步。按项目分组列表因与注意力优先排序契约冲突未采用。
+- [x] 今日活动汇总：`TaskStore.todayActivity` / `refreshTodayActivity(now:)`，SQLite 只投影两列
+  时间戳；Allow 次数按本地日分桶存偏好、上限 100,000，Clear History 重置；状态菜单与空闲岛各一行，
+  只有数字与固定文案；契约 v6.88.0。
+- [x] Welcome 第四步「点亮你的岛」：监听器就绪门、按已连接 Agent 分支给出 verbatim 命令与复制按钮、
+  `OnboardingLiveSignalState` 前向锁存（会话被 SessionEnd 删除后仍保持）、真实点阵从 idle 交叉淡入
+  running/completed；`LocalAgentConfigurationExecutor.run(` 仍精确两处、无 `Task.detached`；契约 v6.89.0。
+- [x] 本机补装 ripgrep；Homebrew Ruby 4 一度抢占 PATH 导致商业政策 duplicate-root 夹具误判，已
+  unlink，门禁一律用系统 Ruby 2.6。当前源码 **915 tests / 0 failures**；Localization、Legal/Data
+  Flow、Performance、Release Foundation、Checkout Isolation、Pinned create-dmg 与 Security 门禁全部 PASS。
+- [ ] Owner 决定：合入 PR #19 并切 v0.4.0；Dev Island → Vibe Island 改名（域名、bundle id、Sparkle
+  appcast、Homebrew cask、品牌资产）需先定域名与 bundle id 策略。
+- [ ] Claude Code 用量洞察未做：Claude Code 本地只写 token 计数，不写服务商额度窗口；按「不把推测值
+  包装成官方额度」原则，暂不实现。
+- [ ] 快捷键真机按键、分支标签与今日汇总的真实视觉、VoiceOver 及 Welcome 第四步真实命令验收仍待解锁。

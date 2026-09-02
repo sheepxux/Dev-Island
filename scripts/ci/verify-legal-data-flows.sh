@@ -169,7 +169,7 @@ require_documented '`hooks/list`' docs/codex-integration-field-notes.md "Documen
 require_documented 'Shipping bounded App Server trust probe' docs/codex-integration-field-notes.md "Shipping Codex trust-probe boundary"
 require_documented 'No public API was found' docs/codex-integration-field-notes.md "Unsupported Codex Cloud monitoring boundary"
 
-require_documented '版本: v6\.88\.0' docs/INTERFACE_CONTRACT.md "Current interface-contract version"
+require_documented '版本: v6\.89\.0' docs/INTERFACE_CONTRACT.md "Current interface-contract version"
 require_documented '可信代码身份单实例接管' docs/INTERFACE_CONTRACT.md "Trusted single-instance launch contract"
 require_documented 'Security\.framework 由动态 PID 解析有效代码签名' docs/INTERFACE_CONTRACT.md "Dynamic-PID identity contract"
 require_documented 'anchor apple generic' docs/INTERFACE_CONTRACT.md "Apple-anchored Team contract"

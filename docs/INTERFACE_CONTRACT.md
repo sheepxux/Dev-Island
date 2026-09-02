@@ -1,6 +1,6 @@
 # IslandCore Interface Contract
 
-> 最后更新: 2026-09-02 | 版本: v6.88.0
+> 最后更新: 2026-09-02 | 版本: v6.89.0
 > 变更流程: 改 TaskStore 公开 API 前更新此文档,commit 用 `[S][contract]` tag。
 
 ---
@@ -2360,11 +2360,25 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 
 ## Welcome 编辑栏几何（v6.36.0）
 
-- Welcome 三页必须共用同一固定几何：窗口宽 `760pt`，左右内边距各
+- Welcome 四页必须共用同一固定几何：窗口宽 `760pt`，左右内边距各
   `32pt`，左侧编辑栏 `264pt`，栏间距 `28pt`，右侧功能标本 `404pt`；合计必须
   精确为 `760pt`，不得依赖隐式 slack 或视图压缩。
-- English 三页的 display title 必须在固定两行内建立稳定视觉重心；第 2 页为
-  `Bring your` / `agents together.`，不得回归三行。简中三页同样不得裁切或挤压右侧连接矩阵。
+- English 四页的 display title 必须在固定两行内建立稳定视觉重心；第 2 页为
+  `Bring your` / `agents together.`，第 4 页为 `Light up` / `your island.`，不得回归三行。
+  简中四页同样不得裁切或挤压右侧标本。
+- 第 4 页 **Light up your island** 是 Tour 的最终决策页（`04 / 04`，主动作仍为唯一
+  **Start Dev Island**）。其标本只根据 `TaskStore.localHookServiceStatus` 与第 2 页已读取的
+  连接状态决定给用户看什么：listener 未达到 `listening` 时只显示“本地监听器正在启动…”且不给
+  命令；Claude Code 已连接显示逐字命令 `claude -p "say hi"`；Codex 已连接显示
+  `codex exec "say hi"`，Codex 仅 `configured` 时显示两段式 `codex` → `/hooks` 信任说明；
+  Cursor 已连接提示在 Cursor 内开始对话；其余已连接 Agent 给出通用会话提示；无连接则指回上一步。
+  命令为不本地化的 `Text(verbatim:)`，只写入剪贴板，Welcome 不执行任何 Agent、不写 Hook、
+  不调用 installer/probe，也不订阅 `TaskStore.onTaskTransition`。
+- 第 4 页的实时信号由纯值类型 `OnboardingLiveSignalState` 锁存：`waiting` → 任一选定来源
+  出现会话即 `seen(source)` → 该来源会话报告 `.completed` 即 `completed(source)`；只前进不回退，
+  会话被 `SessionEnd` 删除后仍保持已达状态。View 通过 `@State store = TaskStore.shared` 派生
+  该值并用 `.onChange(of:)` 交叉淡入 `.idle` → `.running` → `.completed` 点阵，不得为此在
+  Welcome 内新增 detached task 或第三条 `LocalAgentConfigurationExecutor.run(` 调用。
 - `OnboardingLayoutTests` 必须用公开布局常量计算全宽并断言精确相等；CI 静态门禁
   同时固定常量值、实际布局用法和几何回归测试，防止仅改一处导致栏宽漂移。
 - 离屏快照只能证明当前静态层级、换行和裁切边界；不得把它们解释为真实翻页动效、
@@ -2951,3 +2965,4 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-08-31 | v6.86.0 | **Manus unknown-registration 原子 reconciliation**:官方 `GET /v2/webhook.list` 严格接收最多 1,024 项账号 inventory；单一 `webhookRecoveryStateV1` envelope 将 ID ledger、token、callback digest、±300 秒时间身份与 discovered IDs 一起 flush/readback。只归属 active exact-digest 且唯一 marker 的 row，歧义/空 list/legacy/corrupt 全部失败关闭；bound ID 跨重启直接重试，严格 official 404 `not_found` 完成幂等删除。Release gate 仍关闭，真实 create→signed delivery→list/delete 与一致性证据待补 | `[S][contract] security: reconcile unknown Manus registrations without guessing ownership` |
 | 2026-09-02 | v6.87.0 | **系统级决策快捷键**:`⌃⌥⌘Y` / `⌃⌥⌘N` 经 Carbon `RegisterEventHotKey` 注册，无需辅助功能授权，任何 App 前台时作用于 `pendingActionRequests.first`；仅 `.permission` 可被直接 Allow/Deny，`.question` 与 `.planReview` 只展开岛并高亮会话，空队列只展开岛。成功交付后发布 `islandGlobalDecisionApplied`，面板显示与岛内点击相同回执。开关 `island.shortcuts.globalDecisions` 默认开启，关闭即注销热键；`Esc` 语义不变 | `[C][contract] feat(app): decide the front permission request from any app` |
 | 2026-09-02 | v6.88.0 | **今日活动汇总**:`TaskStore.todayActivity` / `refreshTodayActivity(now:)` 暴露当天会话数、总活跃秒数与 Allow 次数；SQLite 只投影 `created_at`/`updated_at` 两列并沿用 bounded-row 谓词与 verified-read；Allow 计数按本地日分桶存于偏好、上限 100,000，Clear History 一并重置；只在 bootstrap、面板展开与菜单打开时刷新，不轮询。展示为状态菜单一行与空闲岛一行，只含数字与固定文案 | `[S][contract] feat(core): summarize today's sessions, approvals and agent time` |
+| 2026-09-02 | v6.89.0 | **Welcome 第四步「点亮你的岛」**:四页共用同一固定几何；第四页先以 `localHookServiceStatus == .listening` 为门，再按已连接 Agent 给出 verbatim 命令（`claude -p "say hi"` / `codex exec "say hi"` / Codex `/hooks` 两段指引 / Cursor）与复制按钮；`OnboardingLiveSignalState` 只读 `TaskStore.tasks`、前向锁存 `.waiting → .seen → .completed` 且不因 SessionEnd 回退；不接管 `onTaskTransition`、无 `Task.detached`、`LocalAgentConfigurationExecutor.run(` 仍精确两处 | `[C][contract] feat(app): light up the island at the end of the Welcome Tour` |

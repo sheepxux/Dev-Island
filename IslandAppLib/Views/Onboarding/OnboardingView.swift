@@ -20,36 +20,46 @@ enum OnboardingNavigationPolicy {
     }
 }
 
-/// A three-step introduction built like a compact macOS instrument: one clear
+/// A four-step introduction built like a compact macOS instrument: one clear
 /// promise, one functional specimen, and no decorative feature-card grid.
 /// Every page shares the same stable geometry so moving through the tour feels
-/// like changing modes on one object rather than loading a new screen.
+/// like changing modes on one object rather than loading a new screen. The
+/// final page asks for one real command and reads the answer straight from
+/// `TaskStore`, so the first signal a new user sees is never simulated.
 struct OnboardingView: View {
     let onFinish: (_ requestsNotificationAuthorization: Bool) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.devIslandLanguage) private var language
+    @State private var store: TaskStore
     @State private var step: Int
     @State private var direction = 1
     @State private var connectionStates: [String: LocalAgentHookConnectionState]
     @State private var hasLoadedConnectionStates: Bool
     @State private var connectionErrors: [String: String] = [:]
     @State private var connectionOperation = OnboardingConnectionOperationState()
+    @State private var liveSignal = OnboardingLiveSignalState.waiting
+    @State private var copiedCommandFeedbackID: UUID?
 
     @AppStorage(TaskNotificationPreferences.attentionRequiredKey)
     private var attentionRequired = true
     @AppStorage(TaskNotificationPreferences.completionsKey)
     private var completions = false
 
-    private let stepCount = 3
+    private let stepCount = 4
 
+    /// `liveSignalStore` exists so previews and offscreen snapshots can bind
+    /// the final step to an inert fixture instead of the bootstrapping
+    /// shared store. The App always passes nothing and observes the live one.
     init(
         onFinish: @escaping (_ requestsNotificationAuthorization: Bool) -> Void,
         initialStep: Int = 0,
-        initialHookSnapshot: LocalAgentHookHealthSnapshot? = nil
+        initialHookSnapshot: LocalAgentHookHealthSnapshot? = nil,
+        liveSignalStore: TaskStore? = nil
     ) {
         self.onFinish = onFinish
-        _step = State(initialValue: min(max(initialStep, 0), 2))
+        _store = State(initialValue: liveSignalStore ?? TaskStore.shared)
+        _step = State(initialValue: min(max(initialStep, 0), stepCount - 1))
         _connectionStates = State(initialValue: Dictionary(
             uniqueKeysWithValues: initialHookSnapshot?.agents.map {
                 ($0.source, $0.state)
@@ -204,13 +214,14 @@ struct OnboardingView: View {
         switch step {
         case 0: overviewPage
         case 1: connectionsPage
-        default: notificationsPage
+        case 2: notificationsPage
+        default: liveSignalPage
         }
     }
 
     private var overviewPage: some View {
         editorialPage(
-            number: "01 / 03",
+            number: "01 / 04",
             label: "Overview",
             title: "Know when\nyou’re needed.",
             detail: "Dev Island keeps agent work in sight, then gets out of the way until a session needs you.",
@@ -222,7 +233,7 @@ struct OnboardingView: View {
 
     private var connectionsPage: some View {
         editorialPage(
-            number: "02 / 03",
+            number: "02 / 04",
             label: "Connections",
             title: "Bring your\nagents together.",
             detail: "Connect your local tools—and keep Manus cloud work in the same quiet surface. Dev Island changes only the hooks it owns.",
@@ -234,13 +245,25 @@ struct OnboardingView: View {
 
     private var notificationsPage: some View {
         editorialPage(
-            number: "03 / 03",
+            number: "03 / 04",
             label: "Attention",
             title: "Protect your\nfocus.",
             detail: "Choose what deserves an interruption. Dev Island stays quiet while work is moving and uses one restrained signal when you are needed.",
             note: "Signal sounds follow macOS Focus and can be muted in Settings."
         ) {
             notificationsStage
+        }
+    }
+
+    private var liveSignalPage: some View {
+        editorialPage(
+            number: "04 / 04",
+            label: "First signal",
+            title: "Light up\nyour island.",
+            detail: "Run one real command and watch the island answer. Nothing is staged—this is the signal you will see every day.",
+            note: "Dev Island only listens. Your agent keeps running in your own terminal."
+        ) {
+            liveSignalStage
         }
     }
 
@@ -635,6 +658,257 @@ struct OnboardingView: View {
         }
         .padding(.horizontal, 18)
         .frame(maxWidth: .infinity, minHeight: 76, maxHeight: 76)
+    }
+
+    // MARK: Live signal specimen
+
+    /// Resolved from the listener health and the states the Connections step
+    /// already read from disk. Welcome never probes an Agent for this page.
+    private var liveSignalRecipe: OnboardingLiveSignalRecipe {
+        OnboardingLiveSignalRecipe.resolve(
+            listener: store.localHookServiceStatus,
+            states: hasLoadedConnectionStates ? connectionStates : [:],
+            candidateSources: onboardingAgents.map(\.source)
+        )
+    }
+
+    private var liveSignalSources: Set<String> {
+        OnboardingLiveSignalRecipe.signalSources(states: connectionStates)
+    }
+
+    /// Derived from the live store on every change; `onChange` fires only
+    /// when the latch actually moves, so unrelated task churn never
+    /// re-animates the stage and a removed session never resets it.
+    private var observedLiveSignal: OnboardingLiveSignalState {
+        liveSignal.advanced(with: store.tasks, sources: liveSignalSources)
+    }
+
+    private var liveSignalBarState: BarState {
+        switch liveSignal {
+        case .waiting: return .idle
+        case .seen: return .running
+        case .completed: return .completed
+        }
+    }
+
+    private var liveSignalStage: some View {
+        VStack(spacing: 0) {
+            stageHeader(title: "Your first signal", trailing: liveSignalTrailingLabel)
+
+            rowDivider
+
+            liveSignalStatusRow
+
+            rowDivider
+
+            liveSignalInstructions
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .onChange(of: observedLiveSignal, initial: true) { _, latched in
+            guard latched != liveSignal else { return }
+            withAnimation(
+                Motion.respectingReducedMotion(reduceMotion, preferred: Motion.contentReveal)
+            ) {
+                liveSignal = latched
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var liveSignalTrailingLabel: String {
+        switch liveSignal {
+        case .waiting:
+            return store.localHookServiceStatus == .listening ? "Listening" : "Starting…"
+        case .seen:
+            return "Running"
+        case .completed:
+            return "Completed"
+        }
+    }
+
+    private var liveSignalStatusRow: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                stageSignal(liveSignalBarState, size: 12, animated: true)
+                    .id(liveSignal)
+                    .transition(.opacity)
+            }
+            .frame(width: 16, height: 16)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(liveSignalTitle)
+                    .font(Typo.tourStageTitle)
+                    .foregroundStyle(Palette.warmWhite.opacity(0.9))
+                Text(liveSignalDetail)
+                    .font(Typo.tourLabel)
+                    .foregroundStyle(Palette.textTertiary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 60)
+    }
+
+    private var liveSignalTitle: String {
+        liveSignal.hasSeenEvent
+            ? L10n.string("Your island is live.", language: language)
+            : L10n.string("Nothing yet.", language: language)
+    }
+
+    private var liveSignalDetail: String {
+        switch liveSignal {
+        case .waiting:
+            return L10n.string(
+                "The island stays idle until a real event lands.",
+                language: language
+            )
+        case .seen(let source):
+            return L10n.format(
+                "%@ is running. Look at the menu bar.",
+                language: language,
+                agentDisplayName(for: source)
+            )
+        case .completed(let source):
+            return L10n.format(
+                "%@ finished. That is the whole loop.",
+                language: language,
+                agentDisplayName(for: source)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var liveSignalInstructions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !hasLoadedConnectionStates {
+                quietLiveSignalLine("Checking…")
+            } else {
+                switch liveSignalRecipe {
+                case .listenerStarting:
+                    quietLiveSignalLine("The local listener is starting…")
+
+                case .command(_, let command):
+                    liveSignalInstruction(
+                        "Run this in a new terminal window. The island turns Running, then Completed."
+                    )
+                    liveSignalCommandRow(command)
+
+                case .codexTrust(let command):
+                    liveSignalInstruction("Run this in a new terminal window.")
+                    liveSignalCommandRow(command)
+                    liveSignalInstruction(
+                        L10n.format(
+                            "Then type %@, trust only the Dev Island entries, and send any prompt.",
+                            language: language,
+                            "/hooks"
+                        ),
+                        isLocalized: true
+                    )
+
+                case .cursorChat:
+                    liveSignalInstruction(
+                        "Start an agent chat in Cursor and send any prompt. The island lights up as soon as the agent begins."
+                    )
+
+                case .anySession(let source):
+                    liveSignalInstruction(
+                        L10n.format(
+                            "Start a session in %@ and send any prompt. The island lights up as soon as the agent begins.",
+                            language: language,
+                            agentDisplayName(for: source)
+                        ),
+                        isLocalized: true
+                    )
+
+                case .connectAgent:
+                    liveSignalInstruction(
+                        "No agent is connected yet. Go back one step to connect one, then return here."
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+
+    private func quietLiveSignalLine(_ key: String) -> some View {
+        Text(L10n.string(key, language: language))
+            .font(Typo.tourStageBody)
+            .foregroundStyle(Palette.textTertiary)
+    }
+
+    private func liveSignalInstruction(
+        _ copy: String,
+        isLocalized: Bool = false
+    ) -> some View {
+        Text(isLocalized ? copy : L10n.string(copy, language: language))
+            .font(Typo.tourStageBody)
+            .foregroundStyle(Palette.textSecondary)
+            .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Commands are verbatim product strings, never localized, and never
+    /// executed by Dev Island: the user runs them in their own terminal.
+    private func liveSignalCommandRow(_ command: String) -> some View {
+        HStack(spacing: 10) {
+            Text(verbatim: command)
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(Palette.warmWhite.opacity(0.9))
+                .lineLimit(1)
+                .textSelection(.enabled)
+
+            Spacer(minLength: 8)
+
+            Button {
+                copyLiveSignalCommand(command)
+            } label: {
+                Text(L10n.string(
+                    copiedCommandFeedbackID == nil ? "Copy" : "Copied",
+                    language: language
+                ))
+                    .font(.system(size: 9, weight: .semibold))
+                    .accessibilityLabel(L10n.string("Copy command", language: language))
+            }
+            .buttonStyle(AgentConnectButtonStyle())
+            .accessibilityHint(L10n.string(
+                "Copies the command to the clipboard",
+                language: language
+            ))
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
+        .frame(height: 36)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Palette.notchBlack)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Palette.warmWhite.opacity(0.10), lineWidth: 0.75)
+                }
+        )
+    }
+
+    private func copyLiveSignalCommand(_ command: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(command, forType: .string)
+
+        let feedbackID = UUID()
+        copiedCommandFeedbackID = feedbackID
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            // Only the timer that created this feedback may clear it.
+            if copiedCommandFeedbackID == feedbackID {
+                copiedCommandFeedbackID = nil
+            }
+        }
+    }
+
+    private func agentDisplayName(for source: String) -> String {
+        LocalAgentRegistry.all.first { $0.source == source }?.displayName ?? source
     }
 
     private func stageSignal(

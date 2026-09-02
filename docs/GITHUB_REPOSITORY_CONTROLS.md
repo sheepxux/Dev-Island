@@ -55,11 +55,22 @@ The tag Release checkout also uses `persist-credentials: false`. A dedicated
 safe-YAML validator is the first repository command and runs before dependency
 resolution or SwiftPM manifest evaluation. It requires that the only explicit
 `GITHUB_TOKEN` exposure is scoped to the final pinned GitHub Release action,
-after asset verification and attestations. Attack fixtures cover missing or
-enabled persistence, checkout token override, early token environment,
-missing publication token, and a symlinked workflow.
-The fixtures also reject an early GitHub PAT hidden behind a differently named
-secret/environment entry.
+after asset verification and attestations. It also rejects every
+`${{ secrets.* }}` expression at workflow or job environment scope, requires
+the `Package DMG` environment to be exactly the three `create_dmg_tool` outputs
+(`root`, `executable`, and `manifest`), and rejects any Secret reference in that
+packaging step. The reviewed `run` body of every create-dmg preparation,
+keychain setup/teardown, packaging, and DMG signing boundary step is pinned by
+SHA-256, so a command replaced with a comment cannot satisfy a text search.
+
+Attack fixtures cover missing or enabled checkout persistence, checkout token
+override, early token/PAT exposure, missing publication token, workflow- or
+job-scoped Apple Secrets, a Secret added to `Package DMG`, commented-out tool
+runner invocation or `/usr/bin/env -i`, direct execution of the old tool
+pathname, packaging moved before App-keychain teardown, missing DMG-keychain
+re-import/teardown, duplicate packaging, and a symlinked workflow. These are
+structural checks of the reviewed YAML, not
+evidence that GitHub will enforce the remote repository policy.
 
 Both checked-in workflows also pass a separate descriptor-backed run-shell
 validator. Before safe loading can collapse ambiguous mappings, it traverses a
@@ -87,7 +98,7 @@ checked `run` body.
 After both workflow files pass, the same first CI/release gate validates the
 complete repository script closure before dependency resolution; the tag path
 also does so before credential loading. A descriptor-backed walker currently
-collects all 50 Bash, 23 Ruby, and 6 Swift files under `scripts/`, rejects linked,
+collects all 54 Bash, 27 Ruby, and 9 Swift files under `scripts/`, rejects linked,
 writable, unowned, oversized or unstable inputs, then feeds the frozen bytes
 through minimal-environment `/bin/bash -n`, `/usr/bin/ruby -c`, or
 `/usr/bin/swiftc -parse -` stdin. Bash/Ruby require executable bits; Swift is
@@ -103,6 +114,51 @@ auto-update disabled. They print the resolved tool version and complete this
 bootstrap before executing any repository-owned gate. The release-foundation
 fixtures bind the bootstrap shape and ordering so a runner-image change fails
 at the tool boundary instead of silently skipping later security checks.
+
+The DMG builder is not installed from mutable Homebrew state after signing
+credentials are loaded. After repository gates and before credential preflight,
+the tag workflow downloads `create-dmg` 1.3.0 from exact upstream commit
+`a2b71d0fda6d0df2a86dc7f67082d4d73e84c59f`. The 48,371-byte compressed archive
+must match SHA-256
+`36577b966f16c12dd78d5bb5107c2ae3d069b044226b6ebbffa6a434ce142d0a`
+on the same no-follow descriptor before tar parsing. Its reviewed shape is
+exactly 28 tar records: one exact commit-bound global PAX record and 27
+filesystem entries. Path, type, size, count, logical-byte and four runtime-file
+hash checks run before extraction and again before the archive is discarded.
+Only the main script, repository sentinel, and two support templates are
+extracted into a private runner-temp directory. Their exact read-only closure
+is rebound by a 369-byte `runtime.SHA256` manifest with SHA-256
+`35565e6e5d1086014d94fdddd246b8daa4b33bf3d6b9b49a1a9dac2d3a57526f`.
+
+The App certificate is first imported into `Setup App signing keychain` for the
+App build, Developer ID signing, notarization, stapling, validation, and
+hermetic launch smoke. Immediately after that smoke, the
+`Tear down App signing keychain` step deletes the temporary keychain and fails if the same
+`SIGNING_IDENTITY` remains accessible in the runner's user keychain search
+list. Only then may the separate `Package DMG` step run. That step is completely
+secret-free. Below `/usr/bin/env -i`, the repository launcher revalidates the
+runtime closure and consumes the exact bytes returned by those no-follow
+descriptors. It performs a unique digest-pinned support-resource rewrite,
+requires the derived script to be exactly 22,095 bytes with SHA-256
+`46644c8da0d7eb1258e3ef05dd72967ca270d698df28d2aa6abd9402205e5beb`,
+then unlinks anonymous backing files before writing the script and two support
+resources. Bash executes `/dev/fd/N`, and the support reads use inherited file
+descriptors; the old tool pathname is never reopened. An attack fixture swaps
+the whole tool directory after verification and proves that only the original
+verified bytes run. The child receives a fixed system PATH, C locale and private
+HOME/TMPDIR. Nonzero exit, an existing or linked output, unsafe owner/link/mode,
+or failed `hdiutil verify` stops the release. The resulting unsigned DMG SHA-256
+crosses the step boundary only as an output and must match again before signing.
+
+After packaging, `Setup DMG signing keychain` re-imports the reviewed
+certificate and requires the discovered DMG identity to equal the earlier App
+identity. `Sign + notarize DMG` alone receives the unsigned artifact hash and
+Apple notarization credentials; it rebinds the hash before signing. After DMG
+signing, notarization, stapling, and validation, `Tear down DMG signing keychain`
+deletes the second keychain and again proves that identity is unavailable
+before ZIP generation, attestations, or the GitHub Release action. The final
+`if: always()` keychain cleanup is not the primary capability boundary; it
+remains only a failure-path backstop.
 
 Before a tag can import the Developer ID certificate, the credential preflight
 also proves that the configured Sparkle private key can sign a fixed repository

@@ -2424,6 +2424,16 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
   唯一允许的显式 token 是最终 `Create GitHub Release` action 的 step-local
   `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}`；该 action 必须位于完整资产校验与两个 provenance
   attestation 之后，并固定完整 action SHA。
+- 结构化验证器还必须拒绝 workflow/job `env` 中任何 `${{ secrets.* }}`，并精确固定 App
+  keychain setup → App 签名/公证/launch smoke → App keychain teardown → `Package DMG` → DMG
+  keychain re-import → DMG 签名/公证 → DMG keychain teardown 的唯一性与顺序。`Package DMG`
+  不得引用 Secret，其 `env` 必须逐项且只等于 `create_dmg_tool` 的 `root`、`executable`、
+  `manifest` 三个 output。
+- Prepare、两次 keychain setup、两次即时 teardown、`Package DMG`、`Sign + notarize DMG`
+  与最终 `if: always()` cleanup 的完整 `run` body 必须绑定审核过的 SHA-256。负向夹具必须至少
+  拒绝 workflow/job Apple Secret、Package Secret、将重新验证或 `/usr/bin/env -i` 注释掉、
+  Package 提前到 App keychain teardown 之前、缺失 DMG keychain re-import/teardown，以及重复
+  Package step；注释中的命令文本不能冒充实际边界。
 - 验证器只接受 1 byte–1 MiB 的普通非链接 YAML，使用 safe YAML 解析而不是注释可欺骗的全局
   文本命中。缺失/启用 credential persistence、checkout token override、提前暴露 token、最终
   token/PAT 提前暴露、最终 token 缺失与 workflow symlink 都必须由独立攻击夹具拒绝。
@@ -2644,7 +2654,7 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
   前半段写 marker 的命令仍会先执行，随后才 exit 2。Release 因此不能把“最终执行时自然报
   syntax error”当作无副作用保护；Ruby 虽会先整体编译，也进入同一预检闭包。
 - `verify-repository-script-syntax.rb` 必须递归覆盖 `scripts/` 下全部 `.sh` / `.rb`。当前闭包是
-  51 个 Bash 与 24 个 Ruby（包含验证器和夹具自身）；新增同扩展脚本必须自动进入，不维护
+  54 个 Bash 与 27 个 Ruby（包含验证器和夹具自身）；新增同扩展脚本必须自动进入，不维护
   容易漏项的手写列表。脚本总数最多 256，树最多 4,096 项，单文件最多 1 MiB。
 - `scripts/` 全目录树拒绝 symlink、特殊文件、错误 owner 与 group/other 可写目录；脚本使用
   `O_NOFOLLOW|O_NONBLOCK` descriptor，只接受当前用户、普通、单硬链接、不可 group/other 写、
@@ -2665,7 +2675,7 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 
 ## Swift 脚本 stdin-only Parse 闭包（v6.28.0 加固）
 
-- `scripts/` 全量闭包必须同时包含 `.swift`，当前总数为 51 Bash + 24 Ruby + 9 Swift。
+- `scripts/` 全量闭包必须同时包含 `.swift`，当前总数为 54 Bash + 27 Ruby + 9 Swift。
   `scripts/release/generate-sbom.swift` 会在 CI/tag 真实执行，其他品牌、菜单图标、声音与显示
   会话脚本也不得留在发布前语法盲区。
 - Swift 文件继续使用同一 descriptor owner/type/mode/nlink/size/UTF-8/NUL 与目录稳定性边界；
@@ -2678,6 +2688,65 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 - CI/tag 调用位置不变，因此三语言闭包仍在 Package/SwiftPM 解析前，tag 仍在发布凭据加载前。
   该 parse-only 证据不证明 Swift 脚本可 type-check、导入模块、运行或产生正确业务输出；实际
   SBOM 生成仍由后续 Release foundation、确定性双生成与资产门禁验证。
+
+---
+
+## 固定 create-dmg 发布工具边界（v6.88.0 加固）
+
+- Tag Release 不得在签名证书或任何发布 Secret 加载后执行可变的 `brew install create-dmg`。
+  `Repository release gates` 全部通过后、`Validate release credentials` 之前，必须仅由
+  `scripts/release/prepare-pinned-create-dmg.sh` 准备工具。
+- 上游输入固定为 `create-dmg` 1.3.0 的精确 commit
+  `a2b71d0fda6d0df2a86dc7f67082d4d73e84c59f`；codeload 归档必须同时匹配 48,371 bytes 与
+  SHA-256 `36577b966f16c12dd78d5bb5107c2ae3d069b044226b6ebbffa6a434ce142d0a`。
+  同一个 `RDONLY|NOFOLLOW|NONBLOCK` descriptor 必须先完成 SHA-256，再 rewind 给 gzip/tar；
+  size/hash 通过前不得调用 gzip/tar 等归档 parser，读取前后与路径复验的
+  device/inode/owner/mode/nlink/size/mtime/ctime 必须一致。
+- 归档形状固定为 28 个 tar record：首个且唯一的 global PAX record 必须逐字节绑定上述 commit，
+  随后恰好 27 个 filesystem entry（17 个普通文件、10 个目录）。完整路径/type/size/count、
+  74,666 filesystem logical bytes、74,718 total logical bytes、尾部零 padding 与四个 runtime
+  文件 SHA-256 都必须精确匹配；link、special type、额外 PAX、路径逃逸、重复项和尾随 compressed
+  data 全部拒绝。该 archive validator 必须在 tar 解包前运行，并在解包后、unlink 前再次运行。
+- 归档只允许向 owner-only runner 临时目录解出主脚本、`.this-is-the-create-dmg-repo` sentinel、
+  `support/template.applescript` 与 `support/eula-resources-template.xml`。最终闭包只能包含这
+  4 个文件与 `support` 目录；目录固定 `0500`、主脚本 `0500`、其余文件 `0400`，并验证
+  owner、普通文件/目录类型、单 hard link、每文件 SHA-256 与 `--pure-version == 1.3.0`。
+- 四个 runtime digest 必须写入与 tool root 相邻、精确 369 bytes 的只读
+  `runtime.SHA256`，其 SHA-256 固定为
+  `35565e6e5d1086014d94fdddd246b8daa4b33bf3d6b9b49a1a9dac2d3a57526f`。Prepare step 只通过
+  `GITHUB_OUTPUT` 传递由 `mktemp` 生成的绝对 `root`、`executable` 与 `manifest`，不得映射
+  任何 `${{ secrets.* }}`；Package 内 runner 必须用 no-follow descriptor 重新绑定 manifest、
+  目录闭包、metadata 和四个文件字节，并直接消费 verifier 返回的完整 frozen byte closure，不能
+  在验证返回后重新打开 `${CREATE_DMG_EXECUTABLE}` pathname。
+- `run-pinned-create-dmg.rb` 只允许 `--executable == File.join(root, "create-dmg")`，该参数只绑定
+  workflow output，不得用于 reopen。它必须对 exact upstream bytes 做唯一的 support-discovery、
+  AppleScript template 与 EULA template 三处变换，并将派生脚本固定为 22,095 bytes、SHA-256
+  `46644c8da0d7eb1258e3ef05dd72967ca270d698df28d2aa6abd9402205e5beb`。派生脚本与两份 support
+  resource 必须在 unlink 后才写入 owner-only anonymous FD，复验 `nlink == 0`、mode/size/bytes/hash，
+  关闭 close-on-exec 后才以 `/bin/bash /dev/fd/N` 启动；support 也只能从继承 FD 完整读取。
+- execution-boundary 夹具必须在 verifier 返回瞬间原子替换整个旧 tool 目录，并同时证明 runner
+  仍输出审核过的 `1.3.0`、旧 pathname 已执行恶意 marker、两个 support FD 在 Ruby exec 后可由
+  Bash 完整读取且 hash 匹配；错误 executable output、残余 resource pathname 或变换脚本语法失败
+  都必须 fail closed。
+- App 签名 keychain 只覆盖 App build、Developer ID codesign、公证/staple/验证和 notarized
+  Production launch smoke。smoke 成功后必须立即删除该 keychain，并以 `security find-identity`
+  确认同一个 `SIGNING_IDENTITY` 已不可访问；在此之前不得进入第三方 DMG packaging。
+- 第三方 `Package DMG` 必须是完全无 Secret 的独立 step，`env` 精确只有上述三个 create-dmg
+  output。它通过 `/usr/bin/env -i`、固定系统 PATH、`LC_ALL=C` 与私有 HOME/TMPDIR 执行上述
+  descriptor-bound runner；直接执行 `${CREATE_DMG_EXECUTABLE}` 必须由结构化负向夹具拒绝。
+  该命令非零必须失败，既有普通文件或 dangling symlink 均不得
+  作为输出；新 DMG 还需通过 owner/nlink/mode 与 `hdiutil verify`。unsigned DMG SHA-256 只经
+  `unsigned_dmg` step output 传递，后续签名前必须重新匹配同一普通、单链接、`0600` 文件。
+- `Package DMG` 成功后才可重新导入同一 P12；`Setup DMG signing keychain` 必须证明新发现的
+  `DMG_IDENTITY == SIGNING_IDENTITY`，随后独立 `Sign + notarize DMG` 才可接收 Apple 公证凭据。
+  DMG codesign、公证、staple 与验证全部成功后，必须在 ZIP、Sparkle、attestation 与 GitHub
+  Release action 之前立即删除第二个 keychain，并再次证明该 identity 已不可访问。最终
+  `if: always()` cleanup 只是失败路径兜底；可变 Homebrew formula 或 PATH fallback 不得重新
+  进入工作流。
+- 该边界约束的是 tag runner 的第三方打包工具字节与凭据时序。它不证明 Finder AppleScript、
+  `hdiutil`、codesign、公证或生成 DMG 的内容正确，也不证明 GitHub 远端策略、Developer ID
+  真实凭据或已发布资产已验收；这些仍由后续 Release 资产、签名、远端控制与人工发布验收闭合，
+  不得据此宣称产品已经完整商业可发布。
 
 ---
 

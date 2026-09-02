@@ -152,6 +152,23 @@ jobs:
           fi
           echo "version=${TAG_VERSION}" >> "${GITHUB_OUTPUT}"
 
+      # Resolve create-dmg before any release secret is loaded. The helper
+      # downloads one exact upstream commit into a private runner-temp root,
+      # verifies the archive digest before parsing it, and exposes only the
+      # reviewed script/support closure with read-only permissions.
+      - name: Prepare pinned create-dmg
+        id: create_dmg_tool
+        run: |
+          set -euo pipefail
+          PREPARED_TOOL="$(./scripts/release/prepare-pinned-create-dmg.sh)"
+          [[ "${PREPARED_TOOL}" == *$'\t'* && "${PREPARED_TOOL}" != *$'\n'* ]]
+          TOOL_ROOT="${PREPARED_TOOL%%$'\t'*}"
+          TOOL_MANIFEST="${PREPARED_TOOL#*$'\t'}"
+          [[ "${TOOL_MANIFEST}" != *$'\t'* ]]
+          printf 'root=%s\n' "${TOOL_ROOT}" >> "${GITHUB_OUTPUT}"
+          printf 'executable=%s/create-dmg\n' "${TOOL_ROOT}" >> "${GITHUB_OUTPUT}"
+          printf 'manifest=%s\n' "${TOOL_MANIFEST}" >> "${GITHUB_OUTPUT}"
+
       # Fail before importing a certificate or creating release artifacts if
       # any part of the production trust chain is missing. Values are never
       # printed; the Sparkle keys must also complete a real sign/verify
@@ -170,7 +187,9 @@ jobs:
           set -euo pipefail
           ./scripts/ci/validate-release-credentials.sh
 
-      # Import the signing certificate into a temporary keychain.
+      # Import the signing certificate for the App build, Developer ID
+      # signing, notarization and launch smoke; it is torn down right after
+      # that smoke, before any third-party packaging tool runs.
       # Why a temporary keychain (not the default one):
       #   - Default login.keychain on the runner image is unlocked at boot
       #     with a password that may rotate; if we add the cert there it
@@ -178,13 +197,14 @@ jobs:
       #   - A scoped keychain we create + delete in the same run is also
       #     better hygiene: secrets don't leak into other concurrent jobs
       #     on the same runner pool.
-      - name: Setup signing keychain
+      - name: Setup App signing keychain
         env:
           P12_BASE64: ${{ secrets.SIGNING_CERTIFICATE_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
+          umask 077
           KEYCHAIN_PATH="${RUNNER_TEMP}/signing.keychain-db"
           CERT_PATH="${RUNNER_TEMP}/signing.p12"
 
@@ -211,7 +231,7 @@ jobs:
           # CI runner can't satisfy.
           security import "${CERT_PATH}" \
             -P "${P12_PASSWORD}" \
-            -A -t agg -f pkcs12 \
+            -t agg -f pkcs12 \
             -T /usr/bin/codesign \
             -T /usr/bin/security \
             -k "${KEYCHAIN_PATH}"
@@ -383,6 +403,25 @@ jobs:
           [[ "$private_executable_sha256" =~ ^[0-9a-f]{64}$ ]]
           test "$selected_executable_sha256" = "$private_executable_sha256"
 
+      # Remove the App signing capability as soon as the notarized App has
+      # passed its hermetic launch smoke. Deleting the keychain is not enough
+      # on its own: also fail closed if the same Developer ID identity remains
+      # available elsewhere in the runner's user keychain search list.
+      - name: Tear down App signing keychain
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="${RUNNER_TEMP}/signing.keychain-db"
+
+          [[ -n "${SIGNING_IDENTITY:-}" ]]
+          security delete-keychain "${KEYCHAIN_PATH}"
+          [[ ! -e "${KEYCHAIN_PATH}" && ! -L "${KEYCHAIN_PATH}" ]]
+
+          REMAINING_IDENTITIES="$(security find-identity -v -p codesigning)"
+          if grep -Fq -- "\"${SIGNING_IDENTITY}\"" <<< "${REMAINING_IDENTITIES}"; then
+            echo "::error::App signing identity remained accessible after keychain teardown"
+            exit 1
+          fi
+
       # Primary user-facing artifact: a DMG with the customary macOS
       # install experience — open it and you get the app icon next to an
       # Applications shortcut, drag once, done.
@@ -393,29 +432,44 @@ jobs:
       #   - The DMG file itself must be codesigned AND notarized AND
       #     stapled separately from the .app — otherwise Gatekeeper warns
       #     on the DMG even though its contents are clean.
-      #   - create-dmg (shell tool, via Homebrew) occasionally exits 2
-      #     when AppleScript window-dressing flakes on a headless runner
-      #     even though the DMG was written correctly, so we verify the
-      #     output file exists instead of trusting the exit code.
-      - name: Package + notarize DMG
-        id: dmg
+      #   - The third-party DMG builder runs in a separate secret-free step;
+      #     signing and notarization credentials are introduced only after
+      #     its output passes structural verification.
+      - name: Package DMG
+        id: unsigned_dmg
         env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          CREATE_DMG_ROOT: ${{ steps.create_dmg_tool.outputs.root }}
+          CREATE_DMG_EXECUTABLE: ${{ steps.create_dmg_tool.outputs.executable }}
+          CREATE_DMG_MANIFEST: ${{ steps.create_dmg_tool.outputs.manifest }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.version.outputs.version }}"
+          umask 077
           STABLE_DMG="build/Dev-Island.dmg"
-          VERSIONED_DMG="build/Dev-Island-${VERSION}.dmg"
+          CREATE_DMG_RUNTIME="$(mktemp -d "${RUNNER_TEMP}/dev-island-create-dmg-runtime.XXXXXXXX")"
+          mkdir -m 700 "${CREATE_DMG_RUNTIME}/home" "${CREATE_DMG_RUNTIME}/tmp"
 
-          brew install create-dmg
+          [[ ! -e "${STABLE_DMG}" && ! -L "${STABLE_DMG}" ]]
 
           # Background: 1320×800 PNG with 144 DPI metadata → Finder renders
           # it at 660×400 logical points, crisp on retina. Icon coordinates
           # center each icon inside the two rounded squares of the artwork
           # (app left, Applications right, arrow between).
-          create-dmg \
+          # create-dmg does not need Apple, Sparkle or GitHub credentials.
+          # The repository-owned launcher descriptor-verifies the closure,
+          # carries those exact bytes into anonymous unlinked descriptors,
+          # and executes that script without reopening the tool pathname.
+          # Give all unqualified system-tool calls one fixed system PATH and
+          # an otherwise empty environment with private HOME/TMPDIR roots.
+          /usr/bin/env -i \
+            PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+            LC_ALL=C \
+            HOME="${CREATE_DMG_RUNTIME}/home" \
+            TMPDIR="${CREATE_DMG_RUNTIME}/tmp/" \
+            /usr/bin/ruby ./scripts/release/run-pinned-create-dmg.rb \
+            --root "${CREATE_DMG_ROOT}" \
+            --executable "${CREATE_DMG_EXECUTABLE}" \
+            --manifest "${CREATE_DMG_MANIFEST}" \
+            -- \
             --volname "Dev Island" \
             --background "scripts/assets/dmg-background@2x.png" \
             --window-pos 200 160 \
@@ -425,9 +479,87 @@ jobs:
             --app-drop-link 500 205 \
             --hide-extension "Dev Island.app" \
             "${STABLE_DMG}" \
-            "build/Dev Island.app" \
-            || true
-          [[ -f "${STABLE_DMG}" ]] || { echo "::error::create-dmg produced no output"; exit 1; }
+            "build/Dev Island.app"
+          [[ -f "${STABLE_DMG}" && ! -L "${STABLE_DMG}" ]] \
+            || { echo "::error::create-dmg produced no regular output"; exit 1; }
+          test "$(stat -f '%u:%l' "${STABLE_DMG}")" = "$(id -u):1"
+          DMG_MODE="$(stat -f '%Lp' "${STABLE_DMG}")"
+          [[ "${DMG_MODE}" =~ ^[0-7]{3,4}$ ]]
+          (( (8#${DMG_MODE} & 022) == 0 ))
+          chmod 600 "${STABLE_DMG}"
+          test "$(stat -f '%Lp' "${STABLE_DMG}")" = "600"
+          hdiutil verify "${STABLE_DMG}"
+          printf 'path=%s\n' "${STABLE_DMG}" >> "${GITHUB_OUTPUT}"
+          printf 'sha256=%s\n' "$(shasum -a 256 "${STABLE_DMG}" | awk '{print $1}')" \
+            >> "${GITHUB_OUTPUT}"
+
+      # Re-import the same reviewed Developer ID only after the unsigned DMG
+      # has been built and structurally verified, so the third-party DMG
+      # builder never runs while a signing keychain is available.
+      - name: Setup DMG signing keychain
+        env:
+          P12_BASE64: ${{ secrets.SIGNING_CERTIFICATE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEYCHAIN_PATH="${RUNNER_TEMP}/signing.keychain-db"
+          CERT_PATH="${RUNNER_TEMP}/signing.p12"
+
+          printf '%s' "${P12_BASE64}" | base64 --decode -o "${CERT_PATH}"
+          file "${CERT_PATH}" || true
+          ls -la "${CERT_PATH}"
+
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security import "${CERT_PATH}" \
+            -P "${P12_PASSWORD}" \
+            -t agg -f pkcs12 \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security \
+            -k "${KEYCHAIN_PATH}"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "${KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security list-keychains -d user -s "${KEYCHAIN_PATH}" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "${KEYCHAIN_PATH}"
+
+          rm -f "${CERT_PATH}"
+
+          DMG_IDENTITY="$(security find-identity -v -p codesigning "${KEYCHAIN_PATH}" \
+            | grep "Developer ID Application" \
+            | head -1 | awk -F'"' '{print $2}')"
+          if [[ -z "${DMG_IDENTITY}" ]]; then
+            echo "::error::No 'Developer ID Application' identity found after DMG import"
+            exit 1
+          fi
+          if [[ "${DMG_IDENTITY}" != "${SIGNING_IDENTITY}" ]]; then
+            echo "::error::DMG signing identity does not match the App signing identity"
+            exit 1
+          fi
+
+      - name: Sign + notarize DMG
+        id: dmg
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          STABLE_DMG: ${{ steps.unsigned_dmg.outputs.path }}
+          UNSIGNED_DMG_SHA256: ${{ steps.unsigned_dmg.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          VERSIONED_DMG="build/Dev-Island-${VERSION}.dmg"
+
+          test "${STABLE_DMG}" = "build/Dev-Island.dmg"
+          [[ "${UNSIGNED_DMG_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ -f "${STABLE_DMG}" && ! -L "${STABLE_DMG}" ]]
+          test "$(stat -f '%u:%l:%Lp' "${STABLE_DMG}")" = "$(id -u):1:600"
+          test "$(shasum -a 256 "${STABLE_DMG}" | awk '{print $1}')" = \
+            "${UNSIGNED_DMG_SHA256}"
+          hdiutil verify "${STABLE_DMG}"
 
           codesign --force --sign "${SIGNING_IDENTITY}" --timestamp "${STABLE_DMG}"
           codesign --verify --strict --verbose=2 "${STABLE_DMG}"
@@ -449,6 +581,24 @@ jobs:
           echo "stable=${STABLE_DMG}" >> "${GITHUB_OUTPUT}"
           echo "versioned=${VERSIONED_DMG}" >> "${GITHUB_OUTPUT}"
           echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
+
+      # Remove the DMG signing capability before packaging the ZIP or
+      # invoking any third-party publication action. The final always-run
+      # cleanup remains as a failure-path backstop.
+      - name: Tear down DMG signing keychain
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="${RUNNER_TEMP}/signing.keychain-db"
+
+          [[ -n "${SIGNING_IDENTITY:-}" ]]
+          security delete-keychain "${KEYCHAIN_PATH}"
+          [[ ! -e "${KEYCHAIN_PATH}" && ! -L "${KEYCHAIN_PATH}" ]]
+
+          REMAINING_IDENTITIES="$(security find-identity -v -p codesigning)"
+          if grep -Fq -- "\"${SIGNING_IDENTITY}\"" <<< "${REMAINING_IDENTITIES}"; then
+            echo "::error::DMG signing identity remained accessible after keychain teardown"
+            exit 1
+          fi
 
       # Secondary artifact: zip. Use `ditto` again for the same reason:
       # consistent metadata, predictable extraction layout when users
@@ -706,4 +856,5 @@ jobs:
       - name: Tear down signing keychain
         if: always()
         run: |
+          rm -f "${RUNNER_TEMP}/signing.p12" || true
           security delete-keychain "${RUNNER_TEMP}/signing.keychain-db" || true

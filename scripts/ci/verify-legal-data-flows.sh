@@ -10,8 +10,19 @@ fail() {
   exit 1
 }
 
-for file in PRIVACY.md TERMS.md SECURITY.md docs/DATA_FLOW_INVENTORY.md docs/INTERFACE_CONTRACT.md docs/LEGAL_RELEASE_CHECKLIST.md docs/BRAND_ASSET_REVIEW.md docs/COMMERCIAL_LICENSE_SECURITY.md docs/codex-integration-field-notes.md docs/manus-api-field-notes.md; do
+for file in PRIVACY.md TERMS.md SECURITY.md docs/DATA_FLOW_INVENTORY.md docs/GITHUB_REPOSITORY_CONTROLS.md docs/INTERFACE_CONTRACT.md docs/LEGAL_RELEASE_CHECKLIST.md docs/BRAND_ASSET_REVIEW.md docs/COMMERCIAL_LICENSE_SECURITY.md docs/codex-integration-field-notes.md docs/manus-api-field-notes.md; do
   test -s "$file" || fail "Missing canonical legal/data-flow artifact: $file"
+done
+
+repository_bash_count="$(rg --files scripts -g '*.sh' | wc -l | tr -d '[:space:]')"
+repository_ruby_count="$(rg --files scripts -g '*.rb' | wc -l | tr -d '[:space:]')"
+repository_swift_count="$(rg --files scripts -g '*.swift' | wc -l | tr -d '[:space:]')"
+for repository_script_count in \
+  "$repository_bash_count" \
+  "$repository_ruby_count" \
+  "$repository_swift_count"; do
+  [[ "$repository_script_count" =~ ^[1-9][0-9]*$ ]] \
+    || fail "Repository script inventory could not be enumerated"
 done
 
 require_documented() {
@@ -471,10 +482,10 @@ require_documented 'GitHub Workflow 有效 Shell 解析边界' docs/INTERFACE_CO
 require_documented 'step > job defaults > workflow defaults' docs/INTERFACE_CONTRACT.md "Workflow shell precedence contract"
 require_documented '精确 `bash` 或 `/bin/bash`' docs/INTERFACE_CONTRACT.md "Exact reviewed workflow shells"
 require_documented '仓库脚本无执行语法闭包' docs/INTERFACE_CONTRACT.md "Repository script syntax-closure contract"
-require_documented '51 个 Bash 与 24 个 Ruby' docs/INTERFACE_CONTRACT.md "Complete current repository script closure"
+require_documented "${repository_bash_count} 个 Bash 与 ${repository_ruby_count} 个 Ruby" docs/INTERFACE_CONTRACT.md "Complete current repository script closure"
 require_documented '前半段写 marker 的命令仍会先执行' docs/INTERFACE_CONTRACT.md "Bash partial-execution threat"
 require_documented 'Swift 脚本 stdin-only Parse 闭包' docs/INTERFACE_CONTRACT.md "Swift script parse-closure contract"
-require_documented '51 Bash \+ 24 Ruby \+ 9 Swift' docs/INTERFACE_CONTRACT.md "Complete current three-language script closure"
+require_documented "${repository_bash_count} Bash \\+ ${repository_ruby_count} Ruby \\+ ${repository_swift_count} Swift" docs/INTERFACE_CONTRACT.md "Complete current three-language script closure"
 require_documented '`/usr/bin/swiftc -parse -`' docs/INTERFACE_CONTRACT.md "Non-executing Swift parser"
 require_documented 'App 构建输出与原子发布边界' docs/INTERFACE_CONTRACT.md "Atomic App build-output contract"
 require_documented 'app-build-output-boundary\.rb prepare' docs/INTERFACE_CONTRACT.md "Caller-controlled build-directory boundary"
@@ -507,7 +518,32 @@ require_documented 'duplicate/resolved-colliding mapping keys' docs/DATA_FLOW_IN
 require_documented 'workflow/job `defaults.run.shell`' docs/DATA_FLOW_INVENTORY.md "Workflow inherited-shell data boundary"
 require_documented 'Maintainer repository script syntax validation' docs/DATA_FLOW_INVENTORY.md "Repository script syntax data flow"
 require_documented 'No repository script is executed' docs/DATA_FLOW_INVENTORY.md "Repository script no-execution boundary"
-require_documented '51 Bash \+ 24 Ruby \+ 9 Swift' docs/DATA_FLOW_INVENTORY.md "Three-language repository script inventory"
+require_documented "${repository_bash_count} Bash \\+ ${repository_ruby_count} Ruby \\+ ${repository_swift_count} Swift" docs/DATA_FLOW_INVENTORY.md "Three-language repository script inventory"
+require_documented "collects all ${repository_bash_count} Bash, ${repository_ruby_count} Ruby, and ${repository_swift_count} Swift" docs/GITHUB_REPOSITORY_CONTROLS.md "GitHub controls repository script inventory"
+require_documented '固定 create-dmg 发布工具边界' docs/INTERFACE_CONTRACT.md "Pinned create-dmg release-tool contract"
+require_documented 'size/hash 通过前不得调用 gzip/tar' docs/INTERFACE_CONTRACT.md "Digest-before-parser release-tool boundary"
+require_documented '归档形状固定为 28 个 tar record' docs/INTERFACE_CONTRACT.md "Pinned create-dmg archive record count"
+require_documented '恰好 27 个 filesystem entry' docs/INTERFACE_CONTRACT.md "Pinned create-dmg filesystem entry count"
+require_documented '精确 369 bytes' docs/INTERFACE_CONTRACT.md "Pinned create-dmg runtime manifest size"
+require_documented '35565e6e5d1086014d94fdddd246b8daa4b33bf3d6b9b49a1a9dac2d3a57526f' docs/INTERFACE_CONTRACT.md "Pinned create-dmg runtime manifest digest"
+require_documented '`run-pinned-create-dmg\.rb`' docs/INTERFACE_CONTRACT.md "Descriptor-bound create-dmg execution contract"
+require_documented '22,095 bytes' docs/INTERFACE_CONTRACT.md "Pinned transformed create-dmg script"
+require_documented '46644c8da0d7eb1258e3ef05dd72967ca270d698df28d2aa6abd9402205e5beb' docs/INTERFACE_CONTRACT.md "Pinned transformed create-dmg digest"
+require_documented '重新打开.*CREATE_DMG_EXECUTABLE' docs/INTERFACE_CONTRACT.md "No pathname reopen after create-dmg verification"
+require_documented '不得据此宣称产品已经完整商业可发布' docs/INTERFACE_CONTRACT.md "Pinned-tool commercial-release limitation"
+require_documented 'Maintainer pinned release-tool preparation' docs/DATA_FLOW_INVENTORY.md "Pinned release-tool data flow"
+require_documented 'No installed-App data, product user data.*other Secret is read or sent' docs/DATA_FLOW_INVENTORY.md "Pinned release-tool credential exclusion"
+require_documented 'One logical download, with at most four HTTPS GET attempts' docs/DATA_FLOW_INVENTORY.md "Pinned release-tool retry disclosure"
+require_documented 'pre-secret preparer performs one clean-environment `--pure-version` probe' docs/DATA_FLOW_INVENTORY.md "Pinned release-tool version-probe disclosure"
+require_documented '/bin/bash /dev/fd/N' docs/DATA_FLOW_INVENTORY.md "Anonymous descriptor create-dmg execution"
+require_documented 'Maintainer Release signing-capability isolation' docs/DATA_FLOW_INVENTORY.md "Release signing-capability data flow"
+require_documented 'exactly 28 tar records' docs/GITHUB_REPOSITORY_CONTROLS.md "GitHub controls create-dmg record count"
+require_documented '369-byte `runtime\.SHA256`' docs/GITHUB_REPOSITORY_CONTROLS.md "GitHub controls create-dmg manifest size"
+require_documented '35565e6e5d1086014d94fdddd246b8daa4b33bf3d6b9b49a1a9dac2d3a57526f' docs/GITHUB_REPOSITORY_CONTROLS.md "GitHub controls create-dmg manifest digest"
+require_documented '46644c8da0d7eb1258e3ef05dd72967ca270d698df28d2aa6abd9402205e5beb' docs/GITHUB_REPOSITORY_CONTROLS.md "GitHub controls transformed create-dmg digest"
+require_documented '`Tear down App signing keychain`' docs/GITHUB_REPOSITORY_CONTROLS.md "GitHub controls App signing teardown"
+require_documented '`Tear down DMG signing keychain`' docs/GITHUB_REPOSITORY_CONTROLS.md "GitHub controls DMG signing teardown"
+require_documented 'not the primary capability boundary' docs/GITHUB_REPOSITORY_CONTROLS.md "GitHub controls final cleanup limitation"
 require_documented 'Maintainer Sparkle release cryptographic verification' docs/DATA_FLOW_INVENTORY.md "Sparkle release cryptographic data flow"
 require_documented '自动更新 Ed25519 密码学闭环' docs/INTERFACE_CONTRACT.md "Sparkle Ed25519 release contract"
 require_documented '完整 archive 与精确 feed prefix' docs/INTERFACE_CONTRACT.md "Sparkle signed-byte verification scope"

@@ -1,10 +1,109 @@
 #!/usr/bin/env ruby
 
+require "digest"
 require "yaml"
+
+# Treat any use of the secrets context inside one GitHub expression as secret
+# exposure. This intentionally covers dot access, bracket access and whole-
+# context helpers such as toJSON(secrets).
+SECRET_EXPRESSION = /\$\{\{(?:(?!\}\}).)*\bsecrets\b(?:(?!\}\}).)*\}\}/im
+PINNED_RUN_SHA256 = {
+  "Prepare pinned create-dmg" =>
+    "0590e81bdecec544ff27d86f1bde9fa73a98057d3d08e088609c3d22e8a07fef",
+  "Setup App signing keychain" =>
+    "dee165d6e2565777cec204348731ff57ed1ed087fcd57b5a44fd6ae55b2575ba",
+  "Build .app (universal)" =>
+    "0d215be302f7d049ee24e5e44fa1b143b01b6488a7c573d05b76945ea1e59d1c",
+  "Verify app dependency closure" =>
+    "d8d81ea616fa4cb6df7a3b70095acc76fc18036f6389c2b5426980169eb2e229",
+  "Codesign with Developer ID" =>
+    "42a34d84a9dbff696e67b9e5ead0b6842d4c94dc31217081f78a2318dbb3c9d9",
+  "Notarize" =>
+    "5061027e02dfb55858bcc8a98e5eb59808d94075669c4a90369db251970e0c5d",
+  "Hermetically launch notarized production app" =>
+    "d4a675156b40bd41f5f00bc1c290c50d7b4e7073e4951b53d70f56cfcc0ae4d6",
+  "Tear down App signing keychain" =>
+    "fcdc6469868124b66ee209db88b8710a88de110f9c0684b67f82a3cf1a1f87a8",
+  "Package DMG" =>
+    "eac34e6a2e7f3091823cfe59634a8f1ac075dbd1959081675e31aea14e26d5ac",
+  "Setup DMG signing keychain" =>
+    "81e4df6d030f97971515974570445b8199249e1d3ca082f5fab8020aa9a857cc",
+  "Sign + notarize DMG" =>
+    "8497e93082ec218c02f97bff9da8a3b0e8ec26e7fbda3c3ad995c9ab57970bc3",
+  "Tear down DMG signing keychain" =>
+    "addbb0eac6f1235f652b879162edc163aebd144120877281778d38d761a5fad2",
+  "Tear down signing keychain" =>
+    "a28e7a0e6edf01de873df4d7a0fae12c6be413c50a8688536b113c826f2d08fd"
+}.freeze
+
+APP_SIGNING_WINDOW_NAMES = [
+  "Setup App signing keychain",
+  "Build .app (universal)",
+  "Verify app dependency closure",
+  "Codesign with Developer ID",
+  "Notarize",
+  "Hermetically launch notarized production app",
+  "Tear down App signing keychain"
+].freeze
+
+APP_SIGNING_ENV = {
+  "P12_BASE64" => "${{ secrets.SIGNING_CERTIFICATE_P12_BASE64 }}",
+  "P12_PASSWORD" => "${{ secrets.SIGNING_CERTIFICATE_P12_PASSWORD }}",
+  "KEYCHAIN_PASSWORD" => "${{ secrets.KEYCHAIN_PASSWORD }}"
+}.freeze
+
+PACKAGE_DMG_ENV = {
+  "CREATE_DMG_ROOT" => "${{ steps.create_dmg_tool.outputs.root }}",
+  "CREATE_DMG_EXECUTABLE" => "${{ steps.create_dmg_tool.outputs.executable }}",
+  "CREATE_DMG_MANIFEST" => "${{ steps.create_dmg_tool.outputs.manifest }}"
+}.freeze
+
+SIGN_DMG_ENV = {
+  "APPLE_ID" => "${{ secrets.APPLE_ID }}",
+  "APPLE_TEAM_ID" => "${{ secrets.APPLE_TEAM_ID }}",
+  "APPLE_APP_PASSWORD" => "${{ secrets.APPLE_APP_PASSWORD }}",
+  "STABLE_DMG" => "${{ steps.unsigned_dmg.outputs.path }}",
+  "UNSIGNED_DMG_SHA256" => "${{ steps.unsigned_dmg.outputs.sha256 }}"
+}.freeze
+
+BUILD_APP_ENV = {
+  "SPARKLE_PUBLIC_ED_KEY" => "${{ secrets.SPARKLE_PUBLIC_ED_KEY }}"
+}.freeze
+
+CODESIGN_APP_ENV = {
+  "APPLE_TEAM_ID" => "${{ secrets.APPLE_TEAM_ID }}"
+}.freeze
+
+NOTARIZE_APP_ENV = {
+  "APPLE_ID" => "${{ secrets.APPLE_ID }}",
+  "APPLE_TEAM_ID" => "${{ secrets.APPLE_TEAM_ID }}",
+  "APPLE_APP_PASSWORD" => "${{ secrets.APPLE_APP_PASSWORD }}"
+}.freeze
 
 def fail(message)
   warn "error: #{message}"
   exit 1
+end
+
+def any_string_matches?(value, pattern)
+  case value
+  when Hash
+    value.any? do |key, child|
+      any_string_matches?(key, pattern) || any_string_matches?(child, pattern)
+    end
+  when Array
+    value.any? { |child| any_string_matches?(child, pattern) }
+  when String
+    value.match?(pattern)
+  else
+    false
+  end
+end
+
+def require_step_keys(step, expected_keys, label)
+  return if step.keys.sort == expected_keys.sort
+
+  fail("#{label} step shape does not match the reviewed boundary")
 end
 
 unless ARGV.length == 2 && ARGV[0] == "--workflow"
@@ -37,6 +136,10 @@ jobs = workflow["jobs"]
 fail("release workflow jobs mapping is missing") unless jobs.is_a?(Hash)
 job = jobs["build-sign-release"]
 fail("build-sign-release job is missing") unless job.is_a?(Hash)
+fail("workflow and release job environments must be absent") if
+  workflow.key?("env") || job.key?("env")
+fail("workflow and release job run defaults must be absent") if
+  workflow.key?("defaults") || job.key?("defaults")
 steps = job["steps"]
 fail("release job steps are missing") unless steps.is_a?(Array) && !steps.empty?
 fail("release job contains a malformed step") unless steps.all? { |step| step.is_a?(Hash) }
@@ -65,9 +168,99 @@ end
 
 gates_index = index_for_name.call("Repository release gates")
 credentials_index = index_for_name.call("Validate release credentials")
+prepare_index = index_for_name.call("Prepare pinned create-dmg")
+app_keychain_index = index_for_name.call("Setup App signing keychain")
+launch_smoke_index = index_for_name.call("Hermetically launch notarized production app")
+app_teardown_index = index_for_name.call("Tear down App signing keychain")
+package_index = index_for_name.call("Package DMG")
+dmg_keychain_index = index_for_name.call("Setup DMG signing keychain")
+dmg_sign_index = index_for_name.call("Sign + notarize DMG")
+dmg_teardown_index = index_for_name.call("Tear down DMG signing keychain")
+zip_index = index_for_name.call("Package release zip")
 publication_index = index_for_name.call("Create GitHub Release")
-fail("release credential ordering is invalid") unless
-  checkout_index < gates_index && gates_index < credentials_index && credentials_index < publication_index
+final_teardown_index = index_for_name.call("Tear down signing keychain")
+
+ordered_indexes = [
+  checkout_index,
+  gates_index,
+  prepare_index,
+  credentials_index,
+  app_keychain_index,
+  launch_smoke_index,
+  app_teardown_index,
+  package_index,
+  dmg_keychain_index,
+  dmg_sign_index,
+  dmg_teardown_index,
+  zip_index,
+  publication_index,
+  final_teardown_index
+]
+fail("release signing boundary ordering is invalid") unless
+  ordered_indexes.each_cons(2).all? { |left, right| left < right }
+fail("App teardown, DMG packaging, keychain re-import, and signing must be consecutive") unless
+  app_teardown_index == launch_smoke_index + 1 &&
+    package_index == app_teardown_index + 1 &&
+    dmg_keychain_index == package_index + 1 &&
+    dmg_sign_index == dmg_keychain_index + 1 &&
+    dmg_teardown_index == dmg_sign_index + 1
+
+credentialed_app_steps = steps[app_keychain_index..app_teardown_index]
+fail("a third-party action must not run while the App signing keychain is available") if
+  credentialed_app_steps.any? { |step| step.key?("uses") }
+
+prepare = steps[prepare_index]
+require_step_keys(prepare, %w[name id run], "Prepare pinned create-dmg")
+fail("Prepare pinned create-dmg must expose only create_dmg_tool outputs") unless
+  prepare["id"] == "create_dmg_tool" && !prepare.key?("env")
+
+app_keychain = steps[app_keychain_index]
+require_step_keys(app_keychain, %w[name env run], "Setup App signing keychain")
+fail("App signing keychain environment does not match the reviewed boundary") unless
+  app_keychain["env"] == APP_SIGNING_ENV
+
+app_teardown = steps[app_teardown_index]
+require_step_keys(app_teardown, %w[name run], "Tear down App signing keychain")
+fail("App signing keychain teardown must be secret-free") if
+  app_teardown.key?("env") || any_string_matches?(app_teardown, SECRET_EXPRESSION)
+
+package = steps[package_index]
+require_step_keys(package, %w[name id env run], "Package DMG")
+fail("Package DMG step must not reference release secrets") if
+  any_string_matches?(package, SECRET_EXPRESSION)
+fail("Package DMG must expose only the unsigned_dmg outputs") unless
+  package["id"] == "unsigned_dmg"
+fail("Package DMG environment must match the three pinned create-dmg outputs exactly") unless
+  package["env"] == PACKAGE_DMG_ENV
+
+dmg_keychain = steps[dmg_keychain_index]
+require_step_keys(dmg_keychain, %w[name env run], "Setup DMG signing keychain")
+fail("DMG signing keychain environment does not match the reviewed boundary") unless
+  dmg_keychain["env"] == APP_SIGNING_ENV
+
+dmg_sign = steps[dmg_sign_index]
+require_step_keys(dmg_sign, %w[name id env run], "Sign + notarize DMG")
+fail("DMG signing environment does not match the reviewed artifact and credential boundary") unless
+  dmg_sign["id"] == "dmg" && dmg_sign["env"] == SIGN_DMG_ENV
+
+dmg_teardown = steps[dmg_teardown_index]
+require_step_keys(dmg_teardown, %w[name run], "Tear down DMG signing keychain")
+fail("DMG signing keychain teardown must be secret-free") if
+  dmg_teardown.key?("env") || any_string_matches?(dmg_teardown, SECRET_EXPRESSION)
+
+final_teardown = steps[final_teardown_index]
+require_step_keys(final_teardown, %w[name if run], "Tear down signing keychain")
+fail("final signing keychain teardown must always run") unless
+  final_teardown["if"] == "always()" && !final_teardown.key?("env")
+
+PINNED_RUN_SHA256.each do |name, expected_sha256|
+  step = steps[index_for_name.call(name)]
+  run = step["run"]
+  fail("#{name} must contain one reviewed run body") unless run.is_a?(String) && !run.empty?
+  actual_sha256 = Digest::SHA256.hexdigest(run.b)
+  fail("#{name} run body does not match the reviewed SHA-256") unless
+    actual_sha256 == expected_sha256
+end
 
 publication = steps[publication_index]
 fail("GitHub Release action must be pinned to a full commit SHA") unless
@@ -84,12 +277,6 @@ token_name = lambda do |name|
     normalized.include?("TOKEN") || normalized.end_with?("PAT")
 end
 token_expression = /\$\{\{\s*(?:github\.token|secrets\.[A-Z0-9_]*(?:TOKEN|PAT)[A-Z0-9_]*)\s*\}\}/i
-
-[workflow["env"], job["env"]].compact.each do |environment|
-  fail("workflow or job environment must be a mapping") unless environment.is_a?(Hash)
-  fail("GitHub token must not be exposed at workflow or job scope") unless
-    environment.keys.none? { |name| token_name.call(name) }
-end
 
 steps.each_with_index do |step, index|
   next if index == publication_index

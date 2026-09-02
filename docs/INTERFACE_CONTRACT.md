@@ -81,6 +81,12 @@
   只会展开岛并高亮该会话，不得盲目 Approve、Reject 或 Submit。队列为空时快捷键只展开岛。
   快捷键成功交付决策后必须发布 `islandGlobalDecisionApplied`，面板据此显示与岛内点击相同的
   回执。开关键 `island.shortcuts.globalDecisions` 默认开启，关闭后立即注销热键。
+- 项目分支标签（v6.87.0）：本地会话的 TaskCard 在 Agent 名之后显示项目当前 git 分支。
+  `ProjectBranchReader` 是 App 内唯一打开用户项目文件的路径：从 `taskURL` 目录最多向上
+  8 层查找 `.git`（目录或 `gitdir:` 文件），以 O_NOFOLLOW 描述符读取当前用户拥有、
+  至多 4 KiB 的普通 `HEAD` 文件；只返回 ≤64 字符的 control-free 分支名或 7 位 detached
+  前缀。结果只在 `ProjectBranchCache` 内存中保留、每项目至多 30 秒刷新一次，不得进入
+  SQLite、日志、诊断或状态菜单；远程任务与非 git 目录不显示任何内容。
 - 一个会话存在可处理的 `AgentActionRequest` 时，决策面替代该会话的普通可点击 TaskCard；
   决策面必须保留 Agent、安全的本地 Session 指纹和会话标题。不得同时堆叠两张重复
   会话卡，也不得把决策按钮嵌入跳回会话的 Button。请求解决后恢复普通 TaskCard。

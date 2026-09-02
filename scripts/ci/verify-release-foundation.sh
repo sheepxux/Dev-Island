@@ -15,6 +15,12 @@ CASK="dist/homebrew-island/Casks/dev-island.rb"
 CASK_DOC="dist/homebrew-island/README.md"
 RELEASE=".github/workflows/release.yml"
 CREDENTIAL_VALIDATOR="scripts/ci/validate-release-credentials.sh"
+CREATE_DMG_PREPARER="scripts/release/prepare-pinned-create-dmg.sh"
+CREATE_DMG_TOOL_VERIFIER="scripts/release/verify-pinned-create-dmg-tool.rb"
+CREATE_DMG_RUNNER="scripts/release/run-pinned-create-dmg.rb"
+CREATE_DMG_ARCHIVE_VALIDATOR="scripts/release/validate-pinned-create-dmg-archive.rb"
+CREATE_DMG_ARCHIVE_FIXTURES="scripts/ci/verify-pinned-create-dmg-archive.sh"
+CREATE_DMG_EXECUTION_FIXTURES="scripts/ci/verify-pinned-create-dmg-execution-boundary.sh"
 SPARKLE_SECRET_RUNNER="scripts/release/run-sparkle-appcast-generator.sh"
 SPARKLE_SECRET_FIXTURES="scripts/ci/verify-sparkle-secret-isolation.sh"
 INTEGRITY_GENERATOR="scripts/release/generate-release-integrity-manifest.sh"
@@ -63,6 +69,34 @@ test -x "$RELEASE_CHECKOUT_VALIDATOR" && test -x "$RELEASE_CHECKOUT_FIXTURES" \
   || fail "Release checkout credential validator or attack fixtures are missing"
 "$RELEASE_CHECKOUT_FIXTURES" >/dev/null \
   || fail "Release checkout credential isolation fixtures failed"
+for invariant in \
+  'SECRET_EXPRESSION = /' \
+  'PINNED_RUN_SHA256 = {' \
+  'require_step_keys(' \
+  'ordered_indexes.each_cons(2)' \
+  'package_index == app_teardown_index + 1' \
+  'dmg_teardown_index == dmg_sign_index + 1' \
+  'package["env"] == PACKAGE_DMG_ENV' \
+  'dmg_sign["id"] == "dmg" && dmg_sign["env"] == SIGN_DMG_ENV' \
+  'Digest::SHA256.hexdigest(run.b)'; do
+  rg -Fq "$invariant" "$RELEASE_CHECKOUT_VALIDATOR" \
+    || fail "Structured release signing-boundary invariant missing: $invariant"
+done
+for fixture in \
+  workflow-apple-secret \
+  job-apple-secret \
+  package-secret \
+  comment-package-reverify \
+  direct-package-pathname \
+  comment-package-env-i \
+  package-before-app-teardown \
+  app-teardown-continue-on-error \
+  third-party-during-app-keychain \
+  missing-dmg-keychain-setup \
+  missing-dmg-keychain-teardown; do
+  rg -Fq "\"$fixture\"" "$RELEASE_CHECKOUT_FIXTURES" \
+    || fail "Structured release signing-boundary attack fixture missing: $fixture"
+done
 test -x "$WORKFLOW_SHELL_VALIDATOR" && test -x "$WORKFLOW_SHELL_FIXTURES" \
   || fail "Workflow run-shell validator or attack fixtures are missing"
 "$WORKFLOW_SHELL_FIXTURES" >/dev/null \
@@ -120,8 +154,11 @@ ci_ripgrep_bootstrap_line="$(rg -nF 'HOMEBREW_NO_AUTO_UPDATE=1 brew install ripg
   || fail "PR CI must bootstrap ripgrep, then syntax-check workflows and repository scripts before dependency resolution"
 
 gates_line="$(rg -n 'name: Repository release gates' "$RELEASE" | cut -d: -f1)"
+version_line="$(rg -n 'name: Resolve version' "$RELEASE" | cut -d: -f1)"
+create_dmg_prepare_line="$(rg -n 'name: Prepare pinned create-dmg' "$RELEASE" | cut -d: -f1)"
 credential_line="$(rg -n 'name: Validate release credentials' "$RELEASE" | cut -d: -f1)"
-keychain_line="$(rg -n 'name: Setup signing keychain' "$RELEASE" | cut -d: -f1)"
+app_keychain_line="$(rg -n 'name: Setup App signing keychain' "$RELEASE" | cut -d: -f1)"
+app_build_line="$(rg -n 'name: Build \.app \(universal\)' "$RELEASE" | cut -d: -f1)"
 checkout_guard_line="$(rg -n './scripts/release/verify-workflow-checkout-isolation\.rb' "$RELEASE" | cut -d: -f1)"
 workflow_shell_guard_lines="$(rg -n './scripts/release/verify-workflow-run-shells\.rb' "$RELEASE" | cut -d: -f1)"
 workflow_shell_guard_count="$(wc -l <<<"$workflow_shell_guard_lines" | tr -d ' ')"
@@ -133,8 +170,11 @@ repository_script_guard_line="$(tail -1 <<<"$repository_script_guard_lines")"
 package_boundary_line="$(rg -n 'git ls-files --error-unmatch Package\.resolved' "$RELEASE" | cut -d: -f1)"
 release_ripgrep_bootstrap_line="$(rg -nF 'HOMEBREW_NO_AUTO_UPDATE=1 brew install ripgrep' "$RELEASE" | cut -d: -f1)"
 [[ -n "$gates_line" \
+   && -n "$version_line" \
+   && -n "$create_dmg_prepare_line" \
    && -n "$credential_line" \
-   && -n "$keychain_line" \
+   && -n "$app_keychain_line" \
+   && -n "$app_build_line" \
    && -n "$checkout_guard_line" \
    && "$workflow_shell_guard_count" -eq 2 \
    && -n "$workflow_shell_guard_first_line" \
@@ -148,9 +188,12 @@ release_ripgrep_bootstrap_line="$(rg -nF 'HOMEBREW_NO_AUTO_UPDATE=1 brew install
    && "$checkout_guard_line" -lt "$workflow_shell_guard_first_line" \
    && "$workflow_shell_guard_last_line" -lt "$repository_script_guard_line" \
    && "$repository_script_guard_line" -lt "$package_boundary_line" \
-   && "$gates_line" -lt "$credential_line" \
-   && "$credential_line" -lt "$keychain_line" ]] \
-  || fail "Checkout isolation, release gates, and credential preflight ordering is invalid"
+   && "$gates_line" -lt "$version_line" \
+   && "$version_line" -lt "$create_dmg_prepare_line" \
+   && "$create_dmg_prepare_line" -lt "$credential_line" \
+   && "$credential_line" -lt "$app_keychain_line" \
+   && "$app_keychain_line" -lt "$app_build_line" ]] \
+  || fail "Checkout isolation, release gates, pinned tooling, and credential preflight ordering is invalid"
 for workflow in "$CI_WORKFLOW" "$RELEASE"; do
   for invariant in \
     'if ! command -v rg >/dev/null 2>&1; then' \
@@ -161,7 +204,9 @@ for workflow in "$CI_WORKFLOW" "$RELEASE"; do
       || fail "Workflow must bootstrap and identify ripgrep exactly once before repository gates: $workflow ($invariant)"
   done
 done
-credential_block="$(sed -n "${credential_line},$((keychain_line - 1))p" "$RELEASE")"
+credential_block="$(sed -n "${credential_line},$((app_keychain_line - 1))p" "$RELEASE")"
+app_keychain_block="$(sed -n "${app_keychain_line},$((app_build_line - 1))p" "$RELEASE")"
+create_dmg_prepare_block="$(sed -n "${create_dmg_prepare_line},$((credential_line - 1))p" "$RELEASE")"
 release_gate_block="$(sed -n "${gates_line},$((credential_line - 1))p" "$RELEASE")"
 test -x "$SPARKLE_OLD_TO_NEW_GATE" && test -x "$SPARKLE_LIVE_GATE_HELPER" \
   || fail "Sparkle old-to-new gate or bounded helper is unavailable"
@@ -192,6 +237,234 @@ rg -Fq -- '--trademark-reviews scripts/assets/agent-logos/trademark-reviews.json
   || fail "Tagged releases must bind human trademark decisions before loading credentials"
 rg -Fq -- '--require-release-reviewed' <<<"$release_gate_block" \
   || fail "Tagged releases must fail closed on pending brand provenance or trademark review"
+
+test -x "$CREATE_DMG_PREPARER" \
+  || fail "Pinned create-dmg preparer is missing or not executable"
+test -x "$CREATE_DMG_TOOL_VERIFIER" \
+  || fail "Descriptor-backed create-dmg runtime verifier is missing or not executable"
+test -x "$CREATE_DMG_RUNNER" && test -x "$CREATE_DMG_EXECUTION_FIXTURES" \
+  || fail "Descriptor-bound create-dmg runner or attack fixtures are missing"
+test -x "$CREATE_DMG_ARCHIVE_VALIDATOR" && test -x "$CREATE_DMG_ARCHIVE_FIXTURES" \
+  || fail "Pinned create-dmg archive validator or attack fixtures are missing"
+"$CREATE_DMG_ARCHIVE_FIXTURES" >/dev/null \
+  || fail "Pinned create-dmg archive attack fixtures failed"
+"$CREATE_DMG_EXECUTION_FIXTURES" >/dev/null \
+  || fail "Pinned create-dmg execution-boundary attack fixtures failed"
+for invariant in \
+  'readonly CREATE_DMG_VERSION="1.3.0"' \
+  'readonly CREATE_DMG_COMMIT="a2b71d0fda6d0df2a86dc7f67082d4d73e84c59f"' \
+  'readonly CREATE_DMG_ARCHIVE_URL="https://codeload.github.com/create-dmg/create-dmg/tar.gz/${CREATE_DMG_COMMIT}"' \
+  'readonly CREATE_DMG_ARCHIVE_SHA256="36577b966f16c12dd78d5bb5107c2ae3d069b044226b6ebbffa6a434ce142d0a"' \
+  'readonly CREATE_DMG_ARCHIVE_BYTES="48371"' \
+  'readonly CREATE_DMG_SCRIPT_SHA256="bb9ea3194e55f2f76a821e87541513748d0fedc69f45cf4f0951cad15ae0cae5"' \
+  'readonly CREATE_DMG_SENTINEL_SHA256="fb2494eb10146a84bbb20ebb198c2a09fb72aed119706dc55b6ec3644018383f"' \
+  'readonly CREATE_DMG_TEMPLATE_SHA256="b5dd7c55ddaa5db1884ac5cf523c4413d452a75df967daf55b8d45ba501fe457"' \
+  'readonly CREATE_DMG_EULA_TEMPLATE_SHA256="a804e533e9c99491a74cb4502c435b00d902dc7a45d3693057a29674e584a70b"' \
+  '--proto '\''=https'\''' \
+  '--tlsv1.2' \
+  'downloaded archive SHA-256 does not match the reviewed commit' \
+  'Parser-facing operations are deliberately delayed until the exact byte' \
+  '--strip-components 1' \
+  'verify_tool_root "$tool_root"' \
+  '/usr/bin/env -i \' \
+  'PATH="/usr/bin:/bin:/usr/sbin:/sbin" \' \
+  'LC_ALL=C \' \
+  '"$tool_root/create-dmg" --pure-version'; do
+  rg -Fq -- "$invariant" "$CREATE_DMG_PREPARER" \
+    || fail "Pinned create-dmg supply-chain invariant missing: $invariant"
+done
+[[ "$(rg -Fc '"$archive_validator" \' "$CREATE_DMG_PREPARER")" -eq 2 ]] \
+  || fail "Pinned archive must be descriptor-validated before and after extraction"
+for invariant in \
+  '--archive-sha256 "$CREATE_DMG_ARCHIVE_SHA256"' \
+  '--commit "$CREATE_DMG_COMMIT"' \
+  '--script-sha256 "$CREATE_DMG_SCRIPT_SHA256"' \
+  '--sentinel-sha256 "$CREATE_DMG_SENTINEL_SHA256"' \
+  '--template-sha256 "$CREATE_DMG_TEMPLATE_SHA256"' \
+  '--eula-template-sha256 "$CREATE_DMG_EULA_TEMPLATE_SHA256"'; do
+  [[ "$(rg -Fc -- "$invariant" "$CREATE_DMG_PREPARER")" -eq 2 ]] \
+    || fail "Pinned archive validation argument must bind both checks: $invariant"
+done
+for invariant in \
+  'EXPECTED_RECORD_COUNT = 28' \
+  'EXPECTED_FILESYSTEM_ENTRY_COUNT = 27' \
+  'File::RDONLY | File::NOFOLLOW | File::NONBLOCK' \
+  'compressed archive SHA-256 mismatch' \
+  'archive_io.rewind' \
+  'Gem::Package::TarReader.new(gzip)' \
+  'first archive record must be the reviewed global PAX header' \
+  'archive contains a link or special entry type' \
+  'runtime member SHA-256 mismatch'; do
+  rg -Fq "$invariant" "$CREATE_DMG_ARCHIVE_VALIDATOR" \
+    || fail "Pinned archive validator invariant missing: $invariant"
+done
+if rg -Fq -- '--location' "$CREATE_DMG_PREPARER"; then
+  fail "Pinned create-dmg download must not follow redirects away from codeload"
+fi
+for member in \
+  '.this-is-the-create-dmg-repo' \
+  'create-dmg' \
+  'support/eula-resources-template.xml' \
+  'support/template.applescript'; do
+  rg -Fq "$member" "$CREATE_DMG_PREPARER" \
+    || fail "Pinned create-dmg runtime closure is incomplete: $member"
+done
+for invariant in \
+  'EXPECTED_MANIFEST_SHA256 = "35565e6e5d1086014d94fdddd246b8daa4b33bf3d6b9b49a1a9dac2d3a57526f"' \
+  'File::RDONLY | File::NOFOLLOW | File::NONBLOCK' \
+  'STAT_FIELDS = %i[dev ino uid mode nlink size mtime ctime].freeze' \
+  'directory closure mismatch' \
+  'file changed during verification' \
+  'verified_files[relative_path] = read_verified_file(' \
+  'verified_files.freeze' \
+  'manifest must be adjacent to the tool root'; do
+  rg -Fq "$invariant" "$CREATE_DMG_TOOL_VERIFIER" \
+    || fail "Descriptor-backed create-dmg verifier invariant missing: $invariant"
+done
+for invariant in \
+  'EXECUTION_SCRIPT_BYTES = 22_095' \
+  'EXECUTION_SCRIPT_SHA256 = "46644c8da0d7eb1258e3ef05dd72967ca270d698df28d2aa6abd9402205e5beb"' \
+  'closure = PinnedCreateDMGTool.verify(root: root, manifest: manifest)' \
+  'executable == File.join(root, "create-dmg")' \
+  'File.unlink(path)' \
+  'anonymous.nlink == 0' \
+  'file.close_on_exec = false' \
+  '"/bin/bash"' \
+  'unsetenv_others: true'; do
+  rg -Fq "$invariant" "$CREATE_DMG_RUNNER" \
+    || fail "Descriptor-bound create-dmg execution invariant missing: $invariant"
+done
+rg -Fq 'PREPARED_TOOL="$(./scripts/release/prepare-pinned-create-dmg.sh)"' \
+  <<<"$create_dmg_prepare_block" \
+  || fail "Release preflight must prepare the pinned create-dmg closure"
+for output in \
+  "printf 'root=%s\\n' \"\${TOOL_ROOT}\" >> \"\${GITHUB_OUTPUT}\"" \
+  "printf 'executable=%s/create-dmg\\n' \"\${TOOL_ROOT}\" >> \"\${GITHUB_OUTPUT}\"" \
+  "printf 'manifest=%s\\n' \"\${TOOL_MANIFEST}\" >> \"\${GITHUB_OUTPUT}\""; do
+  rg -Fq "$output" <<<"$create_dmg_prepare_block" \
+    || fail "Pinned create-dmg path is missing from GITHUB_OUTPUT: $output"
+done
+if rg -q '\$\{\{[[:space:]]*secrets\.' <<<"$create_dmg_prepare_block"; then
+  fail "Pinned third-party tooling must be prepared without release secrets"
+fi
+if rg -Fq 'brew install create-dmg' "$RELEASE"; then
+  fail "Release workflow must not install mutable create-dmg Homebrew state"
+fi
+app_keychain_teardown_line="$(rg -nF 'name: Tear down App signing keychain' "$RELEASE" | cut -d: -f1)"
+dmg_package_line="$(rg -nF 'name: Package DMG' "$RELEASE" | cut -d: -f1)"
+dmg_keychain_line="$(rg -nF 'name: Setup DMG signing keychain' "$RELEASE" | cut -d: -f1)"
+dmg_sign_line="$(rg -nF 'name: Sign + notarize DMG' "$RELEASE" | cut -d: -f1)"
+dmg_keychain_teardown_line="$(rg -nF 'name: Tear down DMG signing keychain' "$RELEASE" | cut -d: -f1)"
+zip_package_line="$(rg -n 'name: Package release zip' "$RELEASE" | cut -d: -f1)"
+[[ -n "$app_keychain_teardown_line" \
+   && -n "$dmg_package_line" \
+   && -n "$dmg_keychain_line" \
+   && -n "$dmg_sign_line" \
+   && -n "$dmg_keychain_teardown_line" \
+   && -n "$zip_package_line" \
+   && "$app_keychain_teardown_line" -lt "$dmg_package_line" \
+   && "$dmg_package_line" -lt "$dmg_keychain_line" \
+   && "$dmg_keychain_line" -lt "$dmg_sign_line" \
+   && "$dmg_sign_line" -lt "$dmg_keychain_teardown_line" \
+   && "$dmg_keychain_teardown_line" -lt "$zip_package_line" ]] \
+  || fail "App keychain teardown, DMG package, keychain re-import, notarization, and ZIP ordering is invalid"
+dmg_package_block="$(sed -n "${dmg_package_line},$((dmg_keychain_line - 1))p" "$RELEASE")"
+dmg_keychain_block="$(sed -n "${dmg_keychain_line},$((dmg_sign_line - 1))p" "$RELEASE")"
+dmg_sign_block="$(sed -n "${dmg_sign_line},$((dmg_keychain_teardown_line - 1))p" "$RELEASE")"
+dmg_keychain_teardown_block="$(sed -n "${dmg_keychain_teardown_line},$((zip_package_line - 1))p" "$RELEASE")"
+if rg -q '\$\{\{[[:space:]]*secrets\.' <<<"$dmg_package_block"; then
+  fail "Third-party DMG packaging must run in a completely secret-free step"
+fi
+rg -Fq 'CREATE_DMG_ROOT: ${{ steps.create_dmg_tool.outputs.root }}' \
+  <<<"$dmg_package_block" \
+  || fail "DMG packaging must consume the private pinned-tool root"
+rg -Fq 'CREATE_DMG_EXECUTABLE: ${{ steps.create_dmg_tool.outputs.executable }}' \
+  <<<"$dmg_package_block" \
+  || fail "DMG packaging must consume the pinned executable path"
+rg -Fq 'CREATE_DMG_MANIFEST: ${{ steps.create_dmg_tool.outputs.manifest }}' \
+  <<<"$dmg_package_block" \
+  || fail "DMG packaging must consume the pinned runtime manifest"
+for invariant in \
+  'id: unsigned_dmg' \
+  'umask 077' \
+  '/usr/bin/env -i \' \
+  'PATH="/usr/bin:/bin:/usr/sbin:/sbin" \' \
+  'LC_ALL=C \' \
+  'HOME="${CREATE_DMG_RUNTIME}/home" \' \
+  'TMPDIR="${CREATE_DMG_RUNTIME}/tmp/" \' \
+  '/usr/bin/ruby ./scripts/release/run-pinned-create-dmg.rb \' \
+  '--root "${CREATE_DMG_ROOT}" \' \
+  '--executable "${CREATE_DMG_EXECUTABLE}" \' \
+  '--manifest "${CREATE_DMG_MANIFEST}" \' \
+  '-- \' \
+  '[[ ! -e "${STABLE_DMG}" && ! -L "${STABLE_DMG}" ]]' \
+  '[[ -f "${STABLE_DMG}" && ! -L "${STABLE_DMG}" ]]' \
+  'stat -f '\''%u:%l'\'' "${STABLE_DMG}"' \
+  '(( (8#${DMG_MODE} & 022) == 0 ))' \
+  'chmod 600 "${STABLE_DMG}"' \
+  'hdiutil verify "${STABLE_DMG}"' \
+  'printf '\''path=%s\n'\'' "${STABLE_DMG}" >> "${GITHUB_OUTPUT}"' \
+  'printf '\''sha256=%s\n'\'' "$(shasum -a 256 "${STABLE_DMG}" | awk '\''{print $1}'\'')"'; do
+  rg -Fq -- "$invariant" <<<"$dmg_package_block" \
+    || fail "DMG packaging isolation invariant missing: $invariant"
+done
+if rg -Fq '|| true' <<<"$dmg_package_block"; then
+  fail "Pinned create-dmg must fail closed on every nonzero exit"
+fi
+if rg -q '^[[:space:]]+"\$\{CREATE_DMG_EXECUTABLE\}" \\' <<<"$dmg_package_block"; then
+  fail "DMG packaging must not reopen the verified create-dmg pathname"
+fi
+create_dmg_env_line="$(rg -nF '/usr/bin/env -i \' <<<"$dmg_package_block" | cut -d: -f1)"
+create_dmg_runner_line="$(rg -nF '/usr/bin/ruby ./scripts/release/run-pinned-create-dmg.rb \' <<<"$dmg_package_block" | cut -d: -f1)"
+[[ -n "$create_dmg_env_line" \
+   && -n "$create_dmg_runner_line" \
+   && "$create_dmg_env_line" -lt "$create_dmg_runner_line" ]] \
+  || fail "Descriptor-bound create-dmg runner must execute below its clean environment boundary"
+for secret in P12_BASE64 P12_PASSWORD KEYCHAIN_PASSWORD; do
+  rg -q "^[[:space:]]+${secret}:.*secrets\." <<<"$dmg_keychain_block" \
+    || fail "DMG signing keychain setup is missing its scoped secret: $secret"
+done
+for keychain_setup_block in "$app_keychain_block" "$dmg_keychain_block"; do
+  rg -Fq 'umask 077' <<<"$keychain_setup_block" \
+    || fail "Signing certificate staging must be owner-only"
+  if rg -q -- '^[[:space:]]+-A([[:space:]]|$)' <<<"$keychain_setup_block"; then
+    fail "Signing identities must not grant access to every local application"
+  fi
+done
+rg -Fq 'if [[ "${DMG_IDENTITY}" != "${SIGNING_IDENTITY}" ]]; then' \
+  <<<"$dmg_keychain_block" \
+  || fail "DMG signing identity must match the App signing identity"
+for secret in APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+  rg -q "^[[:space:]]+${secret}:.*secrets\." <<<"$dmg_sign_block" \
+    || fail "Credentialed DMG notarization is missing its scoped secret: $secret"
+done
+for invariant in \
+  'id: dmg' \
+  'STABLE_DMG: ${{ steps.unsigned_dmg.outputs.path }}' \
+  'UNSIGNED_DMG_SHA256: ${{ steps.unsigned_dmg.outputs.sha256 }}' \
+  'test "${STABLE_DMG}" = "build/Dev-Island.dmg"' \
+  '[[ "${UNSIGNED_DMG_SHA256}" =~ ^[0-9a-f]{64}$ ]]' \
+  'test "$(stat -f '\''%u:%l:%Lp'\'' "${STABLE_DMG}")" = "$(id -u):1:600"' \
+  '"${UNSIGNED_DMG_SHA256}"' \
+  'hdiutil verify "${STABLE_DMG}"' \
+  'codesign --force --sign "${SIGNING_IDENTITY}" --timestamp "${STABLE_DMG}"' \
+  'xcrun notarytool submit "${STABLE_DMG}"'; do
+  rg -Fq "$invariant" <<<"$dmg_sign_block" \
+    || fail "Credentialed DMG notarization invariant missing: $invariant"
+done
+if rg -Fq 'prepare-pinned-create-dmg.sh' <<<"$dmg_sign_block" \
+   || rg -Fq 'CREATE_DMG_' <<<"$dmg_sign_block"; then
+  fail "Credentialed notarization must not execute or revalidate third-party tooling"
+fi
+for invariant in \
+  'security delete-keychain "${KEYCHAIN_PATH}"' \
+  '[[ ! -e "${KEYCHAIN_PATH}" && ! -L "${KEYCHAIN_PATH}" ]]' \
+  'security find-identity -v -p codesigning' \
+  'DMG signing identity remained accessible after keychain teardown'; do
+  rg -Fq "$invariant" <<<"$dmg_keychain_teardown_block" \
+    || fail "DMG signing keychain teardown invariant missing: $invariant"
+done
+
 rg -q '^  group: release$' "$RELEASE" \
   || fail "All release tags must be serialized to protect stable assets"
 for permission in 'contents: write' 'id-token: write' 'attestations: write'; do

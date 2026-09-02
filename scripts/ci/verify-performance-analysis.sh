@@ -542,10 +542,11 @@ done
   source = File.binread(ARGV.fetch(0))
   notarize = source.index("      - name: Notarize\n") or abort
   launch = source.index("      - name: Hermetically launch notarized production app\n") or abort
-  package = source.index("      - name: Package + notarize DMG\n") or abort
-  abort unless notarize < launch && launch < package
+  app_keychain_teardown = source.index("      - name: Tear down App signing keychain\n") or abort
+  package = source.index("      - name: Package DMG\n") or abort
+  abort unless notarize < launch && launch < app_keychain_teardown && app_keychain_teardown < package
 ' "$RELEASE_WORKFLOW" \
-  || fail "Tagged Production launch smoke must run after App notarization and before packaging"
+  || fail "Tagged Production launch smoke and App keychain teardown must precede DMG packaging"
 
 # The workflow consumes the sampler's bounded stdout in one shell variable.
 # A public summary replacement after the producer exits must therefore be

@@ -2378,3 +2378,27 @@ Dependabot security updates 六项控制；未经明确授权未修改远端设�
   Deny 精确候选、Developer ID/公证/stapling、production Sparkle、商业/商标审批、远端 GitHub
   controls 与 clean tagged Release 仍是独立 blocker；锁屏也未完成视觉、焦点、VoiceOver 和动效
   实机验收。本轮未替换 `/Applications`，未 commit、push、tag、notarize 或发布。
+
+## 2026-09-02 Pinned create-dmg 发布边界收口
+
+- [x] 接续 2026-09-01 02:46 中断的工作区：`release.yml` 改为 `Prepare pinned create-dmg`
+  精确 commit 下载 + 描述符校验、`Package DMG` 无 Secret 独立 step、两次 keychain
+  setup/即时 teardown；四个新脚本（`prepare-pinned-create-dmg.sh`、`run-pinned-create-dmg.rb`、
+  `verify-pinned-create-dmg-tool.rb`、`verify-pinned-create-dmg-execution-boundary.sh`）与
+  两份文档已就位，但门禁当时未在本地跑过。
+- [x] 本地复跑发现 `release.yml` 与文档/门禁不一致的两处 step 顺序：`Tear down App signing
+  keychain` 被放在 `Notarize` 之前，`Build .app` / `Verify app dependency closure` 被放在
+  `Setup App signing keychain` 之前。`INTERFACE_CONTRACT.md`、`GITHUB_REPOSITORY_CONTROLS.md`、
+  `verify-workflow-checkout-isolation.rb`、`verify-release-foundation.sh` 与
+  `verify-performance-analysis.sh` 五处口径一致，且门禁锚定的各 step run body 哈希与当前
+  文件完全吻合，故只把两步挪回文档规定位置，未改任何 run body。
+- [x] 本机补装 ripgrep 15.2.0 后，`verify-workflow-run-shells.rb`（23 steps）、
+  `verify-repository-script-syntax.rb`（54 Bash / 27 Ruby / 9 Swift）、
+  `verify-release-checkout-isolation.sh`、`verify-release-foundation.sh`、
+  `verify-performance-analysis.sh`、`verify-pinned-create-dmg-execution-boundary.sh`、
+  `verify-legal-data-flows.sh`、`verify-security-invariants.sh` 与 `git diff --check` 全部 PASS。
+  未运行真实网络下载与真实 tag，Swift 源码未改动，未重跑 885 项 XCTest。
+- [ ] 可选的更紧边界（keychain 只覆盖 codesign，Build/Notarize/smoke 全部在 keychain 之外）
+  需要同时改两份文档与三个门禁，本轮未采用，留待 owner 决定。
+- [ ] 本轮未 commit、push、tag、notarize 或发布；本地分支仍比 `origin/codex/v6.60-visual-polish`
+  多 4 个未推送提交（`992966a`…`d51ce7c`）。

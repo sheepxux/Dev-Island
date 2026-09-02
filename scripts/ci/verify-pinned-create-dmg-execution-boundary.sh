@@ -127,6 +127,11 @@ require launcher
 verified_tool = PinnedCreateDMGTool.method(:verify)
 PinnedCreateDMGTool.define_singleton_method(:verify) do |root:, manifest:|
   closure = verified_tool.call(root: root, manifest: manifest)
+  # The attacker owns the directory, so it can first make the read-only tool
+  # root writable. macOS refuses to rename a directory whose own mode denies
+  # writing (EACCES on the release runner), and the verifier has already
+  # returned, so this does not weaken what the fixture proves.
+  File.chmod(0o700, root)
   File.rename(root, "#{root}.verified")
   File.rename(replacement, root)
   closure

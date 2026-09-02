@@ -19,6 +19,7 @@ struct TaskCard: View {
     let onTap: () -> Void
 
     @State private var isHovering = false
+    @State private var branchCache = ProjectBranchCache.shared
     @Environment(\.devIslandLanguage) private var language
 
     @ViewBuilder
@@ -70,6 +71,19 @@ struct TaskCard: View {
                         Text("·")
                             .font(.system(size: 11))
                             .opacity(0.5)
+                        if let branch = projectBranch {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.triangle.branch")
+                                    .font(.system(size: 9, weight: .medium))
+                                Text(branch)
+                                    .font(Typo.cardMeta)
+                                    .lineLimit(1)
+                            }
+                            .layoutPriority(1)
+                            Text("·")
+                                .font(.system(size: 11))
+                                .opacity(0.5)
+                        }
                         if let phase = task.currentPhase {
                             Text(phase)
                                 .font(.system(size: 11))
@@ -153,17 +167,25 @@ struct TaskCard: View {
         PanelClockPresentation.taskDuration(for: task, at: referenceDate)
     }
 
+    /// Branch of the project directory a local session runs in. Remote and
+    /// non-git sessions have none; the cache refreshes it off the main
+    /// thread so a checkout switch shows up within half a minute.
+    private var projectBranch: String? {
+        branchCache.branch(forTaskURL: task.taskURL)
+    }
+
     private func accessibilitySummary(at referenceDate: Date) -> String {
-        let phase = task.currentPhase.map {
-            L10n.format(", %@", language: language, $0)
-        } ?? ""
+        let details = [projectBranch, task.currentPhase]
+            .compactMap { $0 }
+            .map { L10n.format(", %@", language: language, $0) }
+            .joined()
         return L10n.format(
             "%@, %@, %@%@, %@",
             language: language,
             agentDisplayName,
             task.title,
             statusLabel,
-            phase,
+            details,
             durationString(at: referenceDate)
         )
     }

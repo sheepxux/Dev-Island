@@ -137,6 +137,15 @@ progress events can be stored locally in:
 
 `~/Library/Application Support/island-app/tasks.sqlite`
 
+**Project branch labels stay on your Mac.** To show which git branch a local
+agent session is working on, Dev Island reads at most 4 KiB from the `.git`
+entry and `HEAD` file of that session's project directory (walking up at most
+eight parent directories) through a no-follow descriptor that must belong to
+the current user. Only the bounded branch name or a seven-character commit
+prefix reaches the interface. No other project file is opened, and the branch
+is never logged, stored in the database, copied into diagnostics, or sent
+anywhere.
+
 **Local Usage Insights is off by default.** When you enable it, Dev Island
 looks on demand for Codex-authored `token_count` rate-limit events in bounded
 suffixes of recent local Codex rollout files. A refresh examines at most 8,192
@@ -626,6 +635,12 @@ document；渲染块、request/operation ID 与进度状态只存在于内存，
 512 KiB 尾部；文件并发增长不能扩大本次读取。解码模型不包含 Prompt、回复、路径、
 账号/会话 ID 或凭据字段，只把百分比、窗口时长、重置时间与事件时间交给界面；不会
 联网、访问钥匙串、写入数据库、日志或诊断。关闭功能会清除内存摘要。
+
+**项目分支标签只留在你的 Mac 上。** 为了显示本地 Agent 会话正在哪个 git 分支上工作，
+Dev Island 只会通过属于当前用户的 no-follow descriptor，从该会话项目目录（最多向上查找
+八层父目录）的 `.git` 条目与 `HEAD` 文件读取至多 4 KiB。界面只会收到有界的分支名或
+七位提交前缀；不会打开项目中的其他文件，分支也不会被记录到日志、数据库、诊断或发送到
+任何地方。
 
 标准化任务记录及 Manus 进度事件可能保存在：
 

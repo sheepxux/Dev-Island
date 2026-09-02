@@ -175,14 +175,21 @@ module PinnedCreateDMGRunner
   end
 
   def run(argv)
+    # Coarse stage marker for the fail-closed diagnostics below. It names
+    # which boundary an operating-system error escaped from without ever
+    # echoing a pathname, descriptor number, or argument.
+    stage = "argument parsing"
     root, _executable, manifest, create_dmg_arguments = parse(argv)
+    stage = "closure verification"
     closure = PinnedCreateDMGTool.verify(root: root, manifest: manifest)
     script_bytes = execution_script(closure.fetch("create-dmg"))
+    stage = "runtime directory validation"
     temp_directory = private_runtime_directory("TMPDIR")
     home_directory = private_runtime_directory("HOME")
 
     # Keep strong Ruby references until exec so finalizers cannot close the
     # inherited descriptors. Each backing file is already unlinked.
+    stage = "anonymous runtime materialization"
     runtimes = {
       script: anonymous_verified_file(script_bytes, "script", temp_directory),
       template: anonymous_verified_file(
@@ -204,6 +211,7 @@ module PinnedCreateDMGRunner
       eula_template_fd: runtimes.fetch(:eula_template).fileno
     )
     script_path = "/dev/fd/#{runtimes.fetch(:script).fileno}"
+    stage = "bash exec"
     exec(
       environment,
       "/bin/bash",
@@ -215,7 +223,7 @@ module PinnedCreateDMGRunner
     warn "run-pinned-create-dmg: #{error.message}"
     1
   rescue SystemCallError => error
-    warn "run-pinned-create-dmg: execution failed: #{error.class}"
+    warn "run-pinned-create-dmg: execution failed during #{stage}: #{error.class}"
     1
   end
 end

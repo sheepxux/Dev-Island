@@ -66,8 +66,17 @@ public final class StatusItemController: NSObject, NSMenuDelegate {
 
         // Status lines: disabled items, purely informational.
         menu.addItem(disabledItem(snapshot.overview))
+        if let today = DailyActivityPresentation.summaryLine(
+            store.todayActivity,
+            language: language
+        ) {
+            menu.addItem(disabledItem(today))
+        }
         menu.addItem(disabledItem(snapshot.localAgents))
         menu.addItem(disabledItem(snapshot.manus))
+        // Numbers shown above come from the last refresh; start the next one
+        // so the following open is current without ever polling.
+        Task { await store.refreshTodayActivity() }
 
         menu.addItem(.separator())
 

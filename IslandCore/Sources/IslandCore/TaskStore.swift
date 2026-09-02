@@ -134,6 +134,12 @@ public final class TaskStore {
     public private(set) var storedTaskHistory: [AgentTask] = []
     public private(set) var storedTaskHistoryTotalCount = 0
     public private(set) var storedTaskHistoryStatus: StoredTaskHistoryStatus = .loading
+    /// Content-free numbers for the current local day, refreshed on demand by
+    /// the surfaces that show them. `nil` until the first successful refresh
+    /// or while storage is unavailable.
+    public private(set) var todayActivity: DailyActivitySummary?
+    /// Day-bucketed Allow counter behind `todayActivity.approvalCount`.
+    private let decisionCounter = DailyDecisionCounter()
     /// Health of the local-only HTTP listener shared by every CLI connector.
     /// This is separate from `connectionStatus`, which describes Manus.
     public private(set) var localHookServiceStatus: LocalHookServiceStatus = .stopped
@@ -758,11 +764,56 @@ public final class TaskStore {
             storedTaskHistory = []
             storedTaskHistoryTotalCount = 0
             storedTaskHistoryStatus = .available
+            decisionCounter.reset()
+            todayActivity = nil
             return true
         } catch {
             IslandLogger.storage.error("Couldn't clear stored history")
             return false
         }
+    }
+
+    /// Recompute today's session count and active time from persisted rows
+    /// and pair them with the local approval counter. Cheap enough to call
+    /// whenever a surface that shows the summary appears; never polled.
+    @discardableResult
+    public func refreshTodayActivity(now: Date = .now) async -> Bool {
+        guard let store = sqliteStore else {
+            todayActivity = nil
+            return false
+        }
+        let window = DailyActivitySummary.dayWindow(containing: now)
+        do {
+            let aggregate = try await store.dailyActivity(
+                dayStart: window.start,
+                dayEnd: window.end
+            )
+            todayActivity = DailyActivitySummary(
+                dayStart: window.start,
+                sessionCount: aggregate.sessionCount,
+                activeSeconds: aggregate.activeSeconds,
+                approvalCount: decisionCounter.approvalCount(at: now)
+            )
+            return true
+        } catch {
+            IslandLogger.storage.error("Couldn't summarize today's activity")
+            return false
+        }
+    }
+
+    /// Fold one Allow into the visible summary without a storage round trip.
+    private func recordApprovalForToday(now: Date = .now) {
+        let count = decisionCounter.recordApproval(at: now)
+        guard let current = todayActivity,
+              current.dayStart == DailyActivitySummary.dayWindow(containing: now).start else {
+            return
+        }
+        todayActivity = DailyActivitySummary(
+            dayStart: current.dayStart,
+            sessionCount: current.sessionCount,
+            activeSeconds: current.activeSeconds,
+            approvalCount: count
+        )
     }
 
     /// Resolve one task without assuming session IDs are globally unique.
@@ -983,6 +1034,13 @@ public final class TaskStore {
         #endif
         continuation.resume(returning: response)
 
+        switch response {
+        case .permission(.allow), .planReview(.allow, _):
+            recordApprovalForToday()
+        default:
+            break
+        }
+
         if restoreSession, let request {
             restoreSessionAfterDecision(request)
         }
@@ -1100,6 +1158,8 @@ public final class TaskStore {
             guard !shutdownRequested else { return }
             sqliteStore = store
             _ = await refreshStoredTaskHistory()
+            guard !shutdownRequested else { return }
+            _ = await refreshTodayActivity()
             guard !shutdownRequested else { return }
         } catch {
             guard !shutdownRequested else { return }

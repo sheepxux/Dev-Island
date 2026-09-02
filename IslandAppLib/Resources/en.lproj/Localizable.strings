@@ -456,6 +456,14 @@
 "Preparing plan…" = "Preparing plan…";
 "Preparing Claude Code plan" = "Preparing Claude Code plan";
 
+/* Daily activity summary */
+"Today: %@" = "Today: %@";
+"%lld approval" = "%lld approval";
+"%lld approvals" = "%lld approvals";
+"under a minute of agent time" = "under a minute of agent time";
+"%lldm of agent time" = "%lldm of agent time";
+"%lldh %lldm of agent time" = "%lldh %lldm of agent time";
+
 /* Global decision shortcuts */
 "Decide from Anywhere" = "Decide from Anywhere";
 "Press ⌃⌥⌘Y to allow or ⌃⌥⌘N to deny the request at the front of the island while any app is active. Questions and plan reviews open the island instead." = "Press ⌃⌥⌘Y to allow or ⌃⌥⌘N to deny the request at the front of the island while any app is active. Questions and plan reviews open the island instead.";

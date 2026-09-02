@@ -1,6 +1,6 @@
 # IslandCore Interface Contract
 
-> 最后更新: 2026-09-02 | 版本: v6.87.0
+> 最后更新: 2026-09-02 | 版本: v6.88.0
 > 变更流程: 改 TaskStore 公开 API 前更新此文档,commit 用 `[S][contract]` tag。
 
 ---
@@ -87,6 +87,14 @@
   至多 4 KiB 的普通 `HEAD` 文件；只返回 ≤64 字符的 control-free 分支名或 7 位 detached
   前缀。结果只在 `ProjectBranchCache` 内存中保留、每项目至多 30 秒刷新一次，不得进入
   SQLite、日志、诊断或状态菜单；远程任务与非 git 目录不显示任何内容。
+- 今日活动汇总（v6.88.0）：`TaskStore.todayActivity: DailyActivitySummary?` 与
+  `refreshTodayActivity(now:)` 只暴露当天开始的会话数、`updated_at - created_at` 的总
+  活跃秒数与当日 Allow 次数。会话数与时长经 `SQLiteStore.dailyActivity(dayStart:dayEnd:)`
+  只投影两列时间戳并沿用 bounded-row 谓词与 verified-read 边界；Allow 次数由
+  `DailyDecisionCounter` 在 `finishActionRequest` 的 `.permission(.allow)` /
+  `.planReview(.allow, _)` 分支按本地日分桶写入偏好，上限 100,000。刷新只在 bootstrap、
+  面板展开与状态菜单打开时触发，不得轮询；`clearStoredTaskHistory` 必须同时重置计数器。
+  展示层只允许数字与固定文案，不得包含会话、项目或工具名称。
 - 一个会话存在可处理的 `AgentActionRequest` 时，决策面替代该会话的普通可点击 TaskCard；
   决策面必须保留 Agent、安全的本地 Session 指纹和会话标题。不得同时堆叠两张重复
   会话卡，也不得把决策按钮嵌入跳回会话的 Button。请求解决后恢复普通 TaskCard。
@@ -2942,3 +2950,4 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-08-31 | v6.85.0 | **Manus trust generation、credential-safe cleanup 与正常 Quit 屏障**:exact callback URL + canonical ≥2048-bit RSA identity 绑定 replay generation，旧代已认证请求交错返回 401；所有 accepted webhook ID 立即持久化为集合，replacement/late registration/heartbeat/stop 共享可重试删除，只有 2xx + `ok:true` 才清 ID。Disconnect 与换 key 都在远端 cleanup 成功前保留旧 Keychain credential；Quit 同步 detach ingress 并 single-flight join Disconnect/sleep/poller/tunnel/listener，AppKit owner 用 tokenized finish-once 的两秒 `.terminateLater` 屏障，失败/超时保留 credential + ledger；三种无 owner QA/yield 路径直接 `.terminateNow`。Release realtime gate 关闭且无真实账号验收 | `[S][contract] reliability: bound Quit without releasing Manus cleanup capability` |
 | 2026-08-31 | v6.86.0 | **Manus unknown-registration 原子 reconciliation**:官方 `GET /v2/webhook.list` 严格接收最多 1,024 项账号 inventory；单一 `webhookRecoveryStateV1` envelope 将 ID ledger、token、callback digest、±300 秒时间身份与 discovered IDs 一起 flush/readback。只归属 active exact-digest 且唯一 marker 的 row，歧义/空 list/legacy/corrupt 全部失败关闭；bound ID 跨重启直接重试，严格 official 404 `not_found` 完成幂等删除。Release gate 仍关闭，真实 create→signed delivery→list/delete 与一致性证据待补 | `[S][contract] security: reconcile unknown Manus registrations without guessing ownership` |
 | 2026-09-02 | v6.87.0 | **系统级决策快捷键**:`⌃⌥⌘Y` / `⌃⌥⌘N` 经 Carbon `RegisterEventHotKey` 注册，无需辅助功能授权，任何 App 前台时作用于 `pendingActionRequests.first`；仅 `.permission` 可被直接 Allow/Deny，`.question` 与 `.planReview` 只展开岛并高亮会话，空队列只展开岛。成功交付后发布 `islandGlobalDecisionApplied`，面板显示与岛内点击相同回执。开关 `island.shortcuts.globalDecisions` 默认开启，关闭即注销热键；`Esc` 语义不变 | `[C][contract] feat(app): decide the front permission request from any app` |
+| 2026-09-02 | v6.88.0 | **今日活动汇总**:`TaskStore.todayActivity` / `refreshTodayActivity(now:)` 暴露当天会话数、总活跃秒数与 Allow 次数；SQLite 只投影 `created_at`/`updated_at` 两列并沿用 bounded-row 谓词与 verified-read；Allow 计数按本地日分桶存于偏好、上限 100,000，Clear History 一并重置；只在 bootstrap、面板展开与菜单打开时刷新，不轮询。展示为状态菜单一行与空闲岛一行，只含数字与固定文案 | `[S][contract] feat(core): summarize today's sessions, approvals and agent time` |

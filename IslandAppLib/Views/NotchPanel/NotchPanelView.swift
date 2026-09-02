@@ -52,6 +52,8 @@ struct NotchPanelView: View {
     /// (the parent measures it to size the silhouette) but stops the clock
     /// below and every per-card animation.
     var isLive: Bool = true
+    /// Pre-rendered "Today: …" line for the idle state; nil hides the row.
+    var todaySummary: String? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.devIslandLanguage) private var language
@@ -570,6 +572,14 @@ struct NotchPanelView: View {
                 ))
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.textSecondary.opacity(0.88))
+
+                if let todaySummary {
+                    Text(todaySummary)
+                        .font(.system(size: 11))
+                        .monospacedDigit()
+                        .foregroundStyle(Palette.textSecondary.opacity(0.72))
+                        .lineLimit(1)
+                }
 
                 Button(action: onConnectTap) {
                     HStack(spacing: 6) {

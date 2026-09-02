@@ -469,6 +469,11 @@ display, and aggregate sample fields already described above.
 Dev Island uses local preferences for onboarding completion, notification
 choices, updater settings, and bounded launch-health state: two Booleans, a
 schema version, and a consecutive startup-interruption count capped at three.
+The "Today" summary shown in the status menu and the idle island adds one
+local-day timestamp and one capped count of how many requests you allowed
+that day; session and agent-time totals are derived on demand from the local
+history database above. None of these numbers name a session, project, or
+tool, and **Clear History** resets them.
 The ready marker is written after the island and menu-bar surfaces stay alive
 through a two-second startup window. A missing marker can follow a quick Force
 Quit, power loss, an OS restart, or a crash; those events remain
@@ -563,7 +568,9 @@ Dev Island 可能处理 Agent/会话标识、任务标题、状态、阶段、�
 或进度消息，审批详情、Claude Code 问题、选项、回答与 `ExitPlanMode` 计划正文，以及
 只用于返回活跃本地 CLI 会话的有限终端宿主、TTY 与 tmux pane 提示。App 还会在本机
 偏好中保存两个布尔型启动健康标记，只记录上个进程是否启动并到达 AppKit 的正常退出
-回调；它不读取或上传 macOS 崩溃报告。
+回调；它不读取或上传 macOS 崩溃报告。状态菜单与空闲岛显示的“今天”汇总另外保存一个
+本地日期戳和一个有上限的当日允许次数；当日会话数与 Agent 运行时长按需从上述本地历史
+数据库汇总得出。这些数字都不包含会话、项目或工具名称，**清除历史记录**会一并重置。
 
 Claude Code、Codex、Cursor、预览版 Gemini CLI、预览版 Qwen Code、预览版 GitHub
 Copilot CLI 与预览版 Kimi Code CLI 的本地 Hook 只访问 `127.0.0.1`。这些 CLI 可能把完整且可扩展的事件载荷

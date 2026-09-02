@@ -79,6 +79,7 @@ struct IslandRootView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var accessibilityContrast
+    @Environment(\.devIslandLanguage) private var language
 
     private var mode: IslandCoordinator.Mode { coordinator.mode }
 
@@ -127,6 +128,12 @@ struct IslandRootView: View {
         .onChange(of: mode, initial: true) { _, newMode in
             synchronizeVisualPhase(with: newMode)
             synchronizePanelContent(with: newMode)
+
+            // The idle panel shows today's numbers; refresh them on each
+            // expansion instead of polling while the island is collapsed.
+            if newMode == .expanded {
+                Task { await store.refreshTodayActivity() }
+            }
 
             if newMode == .collapsed, isHovering {
                 withAnimation(IslandCoordinator.modeAnimation) {
@@ -213,7 +220,11 @@ struct IslandRootView: View {
                 // The panel stays in the tree while collapsed so it can keep
                 // reporting the height the silhouette morphs to. Continuous
                 // effects remain paused until the surface has settled.
-                isLive: panelEffectsLive
+                isLive: panelEffectsLive,
+                todaySummary: DailyActivityPresentation.summaryLine(
+                    store.todayActivity,
+                    language: language
+                )
             )
             .opacity(panelContentVisible ? 1 : 0)
             .offset(y: panelContentVisible || reduceMotion ? 0 : -2)

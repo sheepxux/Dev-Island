@@ -6,13 +6,22 @@
 > **当前方向:先把产品做到足够好用、功能足够全面,变现后置。**
 > **当前状态:v0.3.0 已发布，下一版本开发中** —— Manus + Claude Code + Codex + Cursor 四个已发布连接器；Gemini CLI、Qwen Code、GitHub Copilot CLI、Kimi Code CLI 与 OpenCode 已完成 Preview 实现和隔离配置安全测试，分别仍待真实 v0.57.0 / v0.22.0 / v1.0.80 / v0.38.0 / v1.18.23 登录会话验收。Kimi 已固定当前 `MoonshotAI/kimi-code` 默认 v2 引擎、真实权限请求/结果边界与无损 TOML 事务；OpenCode 已固定隐私最小事件插件与完整文件 ownership，但明确不修改 `permission.ask` output。PR CI、安全诊断、Codex/Claude 岛内审批、Claude Code `AskUserQuestion` 岛内回答、`ExitPlanMode` Markdown 计划审阅、会话历史、品牌状态音、精确终端/tmux 跳回、English / 简体中文全应用语言切换与源码覆盖门禁、Sparkle 签名更新底座已完成本地实现，仍待真机视觉/听觉验收、真实 tmux 会话验收、生产更新密钥和首个签名 Appcast 的跨版本验证。
 
-### 当前优化目标（2026-08-27 校准）
+### 当前优化目标（2026-09-02 校准：Vibe Island 方向）
 
-1. **先验收再宣传：** 已实现能力必须经过 Universal 构建、自动化测试和真实用户链路三层证据；屏幕锁定或缺少真实 CLI/tmux 时明确保留“待验收”状态。
-2. **把关键阻塞推到最前：** 人工介入 > 完成 > 活跃工作 > 空闲；岛内审批、问答和计划审阅优先于单纯扩充连接器数量。
-3. **补齐高频洞察：** 下一项实现本地只读的用量/额度追踪，不读取或上传密钥，不把推测值包装成供应商官方额度。
-4. **扩大覆盖但不虚报：** 连接器按真实 CLI 机制与端到端验收推进；Preview 与“已支持”严格分开。
-5. **商业发布保持安全门：** 自动更新、签名、公证、Homebrew、授权和支付继续作为目标，但生产密钥、外部发布与付费政策必须经过明确授权。
+> 产品方向转为 **Vibe Island**：面向同时开着三四个 Claude Code / Codex / Cursor 的 vibe coder。
+> 他们不盯终端，只要三件事：谁现在需要我、一键回答它、今天替我干了多少活。
+> 过去一周的投入几乎全在证据、门禁和商业底座上，而所有“真机验收”与“真实 CLI 验收”一项未勾；
+> 评价标准从“门禁通过”改为“真实用户一周内打开岛、批准请求的次数”。
+
+1. **先发版，再打磨：** 合入 PR #19，切 v0.4.0，找 10–20 个真实 vibe coder 用起来；owner 自己先当第一个用户，亲手过掉 Claude Code / Codex 的真机验收项。
+2. **只做三家真实验收：** Claude Code、Codex、Cursor。Gemini CLI、Qwen Code、Copilot CLI、Kimi Code、OpenCode 五个 Preview 连接器**冻结**，不再投入模拟验证。
+3. **岛是动手的地方：** 全局快捷键在任何 app 里直接 Allow / Deny 排在最前的请求；岛内审批、问答、Plan Review 保持最高优先级。
+4. **按项目思考：** 展开面板按项目分组，任务卡显示项目名、分支与已运行时长。
+5. **加一点 vibe：** 本地每日汇总（会话数、审批数、agent 运行时长）；用量洞察从 Codex 扩到 Claude Code 本地记录；状态音与点阵动效继续往“有性格”走。
+6. **3 分钟点亮岛：** Welcome Tour 末尾给出“现在去终端跑这条命令”，首个真实事件到达时岛立刻变色。
+7. **冻结商业化底座：** 商业授权、商业政策决策、商标审阅包全部停在 M5，公开发布前不再投入。
+8. **改名在公开发布前一次做完：** Dev Island → Vibe Island 牵动 bundle id、域名、Sparkle appcast、Homebrew cask 与品牌资产，需 owner 决定域名与 bundle id 策略后统一执行。
+9. **安全门不放松但不再扩建：** 已有的签名、公证、Sparkle、门禁保持；生产密钥、外部发布与付费政策仍须明确授权。
 
 ---
 

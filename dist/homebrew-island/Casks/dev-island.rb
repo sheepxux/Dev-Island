@@ -21,9 +21,11 @@
 #     strategy :github_latest
 #   end
 cask "dev-island" do
-  version "0.3.0"
-  # SHA-256 of the notarized stable-name ZIP attached to the v0.3.0 release.
-  sha256 "8271a3cd171f3b04b78eda23451e94a77b9284f314f1b8b8d17850376acf913c"
+  version "0.4.0"
+  # Placeholder until the v0.4.0 assets are published. The release pipeline
+  # renders the pinned Cask from the exact notarized stable-name ZIP, and a
+  # follow-up chore(homebrew) commit copies that SHA-256 here.
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
   # Stable filename — `Dev-Island.zip` is also published as a per-version
   # asset (`Dev-Island-#{version}.zip`) but pinning to the stable name

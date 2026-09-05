@@ -101,7 +101,7 @@ sed 's/result=accepted/result=rejected/' \
 chmod 600 "$TEMP_ROOT/receipt-result.txt"
 expect_receipt_rejected "$TEMP_ROOT/receipt-result.txt" "a rejected result"
 
-sed "s/product_version=$PRODUCT_VERSION/product_version=9.9.9/" \
+sed "s/^product_version=${PRODUCT_VERSION//./\\.}$/product_version=9.9.9/" \
   "$RECEIPT" >"$TEMP_ROOT/receipt-version.txt"
 chmod 600 "$TEMP_ROOT/receipt-version.txt"
 expect_receipt_rejected "$TEMP_ROOT/receipt-version.txt" "a version mismatch"

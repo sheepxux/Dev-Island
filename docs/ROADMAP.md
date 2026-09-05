@@ -305,6 +305,9 @@ gantt
 ### C. 每次发版(tag 前)
 
 - [ ] `VERSION` 文件与 tag 一致(流水线会强制校验,不一致直接 fail)
+- [ ] 版本号联动改动同一 PR 完成（2026-09-04 从 0.4.0 起固定）：`scripts/ci/verify-product-version-boundary.sh` 的字面版本、`dist/homebrew-island/Casks/dev-island.rb` 的 `version` stanza（sha256 先用带注释的占位值，发布后再补）
+- [ ] 用新版本的构建重做三套实机证据并提交回执：Codex Allow（`scripts/qa/run-codex-live-approval-evidence.sh` → `docs/CODEX_LIVE_APPROVAL_RECEIPT.txt`）、Codex Deny（`scripts/qa/run-codex-live-decision-evidence.sh` → `docs/CODEX_LIVE_DECISION_RECEIPT.txt`）、系统辅助功能（`scripts/qa/run-system-accessibility-evidence.sh` → `docs/SYSTEM_ACCESSIBILITY_RECEIPT.txt`）；三个门禁把回执的 `product_version` 与 `VERSION` 严格比对，未重做时 PR CI 必红
+- [ ] GitHub Secrets 齐全：Apple 六项 + `SPARKLE_PUBLIC_ED_KEY` / `SPARKLE_PRIVATE_ED_KEY`（`scripts/ci/validate-release-credentials.sh` 在构建前校验）
 - [ ] main 上 `swift test` 全绿
 - [ ] `scripts/build-app.sh` 本地跑通,产物能启动
 - [ ] tag 推送后盯流水线到 Release 产物出现(公证偶发排队 20+ 分钟属正常;403 协议错误 → developer.apple.com 重签协议)

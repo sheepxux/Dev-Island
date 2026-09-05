@@ -17,7 +17,7 @@ RELEASE_WORKFLOW=".github/workflows/release.yml"
 
 test -x "$VALIDATOR" || fail "Executable product-version validator is missing"
 ruby -c "$VALIDATOR" >/dev/null || fail "Product-version validator is not valid Ruby"
-[[ "$("$VALIDATOR" --version-file VERSION)" == "0.3.0" ]] \
+[[ "$("$VALIDATOR" --version-file VERSION)" == "0.4.0" ]] \
   || fail "Repository VERSION did not validate"
 
 for valid in 0.0.0 1.2.3 9999.99.99; do

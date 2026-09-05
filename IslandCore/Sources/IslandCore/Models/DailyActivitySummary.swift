@@ -44,7 +44,11 @@ public struct DailyActivitySummary: Equatable, Sendable {
 /// `UserDefaults`. The bucket resets itself the first time it is touched on a
 /// new day, so the stored state is at most one timestamp and one small
 /// integer, never a decision history.
-public struct DailyDecisionCounter: Sendable {
+///
+/// `Sendable` is unchecked because `UserDefaults` is thread-safe by contract
+/// and the read-modify-write in `recordApproval` is serialized by `lock`, so
+/// concurrent increments cannot overwrite each other.
+public struct DailyDecisionCounter: @unchecked Sendable {
     public static let dayStartKey = "island.activity.approvalDayStart"
     public static let approvalCountKey = "island.activity.approvalCount"
     /// Guards against a corrupted or hostile preference file inflating the
@@ -53,6 +57,7 @@ public struct DailyDecisionCounter: Sendable {
 
     private let defaults: UserDefaults
     private let calendar: Calendar
+    private let lock = NSLock()
 
     public init(defaults: UserDefaults = .standard, calendar: Calendar = .current) {
         self.defaults = defaults
@@ -71,6 +76,8 @@ public struct DailyDecisionCounter: Sendable {
     /// Record one approval, rolling the bucket over when the day has changed.
     @discardableResult
     public func recordApproval(at now: Date = .now) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
         let window = DailyActivitySummary.dayWindow(containing: now, calendar: calendar)
         let current = approvalCount(at: now)
         let next = min(current + 1, Self.maximumCount)

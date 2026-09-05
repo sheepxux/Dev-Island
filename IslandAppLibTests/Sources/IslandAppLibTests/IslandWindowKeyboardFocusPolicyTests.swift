@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import IslandAppLib
 
@@ -40,5 +41,12 @@ final class IslandWindowKeyboardFocusPolicyTests: XCTestCase {
                 ignoresMouseEvents: false
             ))
         }
+    }
+
+    @MainActor
+    func testIslandContentAcceptsTheFirstClickWithoutAnActivationRoundTrip() {
+        let host = FirstMouseHostingView(rootView: Color.clear)
+        XCTAssertTrue(host.acceptsFirstMouse(for: nil))
+        XCTAssertFalse(NSHostingView(rootView: Color.clear).acceptsFirstMouse(for: nil))
     }
 }

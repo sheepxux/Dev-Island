@@ -24,7 +24,7 @@ import IslandCore
 /// effect on the very event that caused it, with a low-frequency timer
 /// behind them as a safety net.
 public final class IslandWindow: NSWindow {
-    private var hostingView: NSHostingView<LocalizedAppRoot<IslandRootView>>!
+    private var hostingView: FirstMouseHostingView<LocalizedAppRoot<IslandRootView>>!
     public private(set) var layout: NotchMetrics.Layout = NotchMetrics.current()
 
     /// The borderless island must stay non-key during launch and automatic
@@ -99,7 +99,7 @@ public final class IslandWindow: NSWindow {
         isReleasedWhenClosed = false
         animationBehavior = .none
 
-        let host = NSHostingView(
+        let host = FirstMouseHostingView(
             rootView: LocalizedAppRoot {
                 IslandRootView(
                     baseLayout: initialLayout,
@@ -376,6 +376,18 @@ public final class IslandWindow: NSWindow {
             height: h
         )
     }
+}
+
+/// Hosts the island content and accepts the first click.
+///
+/// Once `enableKeyboardInteraction()` lets the window become key, AppKit's
+/// default for a non-key window is to spend the first click on activation and
+/// deliver nothing to the view, so a hover-then-click on the island needed a
+/// second click to expand. Accepting first mouse keeps the focus consent
+/// boundary (the click still makes the window key in `sendEvent`) while the
+/// same click reaches the SwiftUI tap gesture.
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// Pure focus policy kept outside AppKit event delivery so launch/focus

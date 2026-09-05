@@ -44,7 +44,7 @@ public struct DailyActivitySummary: Equatable, Sendable {
 /// `UserDefaults`. The bucket resets itself the first time it is touched on a
 /// new day, so the stored state is at most one timestamp and one small
 /// integer, never a decision history.
-public struct DailyDecisionCounter: Sendable {
+public struct DailyDecisionCounter: @unchecked Sendable {
     public static let dayStartKey = "island.activity.approvalDayStart"
     public static let approvalCountKey = "island.activity.approvalCount"
     /// Guards against a corrupted or hostile preference file inflating the

@@ -19,7 +19,7 @@ A calm, native macOS surface for every AI agent working in the background.<br>
 </p>
 
 <a href="https://devisland.app">
-  <img src="docs/media/dev-island-hero.png" width="960" alt="Dev Island monitoring Manus, Claude Code, Codex and Cursor sessions from the MacBook notch">
+  <img src="docs/media/dev-island-hero.png" width="960" alt="The Dev Island panel with a Codex approval request above Cursor and Claude Code sessions">
 </a>
 
 <p>

@@ -280,7 +280,7 @@ gantt
 **三个本地连接器(每个都单独验证):**
 - [ ] 设置页打开开关后,对应配置文件里出现我们的 hook 条目,且**用户原有条目原样保留**(`~/.claude/settings.json` / `~/.codex/hooks.json` / `~/.cursor/hooks.json`)
 - [ ] Codex 在 `/hooks` 中显示 Dev Island 当前定义；完成审阅/信任后再跑真实链路，Dev Island 配置文件诊断本身只能显示“已配置”
-- [ ] 跑一个真实会话:开始 → 岛变蓝(running);结束 → 变绿(completed)
+- [ ] 跑一个真实会话:开始 → 岛上点阵开始环绕(running，中性暖白);结束 → 浅绿加号点阵(completed)
 - [ ] Claude Code / Codex:触发一次权限请求 → 变黄(waiting),批准后恢复
 - [ ] Cursor:agent 出错中断 → 变红(failed)
 - [ ] 关闭开关后,配置文件里我们的条目被干净移除,用户条目仍在

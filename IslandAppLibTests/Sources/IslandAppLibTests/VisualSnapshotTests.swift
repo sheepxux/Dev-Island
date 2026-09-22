@@ -123,6 +123,19 @@ final class VisualSnapshotTests: XCTestCase {
                 to: destination
             )
         }
+
+        // The first step's example request, the moment the product exists for.
+        try render(
+            OnboardingView(
+                onFinish: { _ in },
+                initialStep: 0,
+                initialHookSnapshot: hookSnapshot,
+                liveSignalStore: TaskStore.presentationFixture(),
+                initialDemo: .asking
+            ),
+            size: NSSize(width: OnboardingMetrics.width, height: OnboardingMetrics.height),
+            to: outputDirectory.appendingPathComponent("05-welcome-example-request.png")
+        )
     }
 
     func testCaptureSimplifiedChineseCoreExperience() throws {

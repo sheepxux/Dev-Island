@@ -2,19 +2,29 @@ import XCTest
 @testable import IslandAppLib
 
 final class OnboardingLayoutTests: XCTestCase {
-    func testEditorialColumnsConsumeTheFixedWindowWithoutImplicitSlack() {
-        let occupiedWidth =
-            (OnboardingMetrics.contentHorizontalPadding * 2)
-            + OnboardingMetrics.editorialWidth
-            + OnboardingMetrics.editorialSpacing
-            + OnboardingMetrics.stageWidth
-
-        XCTAssertEqual(occupiedWidth, OnboardingMetrics.width)
+    /// Every step lays out on one central axis: the column plus the chrome
+    /// margins must fit the fixed window, and the island specimen opens wider
+    /// than it rests without ever leaving the column.
+    func testFloatColumnSitsOnTheWindowAxisInsideTheChromeMargins() {
+        XCTAssertLessThanOrEqual(
+            OnboardingMetrics.columnWidth + (OnboardingMetrics.contentHorizontalPadding * 2),
+            OnboardingMetrics.width
+        )
+        XCTAssertGreaterThan(
+            OnboardingMetrics.islandRequestWidth,
+            OnboardingMetrics.islandCompactWidth
+        )
+        XCTAssertLessThanOrEqual(
+            OnboardingMetrics.islandRequestWidth,
+            OnboardingMetrics.columnWidth
+        )
     }
 
-    func testSurfaceRadiiCreateAQuietWindowToStageHierarchy() {
-        XCTAssertGreaterThanOrEqual(OnboardingMetrics.stageRadius, 14)
-        XCTAssertGreaterThan(OnboardingMetrics.windowRadius, OnboardingMetrics.stageRadius)
+    /// The specimen is the island, not a lookalike: its open corner is the
+    /// real panel's corner, and the window's corner stays the largest radius.
+    func testSpecimenRadiiMirrorTheRealIslandInsideAQuieterWindow() {
+        XCTAssertEqual(OnboardingMetrics.islandRequestRadius, NotchMetrics.panelCornerRadius)
+        XCTAssertGreaterThan(OnboardingMetrics.windowRadius, Palette.Window.Radius.group)
     }
 
     func testCompactConnectionStatesDoNotLeakDiagnosticsIntoWelcomeGrid() {

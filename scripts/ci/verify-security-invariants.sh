@@ -4426,27 +4426,24 @@ for file in \
   "$ONBOARDING_LAYOUT_TESTS"; do
   test -s "$file" || fail "Settings live-readiness artifact missing: $file"
 done
+# Welcome follows the 2026-09-20 "float" direction: one central column
+# under the island specimen replaced the 264pt editorial + 404pt specimen
+# split. Pin the constants, their use, and the geometry regression together.
 for invariant in \
   'static let width: CGFloat = 760' \
   'static let contentHorizontalPadding: CGFloat = 32' \
-  'static let editorialWidth: CGFloat = 264' \
-  'static let editorialSpacing: CGFloat = 28' \
-  'static let stageWidth: CGFloat = 404' \
-  'spacing: OnboardingMetrics.editorialSpacing' \
-  '.frame(width: OnboardingMetrics.editorialWidth)' \
+  'static let columnWidth: CGFloat = 520' \
+  '.frame(width: OnboardingMetrics.columnWidth)' \
   '.padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)'; do
   rg -Fq "$invariant" "$ONBOARDING_VIEW" \
-    || fail "Welcome editorial geometry invariant missing: $invariant"
+    || fail "Welcome float geometry invariant missing: $invariant"
 done
 for invariant in \
-  'testEditorialColumnsConsumeTheFixedWindowWithoutImplicitSlack' \
-  '(OnboardingMetrics.contentHorizontalPadding * 2)' \
-  '+ OnboardingMetrics.editorialWidth' \
-  '+ OnboardingMetrics.editorialSpacing' \
-  '+ OnboardingMetrics.stageWidth' \
-  'XCTAssertEqual(occupiedWidth, OnboardingMetrics.width)'; do
+  'testFloatColumnSitsOnTheWindowAxisInsideTheChromeMargins' \
+  'OnboardingMetrics.columnWidth + (OnboardingMetrics.contentHorizontalPadding * 2)' \
+  'OnboardingMetrics.islandRequestWidth'; do
   rg -Fq "$invariant" "$ONBOARDING_LAYOUT_TESTS" \
-    || fail "Welcome editorial geometry regression missing: $invariant"
+    || fail "Welcome float geometry regression missing: $invariant"
 done
 for invariant in \
   'LocalLiveReadinessCard\(' \

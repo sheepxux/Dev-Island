@@ -10,6 +10,8 @@ enum Typo {
 
     /// Welcome headlines. Tracking −0.8.
     static let display = Font.system(size: 30, weight: .semibold)
+    /// The one sentence under a Welcome headline.
+    static let lead = Font.system(size: 14)
     /// Pane titles in Settings and sheet titles. Tracking −0.4.
     static let title = Font.system(size: 22, weight: .semibold)
     /// Group headings and prominent row titles.
@@ -48,12 +50,4 @@ enum Typo {
     static let barTitle = Font.system(size: 12, weight: .medium)
     /// Session count in the compact bar and notch wings.
     static let barCount = Font.system(size: 11, weight: .medium, design: .monospaced)
-
-    // MARK: Welcome stage (folded into the roles above with the Welcome rebuild)
-
-    static let tourDisplay = display
-    static let tourBody = body
-    static let tourLabel = Font.system(size: 11, weight: .medium, design: .monospaced)
-    static let tourStageTitle = islandControl
-    static let tourStageBody = islandMeta
 }

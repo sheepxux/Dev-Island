@@ -1,17 +1,25 @@
 import IslandCore
 import AppKit
+import ServiceManagement
 import SwiftUI
 
+/// The Welcome window's fixed geometry. Every step lays out along one central
+/// axis under a floating island specimen, so moving through the tour reads as
+/// the same object changing modes rather than a new screen loading.
 enum OnboardingMetrics {
     static let width: CGFloat = 760
-    static let height: CGFloat = 500
+    static let height: CGFloat = 530
     static let windowRadius: CGFloat = 18
+    /// Header and footer inset from the window edge.
     static let contentHorizontalPadding: CGFloat = 32
-    static let editorialWidth: CGFloat = 264
-    static let editorialSpacing: CGFloat = 28
-    static let stageWidth: CGFloat = 404
-    static let stageHeight: CGFloat = 253
-    static let stageRadius: CGFloat = 14
+    /// The single column every step's copy, choices and action sit in.
+    static let columnWidth: CGFloat = 520
+    static let islandCompactWidth: CGFloat = 320
+    static let islandRequestWidth: CGFloat = 372
+    static let islandCompactHeight: CGFloat = 44
+    /// Island radii mirror the real panel: the compact island is a capsule,
+    /// the expanded one uses the panel's 22pt corner.
+    static let islandRequestRadius: CGFloat = 22
 }
 
 enum OnboardingNavigationPolicy {
@@ -20,12 +28,14 @@ enum OnboardingNavigationPolicy {
     }
 }
 
-/// A four-step introduction built like a compact macOS instrument: one clear
-/// promise, one functional specimen, and no decorative feature-card grid.
-/// Every page shares the same stable geometry so moving through the tour feels
-/// like changing modes on one object rather than loading a new screen. The
-/// final page asks for one real command and reads the answer straight from
-/// `TaskStore`, so the first signal a new user sees is never simulated.
+/// Welcome, built on the 2026-09-20 "float" direction: one cream canvas, the
+/// charcoal island floating on the central axis, one title, one sentence, the
+/// choices that step needs and one primary action.
+///
+/// Step 1 is an honest example (labelled as one). Steps 2–4 are live: the
+/// connection grid reads and writes real Hook configuration through the
+/// shared off-main executor, and the final step reads its answer straight
+/// from `TaskStore`, so the first signal a new user sees is never simulated.
 struct OnboardingView: View {
     let onFinish: (_ requestsNotificationAuthorization: Bool) -> Void
 
@@ -33,7 +43,7 @@ struct OnboardingView: View {
     @Environment(\.devIslandLanguage) private var language
     @State private var store: TaskStore
     @State private var step: Int
-    @State private var direction = 1
+    @State private var demo = WelcomeDemoPhase.working
     @State private var connectionStates: [String: LocalAgentHookConnectionState]
     @State private var hasLoadedConnectionStates: Bool
     @State private var connectionErrors: [String: String] = [:]
@@ -41,6 +51,8 @@ struct OnboardingView: View {
     @State private var liveSignal = OnboardingLiveSignalState.waiting
     @State private var copiedCommandFeedbackID: UUID?
     @State private var showsCodexAuthorization = false
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLoginError: String?
 
     @AppStorage(TaskNotificationPreferences.attentionRequiredKey)
     private var attentionRequired = true
@@ -56,9 +68,11 @@ struct OnboardingView: View {
         onFinish: @escaping (_ requestsNotificationAuthorization: Bool) -> Void,
         initialStep: Int = 0,
         initialHookSnapshot: LocalAgentHookHealthSnapshot? = nil,
-        liveSignalStore: TaskStore? = nil
+        liveSignalStore: TaskStore? = nil,
+        initialDemo: WelcomeDemoPhase = .working
     ) {
         self.onFinish = onFinish
+        _demo = State(initialValue: initialDemo)
         _store = State(initialValue: liveSignalStore ?? TaskStore.shared)
         _step = State(initialValue: min(max(initialStep, 0), stepCount - 1))
         _connectionStates = State(initialValue: Dictionary(
@@ -73,18 +87,22 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             header
 
+            // The stage takes its natural height, so when the example island
+            // opens into a request the copy below moves down with it.
+            stage
+
             ZStack {
                 stepContent
                     .id(step)
                     .transition(stepTransition)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
+            .frame(width: OnboardingMetrics.columnWidth)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             footer
         }
         .frame(width: OnboardingMetrics.width, height: OnboardingMetrics.height)
-        .background(tourCanvas)
+        .background(WindowCanvas())
         .clipShape(
             RoundedRectangle(
                 cornerRadius: OnboardingMetrics.windowRadius,
@@ -96,10 +114,20 @@ struct OnboardingView: View {
                 cornerRadius: OnboardingMetrics.windowRadius,
                 style: .continuous
             )
-            .stroke(Palette.Window.hairlineStrong, lineWidth: 0.75)
+            .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
         }
+        .foregroundStyle(Palette.Window.ink)
+        .tint(Palette.Window.ink)
         .preferredColorScheme(.light)
         .onAppear(perform: loadInstalledSources)
+        .onChange(of: observedLiveSignal, initial: true) { _, latched in
+            guard latched != liveSignal else { return }
+            withAnimation(
+                Motion.respectingReducedMotion(reduceMotion, preferred: Motion.contentReveal)
+            ) {
+                liveSignal = latched
+            }
+        }
         .sheet(isPresented: $showsCodexAuthorization) {
             CodexHookAuthorizationSheet(onAuthorized: loadInstalledSources)
         }
@@ -111,67 +139,88 @@ struct OnboardingView: View {
         }
     }
 
-    /// A near-achromatic studio canvas. The value shift is deliberately
-    /// quieter than the state colors and exists only to separate the fixed
-    /// chrome, editorial copy and live specimen without adding decoration.
-    private var tourCanvas: some View {
-        WindowCanvas()
-    }
-
     // MARK: - Window chrome
 
     private var header: some View {
-        HStack(spacing: 11) {
-            brandMark
+        HStack(spacing: 10) {
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 26, height: 26)
+                .accessibilityHidden(true)
 
             Text("Dev Island")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Palette.Window.ink.opacity(0.88))
+                .font(Typo.bodyStrong)
+                .foregroundStyle(Palette.Window.ink)
 
             Spacer()
-
-            stepTrack
-                .padding(.trailing, 5)
 
             Button {
                 onFinish(false)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Palette.Window.textSecondary)
-                    .frame(width: 38, height: 38)
-                    .contentShape(Rectangle())
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
             }
-            .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
+            .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
+            .pointingHandCursor()
             .keyboardShortcut(.cancelAction)
             .help(L10n.string("Close welcome tour", language: language))
             .accessibilityLabel(L10n.string("Close welcome tour", language: language))
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding - 8)
+        .padding(.leading, 8)
         .frame(height: 56)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Palette.Window.hairline)
-                .frame(height: 1)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            stepTrack
+
+            Text(L10n.string(stepName, language: language))
+                .font(Typo.callout)
+                .foregroundStyle(Palette.Window.textSecondary)
+                .padding(.leading, 4)
+
+            Spacer()
+
+            if step == 0 {
+                Button(L10n.string("Skip to setup", language: language)) {
+                    move(to: 1)
+                }
+                .buttonStyle(.window(.quiet))
+            } else {
+                Button(L10n.string("Back", language: language)) {
+                    move(to: step - 1)
+                }
+                .buttonStyle(.window(.quiet))
+            }
+        }
+        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
+        .frame(height: 56)
+    }
+
+    private var stepName: String {
+        switch step {
+        case 0: return "See it first"
+        case 1: return "Connect"
+        case 2: return "Reminders"
+        default: return "First signal"
         }
     }
 
     private var stepTrack: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             ForEach(0..<stepCount, id: \.self) { index in
-                Capsule(style: .continuous)
-                    .fill(
-                        index == step
-                            ? Palette.Window.ink.opacity(0.92)
-                            : Palette.Window.ink.opacity(index < step ? 0.34 : 0.14)
-                    )
-                    .frame(width: index == step ? 20 : 10, height: 2)
+                Capsule()
+                    .fill(index == step ? Palette.Window.ink : Palette.Window.hairlineStrong)
+                    .frame(width: index == step ? 18 : 5, height: 5)
             }
         }
-        .animation(
-            reduceMotion ? nil : Motion.tourStep,
-            value: step
-        )
+        .animation(reduceMotion ? nil : Motion.tourStep, value: step)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             L10n.format(
@@ -183,298 +232,315 @@ struct OnboardingView: View {
         )
     }
 
-    private var brandMark: some View {
-        Image(nsImage: NSApplication.shared.applicationIconImage)
-            .resizable()
-            .interpolation(.high)
-            .scaledToFit()
-            .frame(width: 24, height: 24)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    // MARK: - Stage
+
+    /// The island floats on the window's axis above a soft shadow of itself.
+    /// The label above it says, in every step, whether what it shows is an
+    /// example or live.
+    private var stage: some View {
+        VStack(spacing: 14) {
+            Text(L10n.string(stageLabel, language: language))
+                .font(Typo.caption.weight(.medium))
+                .foregroundStyle(Palette.Window.textTertiary)
+                // Drawn above the island's glow, which reaches up behind it.
+                .zIndex(1)
+
+            WelcomeIslandSpecimen(
+                content: islandContent,
+                isLive: !reduceMotion,
+                allowsDefaultAction: step == 0 && demo == .asking,
+                onAllow: { resolveDemo() },
+                onDeny: { resolveDemo() }
+            )
+            .background { halo }
+            .animation(
+                reduceMotion ? nil : Motion.islandMorph,
+                value: islandContent.isRequest
+            )
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 24)
+        .padding(.bottom, 28)
+    }
+
+    /// A soft warm glow centered on the floating island, the one thing
+    /// painted on the canvas. It sits only behind the island.
+    private var halo: some View {
+        Rectangle()
+            .fill(
+                EllipticalGradient(
+                    stops: [
+                        .init(color: Sand.s150.opacity(0.85).color, location: 0),
+                        .init(color: Sand.s150.opacity(0.35).color, location: 0.55),
+                        .init(color: Sand.s150.opacity(0).color, location: 1),
+                    ],
+                    center: .center,
+                    startRadiusFraction: 0,
+                    endRadiusFraction: 0.5
+                )
+            )
+            .frame(width: 640, height: 200)
+            .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 
-    // MARK: - Pages
+    private var stageLabel: String {
+        switch step {
+        case 0: return "A small space at the top of your screen"
+        case 1: return "Live connection status"
+        case 2: return "Example"
+        default: return "Live"
+        }
+    }
+
+    private var islandContent: WelcomeIslandSpecimen.Content {
+        switch step {
+        case 0:
+            switch demo {
+            case .working:
+                return .compact(
+                    state: .running,
+                    title: L10n.string("Prepare release build", language: language),
+                    trailing: L10n.sessionCount(3, language: language)
+                )
+            case .asking:
+                return .request(
+                    label: L10n.string("Approval", language: language),
+                    context: L10n.string("Claude Code · Prepare release build", language: language),
+                    title: L10n.string("Allow shell command?", language: language),
+                    command: "npm run build"
+                )
+            case .resumed:
+                return .compact(
+                    state: .running,
+                    title: L10n.string("Back to work", language: language),
+                    trailing: L10n.sessionCount(3, language: language)
+                )
+            }
+        case 1:
+            return .compact(
+                state: connectionIslandState,
+                title: connectionSummary,
+                trailing: nil
+            )
+        case 2:
+            return completions
+                ? .compact(
+                    state: .completed,
+                    title: L10n.string("Response finished", language: language),
+                    trailing: nil
+                )
+                : .compact(
+                    state: .waiting,
+                    title: L10n.string("Allow shell command?", language: language),
+                    trailing: nil
+                )
+        default:
+            return .compact(
+                state: liveSignalBarState,
+                title: liveSignalIslandTitle,
+                trailing: nil
+            )
+        }
+    }
+
+    // MARK: - Steps
 
     @ViewBuilder
     private var stepContent: some View {
         switch step {
-        case 0: overviewPage
-        case 1: connectionsPage
-        case 2: notificationsPage
-        default: liveSignalPage
+        case 0: overviewStep
+        case 1: connectionsStep
+        case 2: remindersStep
+        default: firstSignalStep
         }
     }
 
-    private var overviewPage: some View {
-        editorialPage(
-            number: "01 / 04",
-            label: "Overview",
-            title: "Know when\nyou’re needed.",
-            detail: "Dev Island keeps agent work in sight, then gets out of the way until a session needs you.",
-            note: "One quiet signal in the menu bar."
-        ) {
-            overviewStage
+    private func stepCopy(title: String, detail: String) -> some View {
+        VStack(spacing: 10) {
+            Text(title)
+                .font(Typo.display)
+                .tracking(-0.8)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+
+            Text(detail)
+                .font(Typo.lead)
+                .foregroundStyle(Palette.Window.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity)
     }
 
-    private var connectionsPage: some View {
-        editorialPage(
-            number: "02 / 04",
-            label: "Connections",
-            title: "Bring your\nagents together.",
-            detail: "Start with the tools you use. Preview connectors are available separately in Settings.",
-            note: "Setup enables the connection. The final step checks real task activity."
-        ) {
-            connectionsStage
-        }
-    }
+    // Step 1 — an example of the one moment the product exists for.
 
-    private var notificationsPage: some View {
-        editorialPage(
-            number: "03 / 04",
-            label: "Attention",
-            title: "Protect your\nfocus.",
-            detail: "Choose what deserves an interruption. Dev Island stays quiet while work is moving and uses one restrained signal when you are needed.",
-            note: "Signal sounds follow macOS Focus and can be muted in Settings."
-        ) {
-            notificationsStage
-        }
-    }
+    private var overviewStep: some View {
+        VStack(spacing: 24) {
+            stepCopy(title: overviewTitle, detail: overviewDetail)
 
-    private var liveSignalPage: some View {
-        editorialPage(
-            number: "04 / 04",
-            label: "First signal",
-            title: liveSignal.hasSeenEvent ? "Your island\nis listening." : "Light up\nyour island.",
-            detail: liveSignal.hasSeenEvent
-                ? "Real task activity has reached your island. You can finish setup and return to your work."
-                : "Run one real command and watch the island answer. Nothing is staged—this is the signal you will see every day.",
-            note: "Dev Island only listens. Your agent keeps running in your own terminal."
-        ) {
-            liveSignalStage
-        }
-    }
-
-    private func editorialPage<Stage: View>(
-        number: String,
-        label: String,
-        title: String,
-        detail: String,
-        note: String,
-        @ViewBuilder stage: () -> Stage
-    ) -> some View {
-        HStack(alignment: .top, spacing: OnboardingMetrics.editorialSpacing) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 9) {
-                    Text(number)
-                        .foregroundStyle(Palette.Window.textTertiary)
-
-                    Rectangle()
-                        .fill(Palette.Window.hairline)
-                        .frame(width: 22, height: 1)
-
-                    Text(L10n.string(label, language: language))
-                        .foregroundStyle(Palette.Window.textSecondary)
+            // While the example asks, the island's own Allow button is the
+            // step's one primary action (and owns Return).
+            if demo != .asking {
+                Button {
+                    advanceDemo()
+                } label: {
+                    Text(L10n.string(overviewAction, language: language))
                 }
-                .font(Typo.tourLabel)
-                .padding(.bottom, 22)
-
-                Text(L10n.string(title, language: language))
-                    .font(Typo.tourDisplay)
-                    .tracking(-1.05)
-                    .foregroundStyle(Palette.Window.ink)
-                    .lineSpacing(-1)
-                    .accessibilityAddTraits(.isHeader)
-
-                Text(L10n.string(detail, language: language))
-                    .font(Typo.tourBody)
-                    .foregroundStyle(Palette.Window.textSecondary)
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 18)
-
-                Spacer(minLength: 18)
-
-                HStack(alignment: .top, spacing: 9) {
-                    Rectangle()
-                        .fill(Palette.Window.textTertiary)
-                        .frame(width: 18, height: 1)
-                        .padding(.top, 6)
-
-                    Text(L10n.string(note, language: language))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Palette.Window.textTertiary)
-                        .lineSpacing(2)
-                }
+                .buttonStyle(.window(.primary, size: .large))
+                .keyboardShortcut(.defaultAction)
             }
-            .frame(width: OnboardingMetrics.editorialWidth)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
-
-            stage()
-                .frame(
-                    width: OnboardingMetrics.stageWidth,
-                    height: OnboardingMetrics.stageHeight
-                )
-                .background(stageSurface)
-                .clipShape(stageShape)
-                .overlay { stageRim }
-                .shadow(color: Color(hex: 0x463A22).opacity(0.14), radius: 18, y: 10)
-                .frame(maxHeight: .infinity, alignment: .center)
         }
-        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .padding(.vertical, 28)
+        .padding(.top, 8)
     }
 
-    // MARK: Overview specimen
-
-    private var overviewStage: some View {
-        VStack(spacing: 0) {
-            stageHeader(title: "How the island looks", trailing: "Example")
-
-            Rectangle()
-                .fill(Palette.Window.hairline)
-                .frame(height: 1)
-
-            compactIslandPreview
-                .padding(.horizontal, 18)
-                .padding(.vertical, 17)
-
-            Rectangle()
-                .fill(Palette.Window.hairline)
-                .frame(height: 1)
-
-            signalRow(title: "Running", detail: "3 sessions", state: .running)
-            rowDivider
-            signalRow(title: "Needs attention", detail: "None", state: .waiting)
-            rowDivider
-            signalRow(title: "Completed", detail: "2 today", state: .completed)
+    private var overviewTitle: String {
+        switch demo {
+        case .working: return L10n.string("It works. You focus.", language: language)
+        case .asking: return L10n.string("When it needs you, it asks.", language: language)
+        case .resumed: return L10n.string("One answer, and it keeps going.", language: language)
         }
-        .accessibilityElement(children: .contain)
     }
 
-    private var compactIslandPreview: some View {
-        HStack(spacing: 11) {
-            stageSignal(.running, size: 10, animated: true, onDark: true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(L10n.string("Prepare release build", language: language))
-                    .font(Typo.tourStageTitle)
-                    .foregroundStyle(Palette.warmWhite.opacity(0.9))
-                Text(L10n.string("Codex · Running tests", language: language))
-                    .font(Typo.tourLabel)
-                    .foregroundStyle(Palette.textTertiary)
-            }
-
-            Spacer()
-
-            Text("04:12")
-                .font(Typo.tourLabel)
-                .foregroundStyle(Palette.textSecondary)
-                .monospacedDigit()
-        }
-        .padding(.horizontal, 17)
-        .frame(height: 58)
-        .background(
-            UnevenRoundedRectangle(
-                topLeadingRadius: 3,
-                bottomLeadingRadius: 14,
-                bottomTrailingRadius: 14,
-                topTrailingRadius: 3,
-                style: .continuous
+    private var overviewDetail: String {
+        switch demo {
+        case .working:
+            return L10n.string(
+                "Agent progress stays at the top of your screen. When a session needs you, the island says so.",
+                language: language
             )
-                .fill(Palette.notchBlack)
-                .overlay {
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 3,
-                        bottomLeadingRadius: 14,
-                        bottomTrailingRadius: 14,
-                        topTrailingRadius: 3,
-                        style: .continuous
-                    )
-                        .stroke(Palette.warmWhite.opacity(0.10), lineWidth: 0.75)
-                }
-        )
-    }
-
-    private func signalRow(title: String, detail: String, state: BarState) -> some View {
-        HStack(spacing: 10) {
-            stageSignal(state, size: 8)
-
-            Text(L10n.string(title, language: language))
-                .font(Typo.tourStageBody.weight(.medium))
-                .foregroundStyle(Palette.Window.ink.opacity(0.78))
-
-            Spacer()
-
-            Text(L10n.string(detail, language: language))
-                .font(Typo.tourLabel)
-                .foregroundStyle(Palette.Window.textTertiary)
+        case .asking:
+            return L10n.string(
+                "Answer it right on the island. No hunting through terminal windows.",
+                language: language
+            )
+        case .resumed:
+            return L10n.string(
+                "The island folds back and stays quiet until the next time you are needed.",
+                language: language
+            )
         }
-        .padding(.horizontal, 18)
-        .frame(height: 37)
     }
 
-    // MARK: Connection specimen
+    private var overviewAction: String {
+        demo == .working ? "Show me a request" : "Choose my agents"
+    }
 
-    private var connectionsStage: some View {
-        VStack(spacing: 0) {
-            connectionStageHeader
+    private func advanceDemo() {
+        switch demo {
+        case .working:
+            setDemo(.asking)
+        case .asking:
+            resolveDemo()
+        case .resumed:
+            move(to: 1)
+        }
+    }
 
-            Rectangle()
-                .fill(Palette.Window.hairline)
-                .frame(height: 1)
+    private func resolveDemo() {
+        guard demo == .asking else { return }
+        setDemo(.resumed)
+    }
 
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 0),
-                    GridItem(.flexible(), spacing: 0),
-                ],
-                spacing: 0
-            ) {
-                ForEach(Array(onboardingAgents.enumerated()), id: \.element.source) { item in
-                    OnboardingAgentCell(
-                        descriptor: item.element,
-                        connectionState: hasLoadedConnectionStates
-                            ? connectionStates[item.element.source] ?? .disconnected
-                            : nil,
-                        isWorking: connectionOperation.workingSources.contains(
-                            item.element.source
-                        ),
-                        isInteractionDisabled: connectionOperation.isBusy,
-                        errorMessage: connectionErrors[item.element.source],
-                        onEnable: { enable(item.element) }
-                    )
-                    .frame(height: connectionCellHeight)
-                    .overlay(alignment: .trailing) {
-                        if item.offset.isMultiple(of: 2) {
-                            Rectangle()
-                                .fill(Palette.Window.hairline)
-                                .frame(width: 1)
+    private func setDemo(_ phase: WelcomeDemoPhase) {
+        withAnimation(
+            Motion.respectingReducedMotion(reduceMotion, preferred: Motion.contentReveal)
+        ) {
+            demo = phase
+        }
+    }
+
+    // Step 2 — real connections.
+
+    private var connectionsStep: some View {
+        VStack(spacing: 22) {
+            stepCopy(
+                title: L10n.string("Bring your tools onto the island.", language: language),
+                detail: L10n.string(
+                    "Connect the ones you use. You can add others later in Settings.",
+                    language: language
+                )
+            )
+
+            connectionGrid
+
+            if updateRequiredAgents.count > 1 || connectionOperation.isBulkUpdating {
+                Button(action: updateAllRequiredConnections) {
+                    HStack(spacing: 6) {
+                        if connectionOperation.isBulkUpdating {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .accessibilityHidden(true)
                         }
-                    }
-                    .overlay(alignment: .bottom) {
-                        if item.offset / 2 < connectionRowCount - 1 {
-                            Rectangle()
-                                .fill(Palette.Window.hairline)
-                                .frame(height: 1)
-                        }
+                        Text(L10n.string(
+                            connectionOperation.isBulkUpdating ? "Updating…" : "Update all",
+                            language: language
+                        ))
                     }
                 }
+                .buttonStyle(.window(.secondary))
+                .disabled(connectionOperation.isBusy)
+                .accessibilityHint(L10n.string(
+                    "Refreshes every shown Dev Island-managed Hook that needs an update.",
+                    language: language
+                ))
+            }
 
-                OnboardingManusCell {
-                    NotificationCenter.default.post(
-                        name: .islandOpenSettingsRequested,
-                        object: nil
-                    )
-                }
-                .frame(height: connectionCellHeight)
-                .overlay(alignment: .bottom) {
-                    if onboardingAgents.count / 2 < connectionRowCount - 1 {
-                        Rectangle()
-                            .fill(Palette.Window.hairline)
-                            .frame(height: 1)
-                    }
-                }
+            Button {
+                move(to: 2)
+            } label: {
+                Text(L10n.string("Continue", language: language))
+            }
+            .buttonStyle(.window(.primary, size: .large))
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(.top, 8)
+    }
+
+    /// Two rows are visible at once; a longer registry scrolls instead of
+    /// pushing the primary action out of the window.
+    private var connectionGrid: some View {
+        // The inset keeps the chips' shadows inside the scroll bounds.
+        ScrollView(.vertical) {
+            connectionChips
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+        }
+        .scrollIndicators(.automatic)
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxHeight: 2 * 50 + 8 + 8)
+        .padding(.horizontal, -6)
+    }
+
+    private var connectionChips: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12),
+            ],
+            spacing: 8
+        ) {
+            ForEach(onboardingAgents, id: \.source) { descriptor in
+                WelcomeAgentChip(
+                    descriptor: descriptor,
+                    connectionState: hasLoadedConnectionStates
+                        ? connectionStates[descriptor.source] ?? .disconnected
+                        : nil,
+                    isWorking: connectionOperation.workingSources.contains(descriptor.source),
+                    isInteractionDisabled: connectionOperation.isBusy,
+                    errorMessage: connectionErrors[descriptor.source],
+                    onEnable: { enable(descriptor) },
+                    onAuthorize: { showsCodexAuthorization = true }
+                )
+            }
+
+            WelcomeManusChip {
+                NotificationCenter.default.post(
+                    name: .islandOpenSettingsRequested,
+                    object: nil
+                )
             }
         }
     }
@@ -487,20 +553,27 @@ struct OnboardingView: View {
         OnboardingAgentSelection.descriptors(from: LocalAgentRegistry.all)
     }
 
-    private var connectionRowCount: Int {
-        max(1, Int(ceil(Double(onboardingAgents.count + 1) / 2)))
-    }
-
-    private var connectionCellHeight: CGFloat {
-        (OnboardingMetrics.stageHeight - 47) / CGFloat(connectionRowCount)
-    }
-
     private var connectedSourceCount: Int {
         onboardingAgents.count { connectionStates[$0.source] == .connected }
     }
 
-    private var updateRequiredSourceCount: Int {
-        onboardingAgents.count { connectionStates[$0.source] == .updateRequired }
+    private var needsActionSourceCount: Int {
+        onboardingAgents.count {
+            connectionStates[$0.source] == .updateRequired
+                || connectionStates[$0.source] == .configured
+        }
+    }
+
+    private var connectionSummary: String {
+        guard hasLoadedConnectionStates else {
+            return L10n.string("Checking…", language: language)
+        }
+        return LocalAgentRowPresentation.summary(
+            connected: connectedSourceCount,
+            needsAttention: needsActionSourceCount,
+            notConnected: onboardingAgents.count - connectedSourceCount - needsActionSourceCount,
+            language: language
+        )
     }
 
     private var updateRequiredAgents: [LocalAgentDescriptor] {
@@ -510,145 +583,93 @@ struct OnboardingView: View {
         )
     }
 
-    private var configuredSourceCount: Int {
-        onboardingAgents.count { connectionStates[$0.source] == .configured }
+    private var connectionIslandState: BarState {
+        guard hasLoadedConnectionStates else { return .idle }
+        if needsActionSourceCount > 0 { return .waiting }
+        return connectedSourceCount > 0 ? .completed : .idle
     }
 
-    private var connectionSummary: String {
-        guard hasLoadedConnectionStates else {
-            return L10n.string("Checking…", language: language)
-        }
-        return LocalAgentRowPresentation.summary(
-            connected: connectedSourceCount,
-            needsAttention: updateRequiredSourceCount + configuredSourceCount,
-            notConnected: onboardingAgents.count - connectedSourceCount - updateRequiredSourceCount - configuredSourceCount,
-            language: language
-        )
-    }
+    // Step 3 — what may interrupt.
 
-    private var connectionStageHeader: some View {
-        HStack(spacing: 10) {
-            Text(L10n.string("Agent sources", language: language))
-                .font(Typo.tourStageTitle)
-                .foregroundStyle(Palette.Window.ink.opacity(0.84))
-
-            Spacer()
-
-            Text(connectionSummary)
-                .font(Typo.tourLabel)
-                .foregroundStyle(Palette.Window.textTertiary)
-
-            if updateRequiredSourceCount > 1 || connectionOperation.isBulkUpdating {
-                Button(action: updateAllRequiredConnections) {
-                    HStack(spacing: 5) {
-                        if connectionOperation.isBulkUpdating {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .accessibilityHidden(true)
-                        }
-                        Text(L10n.string(
-                            connectionOperation.isBulkUpdating ? "Updating…" : "Update all",
-                            language: language
-                        ))
-                    }
-                }
-                .buttonStyle(AgentConnectButtonStyle())
-                .disabled(connectionOperation.isBusy)
-                .accessibilityHint(L10n.string(
-                    "Refreshes every shown Dev Island-managed Hook that needs an update.",
+    private var remindersStep: some View {
+        VStack(spacing: 22) {
+            stepCopy(
+                title: L10n.string("Interruptions only when they matter.", language: language),
+                detail: L10n.string(
+                    "Choose when Dev Island may send a notification. The island itself always shows every session.",
                     language: language
-                ))
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 46)
-    }
-
-    // MARK: Notification specimen
-
-    private var notificationsStage: some View {
-        VStack(spacing: 0) {
-            stageHeader(title: "Notifications", trailing: "Your choice")
-
-            Rectangle()
-                .fill(Palette.Window.hairline)
-                .frame(height: 1)
-
-            notificationRow(
-                title: "Needs input or failed",
-                detail: "Recommended",
-                state: .waiting,
-                isOn: $attentionRequired
+                )
             )
 
-            rowDivider
-                .padding(.leading, 45)
+            HStack(alignment: .top, spacing: 12) {
+                WelcomeChoice(
+                    title: L10n.string("When a session needs me", language: language),
+                    detail: L10n.string("Waiting for input, or failed", language: language),
+                    isSelected: attentionRequired && !completions
+                ) {
+                    attentionRequired = true
+                    completions = false
+                }
 
-            notificationRow(
-                title: "Task completed",
-                detail: "Off by default",
-                state: .completed,
-                isOn: $completions
-            )
-
-            Rectangle()
-                .fill(Palette.Window.hairline)
-                .frame(height: 1)
-
-            HStack(spacing: 9) {
-                stageSignal(.waiting, size: 8, animated: true)
-                Text(L10n.string(
-                    "Codex · Waiting for approval",
-                    language: language
-                ))
-                    .font(Typo.tourStageBody)
-
-                Spacer()
-
-                Text(L10n.string("Needs input", language: language))
-                    .font(Typo.tourLabel)
-                    .foregroundStyle(Palette.Window.stateWaiting)
-            }
-            .foregroundStyle(Palette.Window.textTertiary)
-            .padding(.horizontal, 16)
-            .frame(height: 52, alignment: .leading)
-        }
-    }
-
-    private func notificationRow(
-        title: String,
-        detail: String,
-        state: BarState,
-        isOn: Binding<Bool>
-    ) -> some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 12) {
-                stageSignal(state, size: 8)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L10n.string(title, language: language))
-                        .font(Typo.tourStageTitle)
-                        .foregroundStyle(Palette.Window.ink.opacity(0.82))
-                    Text(L10n.string(detail, language: language))
-                        .font(Typo.tourStageBody)
-                        .foregroundStyle(Palette.Window.textTertiary)
+                WelcomeChoice(
+                    title: L10n.string("Also when work finishes", language: language),
+                    detail: L10n.string("Needs me, plus finished responses", language: language),
+                    isSelected: attentionRequired && completions
+                ) {
+                    attentionRequired = true
+                    completions = true
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: 16)
-
-            Toggle(L10n.string(title, language: language), isOn: isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .tint(Palette.Window.ink)
-                .accessibilityLabel(L10n.string(title, language: language))
-                .accessibilityHint(L10n.string(detail, language: language))
+            Button {
+                move(to: 3)
+            } label: {
+                Text(L10n.string("Continue", language: language))
+            }
+            .buttonStyle(.window(.primary, size: .large))
+            .keyboardShortcut(.defaultAction)
         }
-        .padding(.horizontal, 18)
-        .frame(maxWidth: .infinity, minHeight: 76, maxHeight: 76)
+        .padding(.top, 8)
     }
 
-    // MARK: Live signal specimen
+    // Step 4 — the first real signal.
+
+    private var firstSignalStep: some View {
+        VStack(spacing: 20) {
+            stepCopy(
+                title: liveSignal.hasSeenEvent
+                    ? L10n.string("Your island is listening.", language: language)
+                    : L10n.string("Light up your island.", language: language),
+                detail: liveSignal.hasSeenEvent
+                    ? L10n.string(
+                        "Real task activity has reached your island. Approval delivery needs a separate live request to confirm it.",
+                        language: language
+                    )
+                    : L10n.string(
+                        "Run one real command and watch the island answer. Nothing here is staged.",
+                        language: language
+                    )
+            )
+
+            if !liveSignal.hasSeenEvent {
+                liveSignalInstructions
+            }
+
+            VStack(spacing: 10) {
+                Button {
+                    finishTour()
+                } label: {
+                    Text(L10n.string("Start Dev Island", language: language))
+                }
+                .buttonStyle(.window(.primary, size: .large))
+                .keyboardShortcut(.defaultAction)
+
+                launchAtLoginToggle
+            }
+        }
+        .padding(.top, 8)
+    }
 
     /// Resolved from the listener health and the states the Connections step
     /// already read from disk. Welcome never probes an Agent for this page.
@@ -683,91 +704,21 @@ struct OnboardingView: View {
         }
     }
 
-    private var liveSignalStage: some View {
-        VStack(spacing: 0) {
-            stageHeader(title: "Your first signal", trailing: liveSignalTrailingLabel)
-
-            rowDivider
-
-            liveSignalStatusRow
-
-            rowDivider
-
-            liveSignalInstructions
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
-        .onChange(of: observedLiveSignal, initial: true) { _, latched in
-            guard latched != liveSignal else { return }
-            withAnimation(
-                Motion.respectingReducedMotion(reduceMotion, preferred: Motion.contentReveal)
-            ) {
-                liveSignal = latched
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private var liveSignalTrailingLabel: String {
+    private var liveSignalIslandTitle: String {
         switch liveSignal {
         case .waiting:
-            return store.localHookServiceStatus == .listening ? "Listening" : "Starting…"
-        case .seen:
-            return "Running"
-        case .completed:
-            return "Completed"
-        }
-    }
-
-    private var liveSignalStatusRow: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                stageSignal(liveSignalBarState, size: 12, animated: true)
-                    .id(liveSignal)
-                    .transition(.opacity)
-            }
-            .frame(width: 16, height: 16)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(liveSignalTitle)
-                    .font(Typo.tourStageTitle)
-                    .foregroundStyle(Palette.Window.ink.opacity(0.9))
-                Text(liveSignalDetail)
-                    .font(Typo.tourLabel)
-                    .foregroundStyle(Palette.Window.textTertiary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 60)
-    }
-
-    private var liveSignalTitle: String {
-        liveSignal.hasSeenEvent
-            ? L10n.string("Your island is live.", language: language)
-            : L10n.string("Nothing yet.", language: language)
-    }
-
-    private var liveSignalDetail: String {
-        switch liveSignal {
-        case .waiting:
-            return L10n.string(
-                "The island stays idle until a real event lands.",
-                language: language
-            )
+            return store.localHookServiceStatus == .listening
+                ? L10n.string("Waiting for a real task", language: language)
+                : L10n.string("The local listener is starting…", language: language)
         case .seen(let source):
             return L10n.format(
-                "%@ is running. Look at the menu bar.",
+                "%@ is running",
                 language: language,
                 agentDisplayName(for: source)
             )
         case .completed(let source):
-            if source == "codex" {
-                return L10n.string("Codex finished this response. Session monitoring is working.", language: language)
-            }
             return L10n.format(
-                "%@ finished. That is the whole loop.",
+                "%@ finished",
                 language: language,
                 agentDisplayName(for: source)
             )
@@ -776,10 +727,8 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var liveSignalInstructions: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if liveSignal.hasSeenEvent {
-                liveSignalInstruction("Task activity has arrived. Approval delivery needs a separate live request to confirm it.")
-            } else if !hasLoadedConnectionStates {
+        VStack(spacing: 10) {
+            if !hasLoadedConnectionStates {
                 quietLiveSignalLine("Checking…")
             } else {
                 switch liveSignalRecipe {
@@ -787,94 +736,69 @@ struct OnboardingView: View {
                     quietLiveSignalLine("The local listener is starting…")
 
                 case .command(_, let command):
-                    liveSignalInstruction(
-                        "Run this in a new terminal window. The island turns Running, then Completed."
-                    )
+                    quietLiveSignalLine("Run this in a new terminal window.")
                     liveSignalCommandRow(command)
 
                 case .codexSessionMonitoring:
-                    liveSignalInstruction(
-                        "Send a prompt in Codex. The island reads local session activity; hook authorization is only needed for approvals."
-                    )
-                    quietLiveSignalLine(CodexSessionMonitoringPresentation.status(
-                        store.codexSessionMonitorStatus, language: language
-                    ))
+                    quietLiveSignalLine("Send a prompt in Codex. Hook authorization is only needed for approvals.")
                     if connectionStates["codex"] == .configured {
-                        Button {
-                            showsCodexAuthorization = true
-                        } label: {
-                            Text(CodexTrustGuidance.actionTitle(language: language))
-                                .font(.system(size: 9, weight: .semibold))
-                        }
-                        .buttonStyle(AgentConnectButtonStyle())
-                        .padding(.leading, 12)
+                        codexAuthorizationButton
                     }
 
                 case .codexTrust:
-                    liveSignalInstruction("Review and authorize the Dev Island hooks, then send a prompt in Codex.")
-                    Button {
-                        showsCodexAuthorization = true
-                    } label: {
-                        Text(CodexTrustGuidance.actionTitle(language: language))
-                            .font(.system(size: 9, weight: .semibold))
-                    }
-                    .buttonStyle(AgentConnectButtonStyle())
-                    .accessibilityHint(L10n.string(
-                        "Review the exact commands before authorizing Dev Island hooks",
-                        language: language
-                    ))
-                    .padding(.leading, 12)
+                    quietLiveSignalLine("Review and authorize the Dev Island hooks, then send a prompt in Codex.")
+                    codexAuthorizationButton
 
                 case .cursorChat:
-                    liveSignalInstruction(
-                        "Start an agent chat in Cursor and send any prompt. The island lights up as soon as the agent begins."
-                    )
+                    quietLiveSignalLine("Start an agent chat in Cursor and send any prompt.")
 
                 case .anySession(let source):
-                    liveSignalInstruction(
-                        L10n.format(
-                            "Start a session in %@ and send any prompt. The island lights up as soon as the agent begins.",
-                            language: language,
-                            agentDisplayName(for: source)
-                        ),
-                        isLocalized: true
-                    )
+                    Text(L10n.format(
+                        "Start a session in %@ and send any prompt.",
+                        language: language,
+                        agentDisplayName(for: source)
+                    ))
+                    .font(Typo.callout)
+                    .foregroundStyle(Palette.Window.textSecondary)
+                    .multilineTextAlignment(.center)
 
                 case .connectAgent:
-                    liveSignalInstruction(
-                        "No agent is connected yet. Go back one step to connect one, then return here."
-                    )
+                    quietLiveSignalLine("No agent is connected yet. Go back one step to connect one.")
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var codexAuthorizationButton: some View {
+        Button {
+            showsCodexAuthorization = true
+        } label: {
+            Text(CodexTrustGuidance.actionTitle(language: language))
+        }
+        .buttonStyle(.window(.secondary))
+        .accessibilityHint(L10n.string(
+            "Review the exact commands before authorizing Dev Island hooks",
+            language: language
+        ))
     }
 
     private func quietLiveSignalLine(_ key: String) -> some View {
         Text(L10n.string(key, language: language))
-            .font(Typo.tourStageBody)
-            .foregroundStyle(Palette.Window.textTertiary)
-    }
-
-    private func liveSignalInstruction(
-        _ copy: String,
-        isLocalized: Bool = false
-    ) -> some View {
-        Text(isLocalized ? copy : L10n.string(copy, language: language))
-            .font(Typo.tourStageBody)
+            .font(Typo.callout)
             .foregroundStyle(Palette.Window.textSecondary)
-            .lineSpacing(3)
+            .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
     }
 
     /// Commands are verbatim product strings, never localized, and never
     /// executed by Dev Island: the user runs them in their own terminal.
+    /// The well keeps the island's ground, the product's terminal tile.
     private func liveSignalCommandRow(_ command: String) -> some View {
         HStack(spacing: 10) {
             Text(verbatim: command)
-                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                .foregroundStyle(Palette.warmWhite.opacity(0.9))
+                .font(Typo.islandCode)
+                .foregroundStyle(Palette.warmWhite)
                 .lineLimit(1)
                 .textSelection(.enabled)
 
@@ -887,8 +811,7 @@ struct OnboardingView: View {
                     copiedCommandFeedbackID == nil ? "Copy" : "Copied",
                     language: language
                 ))
-                    .font(.system(size: 9, weight: .semibold))
-                    .accessibilityLabel(L10n.string("Copy command", language: language))
+                .accessibilityLabel(L10n.string("Copy command", language: language))
             }
             .buttonStyle(IslandQuietActionButtonStyle())
             .accessibilityHint(L10n.string(
@@ -896,16 +819,12 @@ struct OnboardingView: View {
                 language: language
             ))
         }
-        .padding(.leading, 12)
+        .padding(.leading, 14)
         .padding(.trailing, 6)
-        .frame(height: 36)
+        .frame(width: 340, height: 40)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Palette.notchBlack)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Palette.warmWhite.opacity(0.10), lineWidth: 0.75)
-                }
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Palette.islandTop)
         )
     }
 
@@ -925,131 +844,64 @@ struct OnboardingView: View {
         }
     }
 
+    /// Keeping the island running is what makes "connect once, stay
+    /// connected" true, so the last step offers it. It is off until the
+    /// user turns it on; Dev Island never registers a login item by itself.
+    private var launchAtLoginToggle: some View {
+        VStack(spacing: 4) {
+            Toggle(
+                L10n.string("Open Dev Island when you log in", language: language),
+                isOn: Binding(
+                    get: { launchAtLogin },
+                    set: { applyLaunchAtLogin($0) }
+                )
+            )
+            .toggleStyle(.checkbox)
+            .font(Typo.callout)
+            .foregroundStyle(Palette.Window.textSecondary)
+
+            if let launchAtLoginError {
+                Text(launchAtLoginError)
+                    .font(Typo.caption)
+                    .foregroundStyle(Palette.Window.destructive)
+            }
+        }
+    }
+
+    private func applyLaunchAtLogin(_ enabled: Bool) {
+        let service = SMAppService.mainApp
+        do {
+            if enabled {
+                try service.register()
+            } else {
+                try service.unregister()
+            }
+            launchAtLoginError = nil
+        } catch {
+            launchAtLoginError = L10n.string(
+                "Couldn't update Login Items. Review Login Items in System Settings.",
+                language: language
+            )
+        }
+        launchAtLogin = service.status == .enabled
+    }
+
     private func agentDisplayName(for source: String) -> String {
         LocalAgentRegistry.all.first { $0.source == source }?.displayName ?? source
     }
 
-    private func stageSignal(
-        _ state: BarState,
-        size: CGFloat,
-        animated: Bool = false,
-        onDark: Bool = false
-    ) -> some View {
-        AnimatedDotMatrixMark(
-            color: onDark ? state.color : state.windowColor,
-            size: size,
-            motion: state.matrixMotion,
-            pattern: state.matrixPattern,
-            intensity: state.matrixIntensity,
-            isAnimated: animated && !reduceMotion
-        )
-    }
-
-    private func stageHeader(title: String, trailing: String) -> some View {
-        HStack(spacing: 10) {
-            Text(L10n.string(title, language: language))
-                .font(Typo.tourStageTitle)
-                .foregroundStyle(Palette.Window.ink.opacity(0.84))
-
-            Spacer()
-
-            Text(L10n.string(trailing, language: language))
-                .font(Typo.tourLabel)
-                .foregroundStyle(Palette.Window.textTertiary)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 46)
-    }
-
-    private var rowDivider: some View {
-        Rectangle()
-            .fill(Palette.Window.hairline)
-            .frame(height: 1)
-    }
-
-    private var stageShape: RoundedRectangle {
-        RoundedRectangle(
-            cornerRadius: OnboardingMetrics.stageRadius,
-            style: .continuous
-        )
-    }
-
-    private var stageSurface: some View {
-        stageShape.fill(Palette.Window.surface)
-    }
-
-    private var stageRim: some View {
-        stageShape
-            .strokeBorder(Palette.Window.ring, lineWidth: 0.75)
-            .allowsHitTesting(false)
-    }
-
     // MARK: - Navigation
-
-    private var footer: some View {
-        HStack(spacing: 10) {
-            if OnboardingNavigationPolicy.showsSkipAction(
-                step: step,
-                stepCount: stepCount
-            ) {
-                Button {
-                    onFinish(false)
-                } label: {
-                    Text(L10n.string("Skip tour", language: language))
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Palette.Window.textTertiary)
-            }
-
-            Spacer()
-
-            Button {
-                move(to: step - 1)
-            } label: {
-                Text(L10n.string("Back", language: language))
-            }
-                .buttonStyle(.window(.secondary, size: .large))
-                .opacity(step > 0 ? 1 : 0)
-                .allowsHitTesting(step > 0)
-                .accessibilityHidden(step == 0)
-
-            Button {
-                if step == stepCount - 1 {
-                    finishTour()
-                } else {
-                    move(to: step + 1)
-                }
-            } label: {
-                Text(L10n.string(actionTitle, language: language))
-            }
-            .buttonStyle(.window(.primary, size: .large))
-            .keyboardShortcut(.defaultAction)
-        }
-        .padding(.horizontal, 20)
-        .frame(height: 64)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Palette.Window.hairline)
-                .frame(height: 1)
-        }
-    }
-
-    private var actionTitle: String {
-        step == stepCount - 1 ? "Start Dev Island" : "Continue"
-    }
 
     private var stepTransition: AnyTransition {
         guard !reduceMotion else { return .opacity }
         return .asymmetric(
-            insertion: .opacity.combined(with: .offset(x: CGFloat(direction * 6))),
-            removal: .opacity.combined(with: .offset(x: CGFloat(direction * -3)))
+            insertion: .opacity.combined(with: .offset(y: 6)),
+            removal: .opacity
         )
     }
 
     private func move(to newStep: Int) {
         guard (0..<stepCount).contains(newStep) else { return }
-        direction = newStep > step ? 1 : -1
         withAnimation(
             Motion.respectingReducedMotion(reduceMotion, preferred: Motion.tourStep)
         ) {
@@ -1155,124 +1007,354 @@ struct OnboardingView: View {
     }
 }
 
-private struct OnboardingManusCell: View {
+/// The first step's example: working, then asking, then back to work.
+enum WelcomeDemoPhase: Equatable {
+    case working
+    case asking
+    case resumed
+}
+
+// MARK: - Island specimen
+
+/// The island as it looks at the top of the screen, floating on the Welcome
+/// canvas: the compact capsule, or the request card it opens into. Built from
+/// the island's own palette, type roles and status matrix, not a second style.
+private struct WelcomeIslandSpecimen: View {
+    enum Content: Equatable {
+        case compact(state: BarState, title: String, trailing: String?)
+        case request(label: String, context: String, title: String, command: String)
+
+        var isRequest: Bool {
+            if case .request = self { return true }
+            return false
+        }
+    }
+
+    let content: Content
+    let isLive: Bool
+    var allowsDefaultAction = false
+    let onAllow: () -> Void
+    let onDeny: () -> Void
+
+    @Environment(\.devIslandLanguage) private var language
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        Group {
+            switch content {
+            case let .compact(state, title, trailing):
+                compact(state: state, title: title, trailing: trailing)
+            case let .request(label, context, title, command):
+                request(label: label, context: context, title: title, command: command)
+            }
+        }
+        .frame(width: width)
+        .background { shape.fill(Palette.islandTop) }
+        .overlay { shape.strokeBorder(Palette.islandBorder, lineWidth: 0.75) }
+        .compositingGroup()
+        .shadow(color: .black.opacity(0.10), radius: 1, y: 1)
+        .shadow(color: .black.opacity(0.16), radius: 18, y: 12)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var width: CGFloat {
+        content.isRequest ? OnboardingMetrics.islandRequestWidth : OnboardingMetrics.islandCompactWidth
+    }
+
+    private var radius: CGFloat {
+        content.isRequest
+            ? OnboardingMetrics.islandRequestRadius
+            : OnboardingMetrics.islandCompactHeight / 2
+    }
+
+    private func compact(state: BarState, title: String, trailing: String?) -> some View {
+        HStack(spacing: 10) {
+            StatusDot(state: state, size: 16)
+                .frame(width: 16, height: 16)
+
+            Text(title)
+                .font(Typo.barTitle)
+                .foregroundStyle(state == .waiting || state == .failed ? Palette.warmWhite : Palette.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let trailing {
+                Text(trailing)
+                    .font(Typo.barCount)
+                    .foregroundStyle(Palette.textTertiary)
+                    .monospacedDigit()
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: OnboardingMetrics.islandCompactHeight)
+    }
+
+    private func request(label: String, context: String, title: String, command: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                DotMatrixMark(color: Palette.stateWaiting, size: 12, pattern: .ring)
+                    .padding(.trailing, 3)
+                Text(label)
+                    .font(Typo.islandLabel)
+                    .foregroundStyle(Palette.stateWaiting)
+                Text(verbatim: "·")
+                    .font(Typo.islandMeta)
+                    .foregroundStyle(Palette.textTertiary)
+                Text(context)
+                    .font(Typo.islandMeta)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Text(title)
+                .font(Typo.islandHeadline)
+                .foregroundStyle(Palette.warmWhite)
+
+            Text(verbatim: command)
+                .font(Typo.islandCode)
+                .foregroundStyle(Palette.warmWhite)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Palette.islandWell)
+                }
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button(L10n.string("Deny", language: language), action: onDeny)
+                    .buttonStyle(WelcomeIslandButtonStyle(isPrimary: false))
+                Button(L10n.string("Allow once", language: language), action: onAllow)
+                    .buttonStyle(WelcomeIslandButtonStyle(isPrimary: true))
+                    .keyboardShortcut(allowsDefaultAction ? .defaultAction : nil)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+    }
+}
+
+/// The island's decision buttons, at specimen scale.
+private struct WelcomeIslandButtonStyle: ButtonStyle {
+    let isPrimary: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typo.islandControl)
+            .foregroundStyle(isPrimary ? Palette.islandTop : Palette.textSecondary)
+            .padding(.horizontal, 12)
+            .frame(height: 26)
+            .background {
+                Capsule().fill(isPrimary ? Palette.warmWhite : Color.clear)
+            }
+            .contentShape(Capsule())
+            .scaleEffect(
+                InteractionFeedbackPolicy.pressScale(
+                    isPressed: configuration.isPressed,
+                    pressedScale: 0.96,
+                    reduceMotion: reduceMotion
+                )
+            )
+            .animation(Motion.press, value: configuration.isPressed)
+            .pointingHandCursor()
+    }
+}
+
+// MARK: - Choices
+
+/// One of two mutually exclusive options, shown as a quiet tile whose paper
+/// lifts when selected.
+private struct WelcomeChoice: View {
+    let title: String
+    let detail: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    @Environment(\.devIslandLanguage) private var language
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 11) {
+                ZStack {
+                    Circle()
+                        .strokeBorder(
+                            isSelected ? Palette.Window.ink : Palette.Window.hairlineStrong,
+                            lineWidth: isSelected ? 5 : 1
+                        )
+                        .frame(width: 16, height: 16)
+                }
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(Typo.bodyStrong)
+                        .foregroundStyle(Palette.Window.ink)
+                    Text(detail)
+                        .font(Typo.callout)
+                        .foregroundStyle(Palette.Window.textSecondary)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .windowSurface(
+            radius: Palette.Window.Radius.group,
+            tone: isSelected ? .raised : .sidebar
+        )
+        .overlay {
+            if !isSelected && isHovering {
+                RoundedRectangle(cornerRadius: Palette.Window.Radius.group, style: .continuous)
+                    .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onHover { isHovering = $0 }
+        .pointingHandCursor()
+        .accessibilityLabel(title)
+        .accessibilityValue(L10n.string(isSelected ? "Selected" : "Not selected", language: language))
+        .accessibilityHint(detail)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct WelcomeManusChip: View {
     let onOpenSettings: () -> Void
     @Environment(\.devIslandLanguage) private var language
 
     var body: some View {
-        HStack(spacing: 9) {
-            AgentStateTile(state: .disconnected, size: 22)
+        HStack(spacing: 10) {
+            AgentStateTile(state: .disconnected, size: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("Manus")
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(Palette.Window.ink.opacity(0.86))
+                    .font(Typo.bodyStrong)
+                    .foregroundStyle(Palette.Window.ink)
                 Text(L10n.string("Cloud · optional", language: language))
-                    .font(.system(size: 9.5, weight: .regular))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textTertiary)
             }
 
             Spacer(minLength: 4)
 
-            Button(action: onOpenSettings) {
-                Text(L10n.string("Set up", language: language))
-                    .font(.system(size: 9, weight: .semibold))
-                    .accessibilityLabel(L10n.string(
-                        "Set up Manus in Settings",
-                        language: language
-                    ))
-            }
-            .buttonStyle(AgentConnectButtonStyle())
-            .accessibilityHint(L10n.string(
-                "Opens the optional Manus cloud connection",
-                language: language
-            ))
+            Button(L10n.string("Set up", language: language), action: onOpenSettings)
+                .buttonStyle(.window(.secondary))
+                .accessibilityLabel(L10n.string("Set up Manus in Settings", language: language))
+                .accessibilityHint(L10n.string(
+                    "Opens the optional Manus cloud connection",
+                    language: language
+                ))
         }
-        .padding(.horizontal, 11)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .frame(height: 50)
+        .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
         .accessibilityElement(children: .contain)
     }
 }
 
-// MARK: - Agent connection row
+// MARK: - Agent chip
 
-private struct OnboardingAgentCell: View {
+private struct WelcomeAgentChip: View {
     let descriptor: LocalAgentDescriptor
     let connectionState: LocalAgentHookConnectionState?
     let isWorking: Bool
     let isInteractionDisabled: Bool
     let errorMessage: String?
     let onEnable: () -> Void
+    let onAuthorize: () -> Void
 
     @Environment(\.devIslandLanguage) private var language
 
     var body: some View {
-        HStack(spacing: 9) {
-            AgentStateTile(state: connectionState, isBusy: isWorking, size: 22)
+        HStack(spacing: 10) {
+            AgentStateTile(state: connectionState, isBusy: isWorking, size: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(compactDisplayName)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(Palette.Window.ink.opacity(0.86))
+                    .font(Typo.bodyStrong)
+                    .foregroundStyle(Palette.Window.ink)
                     .lineLimit(1)
                     .allowsTightening(true)
                     .minimumScaleFactor(0.86)
                     .layoutPriority(1)
-                Text(L10n.string(statusLabel, language: language))
-                    .font(.system(size: 9.5, weight: .regular))
-                    .foregroundStyle(statusColor)
-                    .lineLimit(1)
+                if showsStatusLine {
+                    Text(L10n.string(statusLabel, language: language))
+                        .font(Typo.caption)
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                }
             }
 
             Spacer(minLength: 4)
 
-            if isWorking {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(width: 28)
-            } else if connectionState == .connected || connectionState == .configured {
-                Image(systemName: connectionState == .connected ? "checkmark" : "ellipsis")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(
-                        connectionState == .connected
-                            ? Palette.Window.stateCompleted
-                            : Palette.Window.stateWaiting
-                    )
-                    .frame(width: 28, height: 24)
-                    .accessibilityLabel(
-                        connectionState == .connected
-                            ? L10n.string("Setup complete", language: language)
-                            : L10n.format(
-                                "Configured; confirm Hook trust in %@",
-                                language: language,
-                                descriptor.displayName
-                            )
-                    )
-            } else if connectionState == nil {
-                ProgressView()
-                    .controlSize(.mini)
-                    .frame(width: 28)
-                    .accessibilityLabel(
-                        L10n.format(
-                            "Checking %@ connection",
-                            language: language,
-                            descriptor.displayName
-                        )
-                    )
-            } else {
-                Button(action: onEnable) {
-                    Text(L10n.string(actionLabel, language: language))
-                        .font(.system(size: 9, weight: .semibold))
-                        .accessibilityLabel(actionAccessibilityLabel)
-                }
-                    .buttonStyle(AgentConnectButtonStyle())
-                    .disabled(isInteractionDisabled)
-                    .accessibilityHint(actionAccessibilityHint)
-            }
+            trailing
         }
-        .padding(.horizontal, 11)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .frame(height: 50)
+        .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        if isWorking {
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 28)
+        } else if connectionState == .connected {
+            Image(systemName: "checkmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Palette.Window.stateCompleted)
+                .frame(width: 28, height: 24)
+                .accessibilityLabel(L10n.string("Setup complete", language: language))
+        } else if connectionState == .configured, descriptor.source == "codex" {
+            Button(L10n.string("Authorize", language: language), action: onAuthorize)
+                .buttonStyle(.window(.secondary))
+                .disabled(isInteractionDisabled)
+                .accessibilityLabel(CodexTrustGuidance.actionTitle(language: language))
+                .accessibilityHint(L10n.format(
+                    "Configured; confirm Hook trust in %@",
+                    language: language,
+                    descriptor.displayName
+                ))
+        } else if connectionState == .configured {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Palette.Window.attentionText)
+                .frame(width: 28, height: 24)
+                .accessibilityLabel(L10n.format(
+                    "Configured; confirm Hook trust in %@",
+                    language: language,
+                    descriptor.displayName
+                ))
+        } else if connectionState == nil {
+            ProgressView()
+                .controlSize(.mini)
+                .frame(width: 28)
+                .accessibilityLabel(
+                    L10n.format(
+                        "Checking %@ connection",
+                        language: language,
+                        descriptor.displayName
+                    )
+                )
+        } else {
+            Button(L10n.string(actionLabel, language: language), action: onEnable)
+                .buttonStyle(.window(.secondary))
+                .disabled(isInteractionDisabled)
+                .accessibilityLabel(actionAccessibilityLabel)
+                .accessibilityHint(actionAccessibilityHint)
+        }
     }
 
     private var statusLabel: String {
@@ -1280,6 +1362,17 @@ private struct OnboardingAgentCell: View {
             state: connectionState,
             hasError: errorMessage != nil
         )
+    }
+
+    /// A chip with an action button lets the button carry the state ("Add",
+    /// "Update", "Authorize"); errors always keep their line.
+    private var showsStatusLine: Bool {
+        if errorMessage != nil { return true }
+        switch connectionState {
+        case .disconnected?, .updateRequired?: return isWorking
+        case .configured?: return descriptor.source != "codex" || isWorking
+        case .connected?, nil: return true
+        }
     }
 
     private var compactDisplayName: String {
@@ -1291,8 +1384,8 @@ private struct OnboardingAgentCell: View {
         switch connectionState {
         case nil: return Palette.Window.textTertiary
         case .connected: return Palette.Window.stateCompleted
-        case .configured: return Palette.Window.stateWaiting
-        case .updateRequired: return Palette.Window.stateWaiting
+        case .configured: return Palette.Window.attentionText
+        case .updateRequired: return Palette.Window.attentionText
         case .disconnected: return Palette.Window.textTertiary
         }
     }
@@ -1324,9 +1417,9 @@ private struct OnboardingAgentCell: View {
 }
 
 enum OnboardingConnectionStatusPresentation {
-    /// Welcome is a 202-point-wide specimen cell, not a diagnostics screen.
-    /// Keep the visible state scannable and leave review commands to the
-    /// existing accessibility description and full Settings surface.
+    /// Welcome is a compact chip, not a diagnostics screen. Keep the visible
+    /// state scannable and leave review commands to the existing
+    /// accessibility description and full Settings surface.
     static func compactLabel(
         state: LocalAgentHookConnectionState?,
         hasError: Bool
@@ -1357,39 +1450,6 @@ enum OnboardingAgentSelection {
         states: [String: LocalAgentHookConnectionState]
     ) -> [LocalAgentDescriptor] {
         descriptors.filter { states[$0.source] == .updateRequired }
-    }
-}
-
-private struct AgentConnectButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(Palette.Window.ink.opacity(configuration.isPressed ? 0.6 : 1))
-            .padding(.horizontal, 9)
-            .frame(minWidth: 42, minHeight: 24, maxHeight: 24)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Palette.Window.field.opacity(configuration.isPressed ? 1 : 0.8))
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
-                    }
-            )
-            .scaleEffect(
-                InteractionFeedbackPolicy.pressScale(
-                    isPressed: configuration.isPressed,
-                    pressedScale: 0.99,
-                    reduceMotion: reduceMotion
-                )
-            )
-            .animation(
-                Motion.respectingReducedMotion(
-                    reduceMotion,
-                    preferred: Motion.press
-                ),
-                value: configuration.isPressed
-            )
     }
 }
 

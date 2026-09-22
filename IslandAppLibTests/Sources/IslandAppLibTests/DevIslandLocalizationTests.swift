@@ -37,8 +37,8 @@ final class DevIslandLocalizationTests: XCTestCase {
             "通用"
         )
         XCTAssertEqual(
-            L10n.string("Protect your\nfocus.", language: .simplifiedChinese),
-            "守住你的\n专注状态。"
+            L10n.string("It works. You focus.", language: .simplifiedChinese),
+            "它在忙，你可以专注。"
         )
     }
 

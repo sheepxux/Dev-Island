@@ -2522,15 +2522,18 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 
 ---
 
-## Welcome 编辑栏几何（v6.36.0）
+## Welcome 悬浮单轴几何（2026-09-22，取代 v6.36.0 编辑栏几何）
 
-- Welcome 四页必须共用同一固定几何：窗口宽 `760pt`，左右内边距各
-  `32pt`，左侧编辑栏 `264pt`，栏间距 `28pt`，右侧功能标本 `404pt`；合计必须
-  精确为 `760pt`，不得依赖隐式 slack 或视图压缩。
-- English 四页的 display title 必须在固定两行内建立稳定视觉重心；第 2 页为
-  `Bring your` / `agents together.`，第 4 页为 `Light up` / `your island.`，不得回归三行。
-  简中四页同样不得裁切或挤压右侧标本。
-- 第 4 页 **Light up your island** 是 Tour 的最终决策页（`04 / 04`，主动作仍为唯一
+- Welcome 采用 2026-09-20 用户选定的「悬浮」方向：奶油单层画布，炭黑岛标本悬浮在
+  中央纵轴上，每步一个标题、一句说明、该步必要的选项和一个主操作。
+  固定几何：窗口 `760pt` × `530pt`，中央单栏 `520pt`，页眉页脚左右内边距 `32pt`。
+  所有文字、选项与主操作位于中央单栏；单栏加两侧内边距不得超过窗口宽度，不得依赖视图
+  压缩。第 2 步最多同时显示两行连接，更多连接在单栏内滚动，主操作不得被挤出窗口。
+- 岛标本是真实岛的样子而不是仿制：紧凑态为胶囊，展开态圆角等于面板圆角
+  `NotchMetrics.panelCornerRadius`；标本上方的标签必须说明其内容是示例（第 1、3 步）
+  还是实时（第 2、4 步）。标本下方只允许一层接触阴影，不绘制其他背景装饰。
+- 已放弃的方向不得回归：左右分栏编辑栏、巨型步骤编号、海报式口号、窗口内整页卡片。
+- 第 4 页 **Light up your island** 是 Tour 的最终决策页（第 4 步，主动作仍为唯一
   **Start Dev Island**）。其标本只根据 `TaskStore.localHookServiceStatus` 与第 2 页已读取的
   连接状态决定给用户看什么：listener 未达到 `listening` 时只显示“本地监听器正在启动…”且不给
   命令；Claude Code 已连接显示逐字命令 `claude -p "say hi"`；Codex 已连接显示
@@ -2543,7 +2546,9 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
   会话被 `SessionEnd` 删除后仍保持已达状态。View 通过 `@State store = TaskStore.shared` 派生
   该值并用 `.onChange(of:)` 交叉淡入 `.idle` → `.running` → `.completed` 点阵，不得为此在
   Welcome 内新增 detached task 或第三条 `LocalAgentConfigurationExecutor.run(` 调用。
-- `OnboardingLayoutTests` 必须用公开布局常量计算全宽并断言精确相等；CI 静态门禁
+- 第 4 页提供「登录时打开 Dev Island」复选框，初始值读取 `SMAppService.mainApp.status`，
+  只有用户勾选才注册登录项；Welcome 不得自行注册。
+- `OnboardingLayoutTests` 必须用公开布局常量断言单栏与岛标本的几何关系；CI 静态门禁
   同时固定常量值、实际布局用法和几何回归测试，防止仅改一处导致栏宽漂移。
 - 离屏快照只能证明当前静态层级、换行和裁切边界；不得把它们解释为真实翻页动效、
   hover/press、键盘焦点、VoiceOver 朗读或 Reduce Motion 实机验收。

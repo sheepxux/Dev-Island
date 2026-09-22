@@ -217,6 +217,7 @@ struct IslandRootView: View {
                 },
                 onSettingsTap: handleSettingsTap,
                 onConnectTap: handleConnectTap,
+                onHistoryTap: handleHistoryTap,
                 drawsBackdrop: false,
                 presentationState: presentation.state,
                 presentationSummary: presentation.summary,
@@ -230,6 +231,7 @@ struct IslandRootView: View {
                 ),
                 reportingNotice: LocalAgentReportingPresentation.notice(
                     store.reportingHealth,
+                    visibleTaskSources: Set(store.tasks.filter { $0.status == .running || $0.status == .waiting }.map(\.source)),
                     language: language
                 )
             )
@@ -594,6 +596,15 @@ struct IslandRootView: View {
         // brings the SettingsWindow to front. Decoupled via Notification
         // so the SwiftUI view doesn't need to know about NSWindow plumbing.
         NotificationCenter.default.post(name: .islandOpenSettingsRequested, object: nil)
+    }
+
+    private func handleHistoryTap() {
+        coordinator.collapse()
+        NotificationCenter.default.post(
+            name: .islandOpenSettingsRequested,
+            object: nil,
+            userInfo: ["showHistory": true]
+        )
     }
 
     private func handleConnectTap() {

@@ -537,3 +537,46 @@
 "Island not reacting?" = "岛上没反应？";
 "Disconnect all local Agents…" = "断开全部本地 Agent…";
 "Connect the Agents you use. Each one shows its tasks and approvals on the island." = "把你用的 Agent 接上来，它们的任务和审批都会显示在岛上。";
+
+/* Connection clarity and everyday navigation */
+"Setup complete" = "已配置";
+"Needs authorization" = "待授权";
+"Preview connectors" = "预览连接器";
+"%lld set up" = "%lld 个已配置";
+"Session · %lldd" = "会话 · %lld 天";
+"Session · %lldh" = "会话 · %lld 小时";
+"Session · %lldm" = "会话 · %lld 分钟";
+"No recent hook events from %@" = "尚未收到 %@ 的近期 Hook 事件";
+"Local activity was detected. Check task monitoring and approval authorization separately." = "已检测到本地活动。请分别检查任务监控与审批授权。";
+"Local activity was detected. Check whether this connection can send events." = "已检测到本地活动。请检查此连接能否送达事件。";
+"Check connection" = "检查连接";
+"Choose your tools, then check task activity and approval access separately." = "选择你使用的工具，分别确认任务活动与审批权限。";
+"These connectors handle simulated requests only. They are not included in your setup count." = "这些连接器目前仅处理模拟请求，不计入上方的已配置数量。";
+"Task activity visible" = "已收到任务活动";
+"Waiting for task activity" = "等待任务活动";
+"Simulated requests only" = "仅支持模拟请求";
+"Hooks installed · verify delivery with a real request" = "Hook 已安装 · 请用真实请求验证送达";
+"Attention monitoring only · respond in the Agent" = "仅显示关注提醒 · 请在 Agent 中处理";
+"Task activity only · approvals stay in the Agent" = "仅显示任务活动 · 审批请在 Agent 中处理";
+"Start with the tools you use. Preview connectors are available separately in Settings." = "从你常用的工具开始。预览连接器可在设置中单独查看。";
+"Setup enables the connection. The final step checks real task activity." = "配置完成后，最后一步会检查真实任务活动。";
+"Your island\nis listening." = "你的岛，\n已收到信号。";
+"Real task activity has reached your island. You can finish setup and return to your work." = "你的岛已经收到真实任务活动。现在可以完成设置，回到手头的工作。";
+"How the island looks" = "界面预览";
+"Example" = "示例";
+"Task activity has arrived. Approval delivery needs a separate live request to confirm it." = "任务活动已收到。审批是否能送达，需要另行发起一次真实请求确认。";
+"View recent tasks and results" = "查看近期任务与结果";
+"Your notification preferences are saved. System banners and sounds need macOS permission; task activity remains visible in the island." = "通知偏好已保存。系统横幅与提示音需要 macOS 授权；任务活动仍会显示在岛上。";
+
+"Preview setup needs an update · simulation only" = "预览配置需要更新 · 仅支持模拟";
+"Preview connector · simulated requests only" = "预览连接器 · 仅支持模拟请求";
+"Connect to receive task activity" = "连接后可接收任务活动";
+"Update this connection to keep receiving activity." = "更新此连接，以继续接收任务活动。";
+"Approval access needs authorization" = "审批权限需要授权";
+"Approval access authorized" = "审批权限已授权";
+"Task and approval access configured" = "任务与审批接收已配置";
+"Attention monitoring configured · respond in the Agent" = "关注提醒已配置 · 请在 Agent 中处理";
+"Task monitoring configured" = "任务监控已配置";
+
+"Local setup checks passed" = "本地配置检查通过";
+"%@ passed setup checks. Confirm approval delivery with a real request." = "%@ 已通过配置检查。请用真实请求确认审批能否送达。";

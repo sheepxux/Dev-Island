@@ -67,6 +67,14 @@ final class PanelClockPresentationTests: XCTestCase {
         )
     }
 
+    func testLongRunningCodexConversationShowsSessionAgeInsteadOfExecutionStopwatch() {
+        let task = makeTask(status: .running, updatedOffset: 9 * 86_400)
+        let now = origin.addingTimeInterval(9 * 86_400 + 30)
+        XCTAssertEqual(PanelClockPresentation.taskTimingLabel(for: task, at: now, language: .english), "Session · 9d")
+        XCTAssertEqual(PanelClockPresentation.taskTimingLabel(for: task, at: now, language: .simplifiedChinese), "会话 · 9 天")
+        XCTAssertEqual(PanelClockPresentation.taskTimingLabel(for: task, at: origin.addingTimeInterval(-1), language: .english), "Session · 0m")
+    }
+
     private func makeTask(
         status: TaskStatus,
         updatedOffset: TimeInterval

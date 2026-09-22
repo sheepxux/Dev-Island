@@ -26,10 +26,10 @@ final class WindowPaletteTests: XCTestCase {
         )
     }
 
-    func testTertiaryInkIsForHintsOnly() {
-        let ratio = C.ratio(C.textTertiary, on: C.canvas)
-        XCTAssertGreaterThanOrEqual(ratio, 3, "large-text minimum for captions and numbering")
-        XCTAssertLessThan(ratio, 4.5, "if this passes AA it should be promoted to secondary")
+    func testTertiaryInkSupportsSmallStatusAndAuthorizationText() {
+        for ground in [C.canvas, C.canvasDeep, 0xFFFFFF] {
+            XCTAssertGreaterThanOrEqual(C.ratio(C.textTertiary, on: ground), 4.5)
+        }
     }
 
     func testSemanticInkReadsAsTextOnTheBeigeGround() {

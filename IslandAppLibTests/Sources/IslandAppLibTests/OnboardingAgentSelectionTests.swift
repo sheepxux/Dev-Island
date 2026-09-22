@@ -3,7 +3,7 @@ import XCTest
 import IslandCore
 
 final class OnboardingAgentSelectionTests: XCTestCase {
-    func testBoundedWelcomeSelectionNeverLetsPreviewDisplaceStableConnector() {
+    func testWelcomeOffersStableConnectorsAndLeavesPreviewInSettings() {
         let selection = OnboardingAgentSelection.descriptors(
             from: LocalAgentRegistry.all
         )
@@ -12,15 +12,15 @@ final class OnboardingAgentSelectionTests: XCTestCase {
             .filter { $0.releaseStage == .stable }
             .map(\.source)
 
-        XCTAssertEqual(selection.count, OnboardingAgentSelection.maximumLocalAgents)
+        XCTAssertLessThanOrEqual(selection.count, OnboardingAgentSelection.maximumLocalAgents)
+        XCTAssertTrue(selection.allSatisfy { $0.releaseStage == .stable })
         for source in stableSources {
             XCTAssertTrue(selectedSources.contains(source), source)
         }
         XCTAssertEqual(
             selectedSources,
             [
-                "claude-code", "codex", "cursor", "gemini-cli",
-                "qwen-code", "copilot-cli", "kimi-code",
+                "claude-code", "codex", "cursor",
             ]
         )
         XCTAssertFalse(
@@ -46,7 +46,7 @@ final class OnboardingAgentSelectionTests: XCTestCase {
                 from: selection,
                 states: states
             ).map(\.source),
-            ["claude-code", "gemini-cli"]
+            ["claude-code"]
         )
     }
 

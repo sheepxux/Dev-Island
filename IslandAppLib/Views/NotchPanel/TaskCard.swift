@@ -28,7 +28,7 @@ struct TaskCard: View {
             card(at: now)
         } else if PanelClockPresentation.taskNeedsLiveTick(task.status) {
             TimelineView(
-                .animation(minimumInterval: 1.0, paused: !isLive)
+                .animation(minimumInterval: task.source == "codex" ? 60 : 1, paused: !isLive)
             ) { context in
                 card(at: context.date)
             }
@@ -164,7 +164,7 @@ struct TaskCard: View {
     }
 
     private func durationString(at referenceDate: Date) -> String {
-        PanelClockPresentation.taskDuration(for: task, at: referenceDate)
+        PanelClockPresentation.taskTimingLabel(for: task, at: referenceDate, language: language)
     }
 
     /// Branch of the project directory a local session runs in. Remote and

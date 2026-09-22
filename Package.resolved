@@ -11,15 +11,6 @@
       }
     },
     {
-      "identity" : "csqlite",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/stephencelis/CSQLite",
-      "state" : {
-        "revision" : "8ad83035460a3d1029a2c5a0cca4f980297a9ca2",
-        "version" : "3.53.3"
-      }
-    },
-    {
       "identity" : "hummingbird",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/hummingbird-project/hummingbird.git",
@@ -35,15 +26,6 @@
       "state" : {
         "revision" : "ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a",
         "version" : "2.9.6"
-      }
-    },
-    {
-      "identity" : "sqlcipher.swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/sqlcipher/SQLCipher.swift",
-      "state" : {
-        "revision" : "f879fffaaa3ad3541a77830daad4a28726dfa927",
-        "version" : "4.18.0"
       }
     },
     {
@@ -107,6 +89,15 @@
       "state" : {
         "revision" : "6675bc0ff86e61436e615df6fc5174e043e57924",
         "version" : "1.4.1"
+      }
+    },
+    {
+      "identity" : "swift-configuration",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-configuration.git",
+      "state" : {
+        "revision" : "3533f65d3e36dcdffc91ce34ef4d3c9c1887fd4b",
+        "version" : "1.2.1"
       }
     },
     {

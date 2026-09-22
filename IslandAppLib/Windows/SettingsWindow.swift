@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import IslandCore
+import Observation
 
 /// Cross-module signal that the Settings window should open. The panel's
 /// gear button posts this, AppDelegate observes it. NotificationCenter
@@ -9,6 +10,11 @@ import IslandCore
 /// view tree.
 public extension Notification.Name {
     static let islandOpenSettingsRequested = Notification.Name("island.openSettingsRequested")
+}
+
+@Observable
+final class SettingsPresentation {
+    var showsHistory = false
 }
 
 /// Standalone titled window hosting `SettingsView` (CLAUDE_CLIENT.md §6
@@ -20,6 +26,7 @@ public extension Notification.Name {
 public final class SettingsWindow: NSWindow {
     private let onDidClose: @MainActor () -> Void
     private var hasReportedClose = false
+    private let presentation = SettingsPresentation()
 
     public init(onDidClose: @escaping @MainActor () -> Void = {}) {
         self.onDidClose = onDidClose
@@ -54,7 +61,7 @@ public final class SettingsWindow: NSWindow {
 
         let host = NSHostingView(
             rootView: LocalizedAppRoot {
-                SettingsView()
+                SettingsView(presentation: presentation)
             }
         )
         host.translatesAutoresizingMaskIntoConstraints = true
@@ -67,7 +74,8 @@ public final class SettingsWindow: NSWindow {
     /// Bring the window forward and make it the key window. Use this
     /// from gear-tap so a second tap on an already-open settings window
     /// just refocuses it instead of stacking.
-    public func bringToFront() {
+    public func bringToFront(showHistory: Bool = false) {
+        if showHistory { presentation.showsHistory = true }
         // AppDelegate acquires the window's Dock lease before this method,
         // so activation always happens after the app becomes `.regular`.
         hasReportedClose = false

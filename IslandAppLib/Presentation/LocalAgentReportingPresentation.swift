@@ -16,10 +16,13 @@ enum LocalAgentReportingPresentation {
     /// gate is the common cause. `nil` when every connected Agent is fine.
     static func notice(
         _ snapshot: LocalAgentReportingSnapshot?,
+        visibleTaskSources: Set<String> = [],
         language: DevIslandLanguage = .current
     ) -> LocalAgentReportingNotice? {
         guard let snapshot else { return nil }
-        let candidates = snapshot.notReporting.sorted { lhs, rhs in
+        let candidates = snapshot.notReporting.filter {
+            !visibleTaskSources.contains($0.source)
+        }.sorted { lhs, rhs in
             if lhs.source == "codex" { return true }
             if rhs.source == "codex" { return false }
             return lhs.displayName < rhs.displayName
@@ -28,7 +31,7 @@ enum LocalAgentReportingPresentation {
         return LocalAgentReportingNotice(
             source: agent.source,
             title: L10n.format(
-                "%@ is running but not reporting to the island.",
+                "No recent hook events from %@",
                 language: language,
                 agent.displayName
             ),
@@ -42,10 +45,10 @@ enum LocalAgentReportingPresentation {
     ) -> String {
         if agent.source == "codex" {
             return L10n.string(
-                "Check session monitoring and approval authorization in Settings › Agents.",
+                "Local activity was detected. Check task monitoring and approval authorization separately.",
                 language: language
             )
         }
-        return L10n.string("Update its hook in Settings › Agents.", language: language)
+        return L10n.string("Local activity was detected. Check whether this connection can send events.", language: language)
     }
 }

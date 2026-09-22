@@ -20,6 +20,8 @@ import UniformTypeIdentifiers
 public struct SettingsView: View {
     @State private var store = TaskStore.shared
     @State private var selectedPane: SettingsPane = .agents
+    @State private var presentation = SettingsPresentation()
+    @State private var diagnosticsRevealID = UUID()
     @State private var localAgentConnectionsOperation =
         LocalAgentConnectionsOperationState()
     private let initialLiveReadinessSnapshot: LocalLiveReadinessSnapshot?
@@ -32,6 +34,11 @@ public struct SettingsView: View {
         initialLiveReadinessSnapshot = nil
         initialConnectionStates = [:]
         previewAppVersion = nil
+    }
+
+    init(presentation: SettingsPresentation) {
+        self.init()
+        _presentation = State(initialValue: presentation)
     }
 
     #if DEBUG
@@ -76,6 +83,11 @@ public struct SettingsView: View {
                     .padding(.bottom, 28)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .onChange(of: diagnosticsRevealID) { _, _ in
+                    withAnimation(reduceMotion ? nil : Motion.contentReveal) {
+                        proxy.scrollTo("settings-pane-top", anchor: .top)
+                    }
+                }
                 .onChange(of: selectedPane) { _, _ in
                     if reduceMotion {
                         var transaction = Transaction()
@@ -98,6 +110,9 @@ public struct SettingsView: View {
         .foregroundStyle(Palette.Window.ink)
         .tint(Palette.Window.ink)
         .preferredColorScheme(.light)
+        .sheet(isPresented: $presentation.showsHistory) {
+            TaskHistoryView(store: store)
+        }
     }
 
     private var sidebar: some View {
@@ -128,9 +143,22 @@ public struct SettingsView: View {
             .padding(.bottom, 16)
 
             VStack(spacing: 2) {
+                Button {
+                    presentation.showsHistory = true
+                } label: {
+                    Label(L10n.string("Session History", language: language), systemImage: "clock.arrow.circlepath")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 4)
+                }
+                .buttonStyle(SettingsSidebarButtonStyle(isSelected: false))
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+
+                settingsDivider.padding(.vertical, 8)
+
                 ForEach(SettingsPane.allCases) { pane in
                     Button {
-                        withAnimation(Motion.contentReveal) {
+                        withAnimation(reduceMotion ? nil : Motion.contentReveal) {
                             selectedPane = pane
                         }
                     } label: {
@@ -152,7 +180,7 @@ public struct SettingsView: View {
                                 .accessibilityHidden(true)
 
                             Text(pane.title(language: language))
-                                .font(.system(size: 12.5, weight: pane == selectedPane ? .semibold : .medium))
+                                .font(.system(size: 12.5, weight: .medium))
                                 .foregroundStyle(
                                     pane == selectedPane ? Palette.Window.onInk : Palette.Window.inkSoft
                                 )
@@ -228,7 +256,8 @@ public struct SettingsView: View {
                 showsTitle: false,
                 initialLiveReadinessSnapshot: initialLiveReadinessSnapshot,
                 initialConnectionStates: initialConnectionStates,
-                connectionsOperation: $localAgentConnectionsOperation
+                connectionsOperation: $localAgentConnectionsOperation,
+                onRevealDiagnostics: { diagnosticsRevealID = UUID() }
             )
         case .general:
             GeneralSection(showsTitle: false)
@@ -287,7 +316,7 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .agents:
             return L10n.string(
-                "Connect the Agents you use. Each one shows its tasks and approvals on the island.",
+                "Choose your tools, then check task activity and approval access separately.",
                 language: language
             )
         case .general:
@@ -388,18 +417,14 @@ private struct SettingsSidebarUtilityButtonBody: View {
 
     var body: some View {
         configuration.label
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(
-                Palette.Window.textSecondary.opacity(
-                    configuration.isPressed ? 0.55 : (isHovering ? 1 : 0.82)
-                )
-            )
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(isHovering ? Palette.Window.ink : Palette.Window.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .frame(height: 30)
             .background(
                 Rectangle()
-                    .fill(Palette.Window.ink.opacity(isHovering ? 0.025 : 0))
+                    .fill(configuration.isPressed ? Palette.Window.pressed : (isHovering ? Palette.Window.hover : .clear))
             )
             .animation(Motion.press, value: configuration.isPressed)
             .animation(
@@ -1196,6 +1221,24 @@ private struct NotificationsSection: View {
         VStack(alignment: .leading, spacing: 12) {
             if showsTitle { sectionTitle("Notifications") }
 
+            if notificationsEnabled, let authorizationIssue {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(L10n.string(authorizationIssue, language: language), systemImage: "bell.slash")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(L10n.string("Your notification preferences are saved. System banners and sounds need macOS permission; task activity remains visible in the island.", language: language))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.Window.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(L10n.string("Open System Settings", language: language)) {
+                        openNotificationSettings()
+                    }
+                    .buttonStyle(SettingsControlButtonStyle())
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .settingsGlass(radius: Palette.Window.Radius.group, tone: .attention)
+            }
+
             VStack(spacing: 0) {
                 SettingsToggleRow(
                     title: "Attention Required",
@@ -1249,22 +1292,7 @@ private struct NotificationsSection: View {
                 }
                 .padding(16)
 
-                if notificationsEnabled, let authorizationIssue {
-                    settingsDivider.padding(.leading, 16)
-                    HStack(spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Palette.Window.stateWaiting)
-                        Text(L10n.string(authorizationIssue, language: language))
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.Window.textSecondary)
-                        Spacer()
-                        Button(L10n.string("Open System Settings", language: language)) {
-                            openNotificationSettings()
-                        }
-                        .buttonStyle(SettingsControlButtonStyle())
-                    }
-                    .padding(16)
-                }
+
             }
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -1319,13 +1347,12 @@ enum SettingsAgentGroup: Hashable {
     }
 }
 
-/// Settings › Agent. Every local Agent is grouped by what the user has to do
-/// about it; connected rows expand in place, rows that need attention carry
-/// the page's single primary button, and diagnostics wait at the bottom for
-/// the day something does not react.
+/// Stable connections are grouped by required action; preview capabilities
+/// stay separate. A requested diagnostics result appears above the list.
 private struct ConnectedServicesSection: View {
     let store: TaskStore
     let showsTitle: Bool
+    let onRevealDiagnostics: () -> Void
     @Binding private var connectionsOperation: LocalAgentConnectionsOperationState
     @State private var installationRefreshToken = UUID()
     @State private var hasManagedLocalHooks = false
@@ -1336,6 +1363,7 @@ private struct ConnectedServicesSection: View {
     @State private var connectionStates: [String: LocalAgentHookConnectionState]
     @State private var connectionSnapshotToken = UUID()
     @State private var expandedSource: String?
+    @State private var showsPreviewConnectors = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.devIslandLanguage) private var language
 
@@ -1344,10 +1372,12 @@ private struct ConnectedServicesSection: View {
         showsTitle: Bool = true,
         initialLiveReadinessSnapshot: LocalLiveReadinessSnapshot? = nil,
         initialConnectionStates: [String: LocalAgentHookConnectionState] = [:],
-        connectionsOperation: Binding<LocalAgentConnectionsOperationState>
+        connectionsOperation: Binding<LocalAgentConnectionsOperationState>,
+        onRevealDiagnostics: @escaping () -> Void = {}
     ) {
         self.store = store
         self.showsTitle = showsTitle
+        self.onRevealDiagnostics = onRevealDiagnostics
         _connectionsOperation = connectionsOperation
         _connectionStates = State(initialValue: initialConnectionStates)
         _liveReadinessCheckState = State(
@@ -1372,9 +1402,13 @@ private struct ConnectedServicesSection: View {
 
             if let notice = LocalAgentReportingPresentation.notice(
                 store.reportingHealth,
+                visibleTaskSources: Set(store.tasks.filter { $0.status == .running || $0.status == .waiting }.map(\.source)),
                 language: language
             ) {
-                LocalAgentReportingNoticeView(notice: notice)
+                LocalAgentReportingNoticeView(notice: notice, isChecking: liveReadinessCheckState.isChecking) {
+                    expandedSource = notice.source
+                    checkLiveReadiness(for: notice.source)
+                }
                     .task { await store.refreshReportingHealth() }
             } else {
                 Color.clear
@@ -1382,35 +1416,45 @@ private struct ConnectedServicesSection: View {
                     .task { await store.refreshReportingHealth() }
             }
 
-            ForEach(
-                Array(groupedLocalAgents.enumerated()),
-                id: \.offset
-            ) { _, entry in
-                VStack(alignment: .leading, spacing: 7) {
-                    groupLabel(
-                        entry.group?.title(language: language)
-                            ?? L10n.string("Local Agents", language: language),
-                        tone: entry.group == .needsAttention ? .attention : .neutral
-                    )
-                    VStack(spacing: 0) {
-                        ForEach(entry.descriptors, id: \.source) { descriptor in
-                            if descriptor.source != entry.descriptors.first?.source { rowDivider }
-                            AgentConnectionRow(
-                                descriptor: descriptor,
-                                store: store,
-                                refreshToken: installationRefreshToken,
-                                connectionState: connectionStates[descriptor.source],
-                                isExpanded: expandedSource == descriptor.source,
-                                onToggleExpanded: { toggleExpanded(descriptor.source) },
-                                onConnectionChanged: refreshConnectionStates,
-                                connectionsOperation: $connectionsOperation
-                            )
+            if liveReadinessCheckState.isChecking || liveReadinessCheckState.snapshot != nil {
+                readinessCard
+            }
+
+            ForEach(Array(groupedLocalAgents.enumerated()), id: \.offset) { _, entry in
+                if entry.group == .preview {
+                    DisclosureGroup(isExpanded: $showsPreviewConnectors) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(L10n.string("These connectors handle simulated requests only. They are not included in your setup count.", language: language))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.Window.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            agentRows(entry.descriptors)
                         }
+                        .padding(.top, 10)
+                    } label: {
+                        HStack {
+                            Text(L10n.string("Preview connectors", language: language))
+                            Spacer()
+                            Text("\(entry.descriptors.count)")
+                                .monospacedDigit()
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.Window.textSecondary)
                     }
-                    .settingsGlass(
-                        radius: Palette.Window.Radius.group,
-                        tone: entry.group == .needsAttention ? .attention : .neutral
-                    )
+                    .padding(14)
+                    .settingsGlass(radius: Palette.Window.Radius.group, tone: .neutral)
+                } else {
+                    VStack(alignment: .leading, spacing: 7) {
+                        groupLabel(
+                            entry.group?.title(language: language) ?? L10n.string("Local Agents", language: language),
+                            tone: entry.group == .needsAttention ? .attention : .neutral
+                        )
+                        agentRows(entry.descriptors)
+                            .settingsGlass(
+                                radius: Palette.Window.Radius.group,
+                                tone: entry.group == .needsAttention ? .attention : .neutral
+                            )
+                    }
                 }
             }
 
@@ -1474,21 +1518,34 @@ private struct ConnectedServicesSection: View {
         LocalAgentRowPresentation.grouped(LocalAgentRegistry.all, states: connectionStates)
     }
 
+    private func agentRows(_ descriptors: [LocalAgentDescriptor]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(descriptors, id: \.source) { descriptor in
+                if descriptor.source != descriptors.first?.source { rowDivider }
+                AgentConnectionRow(
+                    descriptor: descriptor,
+                    store: store,
+                    refreshToken: installationRefreshToken,
+                    connectionState: connectionStates[descriptor.source],
+                    isExpanded: expandedSource == descriptor.source,
+                    onToggleExpanded: { toggleExpanded(descriptor.source) },
+                    onConnectionChanged: refreshConnectionStates,
+                    connectionsOperation: $connectionsOperation
+                )
+            }
+        }
+    }
+
     private var summaryLine: some View {
-        let hasSnapshot = LocalAgentRegistry.all.allSatisfy { connectionStates[$0.source] != nil }
-        let states = LocalAgentRegistry.all.compactMap { connectionStates[$0.source] }
-        let text = hasSnapshot
-            ? LocalAgentRowPresentation.summary(
-                connected: states.filter { $0 == .connected }.count,
-                needsAttention: states.filter { $0 == .configured || $0 == .updateRequired }.count,
-                notConnected: states.filter { $0 == .disconnected }.count,
-                language: language
-            )
-            : L10n.string("Checking local Agents…", language: language)
-        return Text(text)
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
-            .foregroundStyle(Palette.Window.textSecondary)
-            .accessibilityAddTraits(.updatesFrequently)
+        Text(LocalAgentRowPresentation.summary(
+            descriptors: LocalAgentRegistry.all,
+            states: connectionStates,
+            language: language
+        ))
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(Palette.Window.textSecondary)
+        .monospacedDigit()
+        .accessibilityAddTraits(.updatesFrequently)
     }
 
     private func groupLabel(_ text: String, tone: SettingsGlassTone) -> some View {
@@ -1514,15 +1571,21 @@ private struct ConnectedServicesSection: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            LocalLiveReadinessCard(
-                snapshot: liveReadinessCheckState.snapshot,
-                isChecking: liveReadinessCheckState.isChecking,
-                isMutationInProgress: connectionsOperation.isMutating,
-                onCheck: checkLiveReadiness
-            )
+            if !liveReadinessCheckState.isChecking && liveReadinessCheckState.snapshot == nil {
+                readinessCard
+            }
             localAgentMaintenanceRow
         }
         .padding(.top, 6)
+    }
+
+    private var readinessCard: some View {
+        LocalLiveReadinessCard(
+            snapshot: liveReadinessCheckState.snapshot,
+            isChecking: liveReadinessCheckState.isChecking,
+            isMutationInProgress: connectionsOperation.isMutating,
+            onCheck: checkLiveReadiness
+        )
     }
 
     private var localAgentMaintenanceRow: some View {
@@ -1606,7 +1669,12 @@ private struct ConnectedServicesSection: View {
     }
 
     private func checkLiveReadiness() {
-        guard let checkID = liveReadinessCheckState.begin() else { return }
+        checkLiveReadiness(for: liveReadinessCheckState.source)
+    }
+
+    private func checkLiveReadiness(for source: String?) {
+        guard let checkID = liveReadinessCheckState.begin(source: source) else { return }
+        onRevealDiagnostics()
 
         Task { @MainActor in
             let snapshot = await Task.detached(priority: .userInitiated) {
@@ -1807,6 +1875,8 @@ private struct LocalLiveReadinessCard: View {
 /// quiet day.
 private struct LocalAgentReportingNoticeView: View {
     let notice: LocalAgentReportingNotice
+    let isChecking: Bool
+    let onCheck: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.devIslandLanguage) private var language
 
@@ -1832,14 +1902,14 @@ private struct LocalAgentReportingNoticeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 8)
+            Button(L10n.string(isChecking ? "Checking…" : "Check connection", language: language), action: onCheck)
+                .buttonStyle(SettingsControlButtonStyle())
+                .disabled(isChecking)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .settingsGlass(radius: Palette.Window.Radius.group, tone: .attention)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L10n.string("Hooks are not reporting", language: language))
-        .accessibilityValue(notice.accessibilityLabel)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -2112,18 +2182,13 @@ private struct AgentConnectionRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            headline
+            connectionHeader
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
                 .background(rowHighlight)
                 .onHover { isHovering = $0 }
-                .onTapGesture {
-                    guard action == .expand, !isBusy else { return }
-                    onToggleExpanded()
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(action == .expand ? .isButton : [])
+                .accessibilityElement(children: .contain)
                 .accessibilityHint(
                     action == .expand
                         ? L10n.string(isExpanded ? "Hide details" : "Show details", language: language)
@@ -2157,6 +2222,17 @@ private struct AgentConnectionRow: View {
         }
     }
 
+    @ViewBuilder
+    private var connectionHeader: some View {
+        if action == .expand {
+            Button(action: onToggleExpanded) { headline.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+        } else {
+            headline
+        }
+    }
+
     private var rowHighlight: some View {
         Rectangle()
             .fill(
@@ -2177,7 +2253,7 @@ private struct AgentConnectionRow: View {
                         .foregroundStyle(Palette.Window.ink)
                     if descriptor.releaseStage == .preview {
                         Text(L10n.string("PREVIEW", language: language))
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 10, weight: .medium))
                             .tracking(0.7)
                             .foregroundStyle(Palette.Window.textTertiary)
                             .accessibilityLabel(
@@ -2193,6 +2269,15 @@ private struct AgentConnectionRow: View {
                             : Palette.Window.textSecondary
                     )
                     .fixedSize(horizontal: false, vertical: true)
+                if descriptor.releaseStage == .stable, connectionState == .connected {
+                    Text(L10n.string(
+                        store.tasks.contains { $0.source == descriptor.source && ($0.status == .running || $0.status == .waiting) }
+                            ? "Task activity visible" : "Waiting for task activity",
+                        language: language
+                    ))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.Window.textSecondary)
+                }
             }
 
             Spacer(minLength: 8)
@@ -2288,8 +2373,8 @@ private struct AgentConnectionRow: View {
                     Text(CodexSessionMonitoringPresentation.status(
                         store.codexSessionMonitorStatus, language: language
                     ))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.Window.textTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.Window.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 9)
@@ -2312,6 +2397,14 @@ private struct AgentConnectionRow: View {
                             language: language
                         ))
                     }
+                }
+                if descriptor.source == "codex" {
+                    Text(L10n.string("Hooks installed · verify delivery with a real request", language: language))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.Window.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
                 }
             }
             .settingsGlass(radius: Palette.Window.Radius.inset, tone: .inset)
@@ -2338,8 +2431,8 @@ private struct AgentConnectionRow: View {
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(Palette.Window.ink)
                 Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.Window.textTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
@@ -2350,6 +2443,9 @@ private struct AgentConnectionRow: View {
     }
 
     private var approvalsSubtitle: String {
+        if descriptor.releaseStage == .preview {
+            return L10n.string("Simulated requests only", language: language)
+        }
         if descriptor.source == "codex" {
             return L10n.format(
                 "Authorized · %lld commands",
@@ -2361,14 +2457,14 @@ private struct AgentConnectionRow: View {
         if capabilities.permissionRequests == .bidirectional
             || capabilities.questionRequests == .bidirectional
             || capabilities.planReviews == .bidirectional {
-            return L10n.string("Arrive through the local hook in real time", language: language)
+            return L10n.string("Hooks installed · verify delivery with a real request", language: language)
         }
         if capabilities.permissionRequests == .observeOnly
             || capabilities.questionRequests == .observeOnly
             || capabilities.planReviews == .observeOnly {
-            return L10n.string("Attention requests arrive through the local hook", language: language)
+            return L10n.string("Attention monitoring only · respond in the Agent", language: language)
         }
-        return L10n.string("Sessions arrive through the local hook", language: language)
+        return L10n.string("Task activity only · approvals stay in the Agent", language: language)
     }
 
     private var statusLine: String {

@@ -89,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the second gear tap brings the same window forward instead of
     /// stacking a new one.
     private var settingsWindow: SettingsWindow?
+    private var pendingHistoryRequest = false
     private var onboardingWindow: OnboardingWindow?
 
     /// Welcome can outlive its own window while macOS presents the
@@ -211,9 +212,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: .islandOpenSettingsRequested,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] note in
+            let showHistory = note.userInfo?["showHistory"] as? Bool ?? false
             Task { @MainActor [weak self] in
-                self?.openSettings()
+                self?.openSettings(showHistory: showHistory)
             }
         }
 
@@ -533,7 +535,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Settings
 
-    private func openSettings() {
+    private func openSettings(showHistory: Bool = false) {
+        pendingHistoryRequest = pendingHistoryRequest || showHistory
         // Keep one visual focal point. If Settings is requested while the
         // Welcome flow is up (including its notification-authorization gap),
         // make Settings the next destination. The finishing flow keeps its
@@ -550,15 +553,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         ensureSettingsDockLease()
 
+        let showHistory = pendingHistoryRequest
+        pendingHistoryRequest = false
         if let existing = settingsWindow {
-            existing.bringToFront()
+            existing.bringToFront(showHistory: showHistory)
             return
         }
         let window = SettingsWindow { [weak self] in
             self?.releaseSettingsDockLease()
         }
         settingsWindow = window
-        window.bringToFront()
+        window.bringToFront(showHistory: showHistory)
     }
 
     private func openOnboarding() {

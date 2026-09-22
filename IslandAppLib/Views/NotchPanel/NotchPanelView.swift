@@ -32,6 +32,7 @@ struct NotchPanelView: View {
     var onActionDefer: (UUID) -> Void = { _ in }
     let onSettingsTap: () -> Void
     let onConnectTap: () -> Void
+    var onHistoryTap: () -> Void = {}
     /// When `false` the view renders content only — the parent
     /// (`IslandRootView`) is drawing a shared backdrop that spans both bar
     /// and panel states for a single SwiftUI morph.
@@ -232,8 +233,8 @@ struct NotchPanelView: View {
     private var trailingCluster: some View {
         HStack(spacing: 7) {
             connectionDot
-            Button(action: onConnectTap) {
-                Image(systemName: "plus")
+            Button(action: onHistoryTap) {
+                Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.textSecondary.opacity(0.72))
                     .frame(width: 24, height: 26)
@@ -241,12 +242,12 @@ struct NotchPanelView: View {
             }
             .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
             .pointingHandCursor()
-            .help(L10n.string("Connect an agent", language: language))
+            .help(L10n.string("Session History", language: language))
             .accessibilityLabel(
-                L10n.string("Connect an Agent", language: language)
+                L10n.string("Session History", language: language)
             )
             .accessibilityHint(
-                L10n.string("Opens Agent connection settings", language: language)
+                L10n.string("View recent tasks and results", language: language)
             )
 
             Button(action: onSettingsTap) {

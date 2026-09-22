@@ -5,6 +5,26 @@ import IslandCore
 /// labels. Keeping this outside SwiftUI lets row-local clocks stay tiny and
 /// gives duration/countdown semantics deterministic regression coverage.
 enum PanelClockPresentation {
+    static func taskTimingLabel(
+        for task: AgentTask,
+        at now: Date,
+        language: DevIslandLanguage
+    ) -> String {
+        guard task.source == "codex" else {
+            return taskDuration(for: task, at: now)
+        }
+        // Codex task identity spans turns. Its creation date is the session's
+        // origin, so this must never look like the current turn's stopwatch.
+        let elapsed = max(0, Int(now.timeIntervalSince(task.createdAt)))
+        if elapsed >= 86_400 {
+            return L10n.format("Session · %lldd", language: language, Int64(elapsed / 86_400))
+        }
+        if elapsed >= 3_600 {
+            return L10n.format("Session · %lldh", language: language, Int64(elapsed / 3_600))
+        }
+        return L10n.format("Session · %lldm", language: language, Int64(elapsed / 60))
+    }
+
     static func taskNeedsLiveTick(_ status: TaskStatus) -> Bool {
         switch status {
         case .running, .waiting:

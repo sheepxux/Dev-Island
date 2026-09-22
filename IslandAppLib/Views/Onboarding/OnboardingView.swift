@@ -222,8 +222,8 @@ struct OnboardingView: View {
             number: "02 / 04",
             label: "Connections",
             title: "Bring your\nagents together.",
-            detail: "Connect your local tools—and keep Manus cloud work in the same quiet surface. Dev Island changes only the hooks it owns.",
-            note: "Local hooks remain inspectable and reversible."
+            detail: "Start with the tools you use. Preview connectors are available separately in Settings.",
+            note: "Setup enables the connection. The final step checks real task activity."
         ) {
             connectionsStage
         }
@@ -245,8 +245,10 @@ struct OnboardingView: View {
         editorialPage(
             number: "04 / 04",
             label: "First signal",
-            title: "Light up\nyour island.",
-            detail: "Run one real command and watch the island answer. Nothing is staged—this is the signal you will see every day.",
+            title: liveSignal.hasSeenEvent ? "Your island\nis listening." : "Light up\nyour island.",
+            detail: liveSignal.hasSeenEvent
+                ? "Real task activity has reached your island. You can finish setup and return to your work."
+                : "Run one real command and watch the island answer. Nothing is staged—this is the signal you will see every day.",
             note: "Dev Island only listens. Your agent keeps running in your own terminal."
         ) {
             liveSignalStage
@@ -327,7 +329,7 @@ struct OnboardingView: View {
 
     private var overviewStage: some View {
         VStack(spacing: 0) {
-            stageHeader(title: "Current signal", trailing: "Live")
+            stageHeader(title: "How the island looks", trailing: "Example")
 
             Rectangle()
                 .fill(Palette.Window.hairline)
@@ -516,10 +518,10 @@ struct OnboardingView: View {
         guard hasLoadedConnectionStates else {
             return L10n.string("Checking…", language: language)
         }
-        return L10n.agentConnectionSummary(
+        return LocalAgentRowPresentation.summary(
             connected: connectedSourceCount,
-            updateRequired: updateRequiredSourceCount,
-            configured: configuredSourceCount,
+            needsAttention: updateRequiredSourceCount + configuredSourceCount,
+            notConnected: onboardingAgents.count - connectedSourceCount - updateRequiredSourceCount - configuredSourceCount,
             language: language
         )
     }
@@ -663,7 +665,7 @@ struct OnboardingView: View {
         OnboardingLiveSignalRecipe.signalSources(
             states: connectionStates,
             codexSessionMonitoringEnabled: store.codexSessionMonitoringEnabled
-        )
+        ).intersection(Set(onboardingAgents.map(\.source)))
     }
 
     /// Derived from the live store on every change; `onChange` fires only
@@ -775,7 +777,9 @@ struct OnboardingView: View {
     @ViewBuilder
     private var liveSignalInstructions: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !hasLoadedConnectionStates {
+            if liveSignal.hasSeenEvent {
+                liveSignalInstruction("Task activity has arrived. Approval delivery needs a separate live request to confirm it.")
+            } else if !hasLoadedConnectionStates {
                 quietLiveSignalLine("Checking…")
             } else {
                 switch liveSignalRecipe {
@@ -1250,7 +1254,7 @@ private struct OnboardingAgentCell: View {
                     .frame(width: 28, height: 24)
                     .accessibilityLabel(
                         connectionState == .connected
-                            ? L10n.string("Connected", language: language)
+                            ? L10n.string("Setup complete", language: language)
                             : L10n.format(
                                 "Configured; confirm Hook trust in %@",
                                 language: language,
@@ -1343,8 +1347,8 @@ enum OnboardingConnectionStatusPresentation {
         if hasError { return "Try again" }
         switch state {
         case nil: return "Checking…"
-        case .connected: return "Connected"
-        case .configured: return "Configured"
+        case .connected: return "Setup complete"
+        case .configured: return "Needs authorization"
         case .updateRequired: return "Needs update"
         case .disconnected: return "Not connected"
         }
@@ -1358,8 +1362,7 @@ enum OnboardingAgentSelection {
         from all: [LocalAgentDescriptor]
     ) -> [LocalAgentDescriptor] {
         let stable = all.filter { $0.releaseStage == .stable }
-        let preview = all.filter { $0.releaseStage == .preview }
-        return Array((stable + preview).prefix(maximumLocalAgents))
+        return Array(stable.prefix(maximumLocalAgents))
     }
 
     static func descriptorsNeedingUpdate(

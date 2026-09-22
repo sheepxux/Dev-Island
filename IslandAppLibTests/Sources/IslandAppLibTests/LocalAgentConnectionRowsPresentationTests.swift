@@ -32,7 +32,7 @@ final class LocalAgentConnectionRowsPresentationTests: XCTestCase {
         )
         let grouped = LocalAgentRowPresentation.grouped(all, states: states)
 
-        XCTAssertEqual(grouped.map(\.group), [.connected, .needsAttention, .notConnected])
+        XCTAssertEqual(grouped.map(\.group), [.needsAttention, .connected, .notConnected, .preview])
         for entry in grouped {
             let sources = entry.descriptors.map(\.source)
             let registryOrder = all.map(\.source).filter(sources.contains)
@@ -41,16 +41,18 @@ final class LocalAgentConnectionRowsPresentationTests: XCTestCase {
         XCTAssertEqual(grouped.flatMap(\.descriptors).count, all.count, "no row is lost or duplicated")
     }
 
-    func testIncompleteSnapshotKeepsEveryRowInOneUngroupedList() {
+    func testIncompleteSnapshotKeepsPreviewSeparateWhileStableRowsLoad() {
         let all = LocalAgentRegistry.all
         let partial = [all[0].source: LocalAgentHookConnectionState.connected]
         let grouped = LocalAgentRowPresentation.grouped(all, states: partial)
-        XCTAssertEqual(grouped.count, 1)
+        XCTAssertEqual(grouped.count, 2)
         XCTAssertNil(grouped[0].group)
-        XCTAssertEqual(grouped[0].descriptors.map(\.source), all.map(\.source))
+        XCTAssertEqual(grouped[0].descriptors.map(\.source), all.filter { $0.releaseStage == .stable }.map(\.source))
+        XCTAssertEqual(grouped[1].group, .preview)
+        XCTAssertTrue(grouped[1].descriptors.allSatisfy { $0.releaseStage == .preview })
     }
 
-    func testStatusLinesNeverMentionVendorMechanicsAndAreLocalized() {
+    func testStatusLinesDescribeInstalledCapabilityWithoutLeakingTrustInternals() {
         let codex = LocalAgentDescriptor.codex
         let claude = LocalAgentDescriptor.claudeCode
         for language in [DevIslandLanguage.english, .simplifiedChinese] {
@@ -64,17 +66,33 @@ final class LocalAgentConnectionRowsPresentationTests: XCTestCase {
         let english = LocalAgentRowPresentation.statusLine(state: .connected, descriptor: claude, language: .english)
         let chinese = LocalAgentRowPresentation.statusLine(state: .connected, descriptor: claude, language: .simplifiedChinese)
         XCTAssertNotEqual(english, chinese)
-        XCTAssertTrue(english.hasPrefix("Connected"))
+        XCTAssertEqual(english, "Task and approval access configured")
         XCTAssertEqual(
             LocalAgentRowPresentation.statusLine(state: nil, descriptor: claude, language: .english),
             "Checking…"
         )
     }
 
+    func testSessionOnlyConnectorDoesNotPromiseApprovalSupportDuringSetup() {
+        let cursor = LocalAgentRegistry.all.first { $0.source == "cursor" }!
+        for state in [LocalAgentHookConnectionState.disconnected, .updateRequired, .connected] {
+            let copy = LocalAgentRowPresentation.statusLine(state: state, descriptor: cursor, language: .english)
+            XCTAssertFalse(copy.lowercased().contains("approval"), copy)
+        }
+    }
+
+    func testPreviewScopeRemainsExplicitBeforeAndAfterSetup() {
+        let preview = LocalAgentRegistry.all.first { $0.releaseStage == .preview }!
+        for state in [LocalAgentHookConnectionState.disconnected, .configured, .updateRequired, .connected] {
+            let copy = LocalAgentRowPresentation.statusLine(state: state, descriptor: preview, language: .english)
+            XCTAssertTrue(copy.lowercased().contains("simulat"), copy)
+        }
+    }
+
     func testSummaryListsOnlyNonZeroCountsInReadingOrder() {
         XCTAssertEqual(
             LocalAgentRowPresentation.summary(connected: 4, needsAttention: 1, notConnected: 3, language: .english),
-            "4 connected · 1 need action · 3 not connected"
+            "4 set up · 1 need action · 3 not connected"
         )
         XCTAssertEqual(
             LocalAgentRowPresentation.summary(connected: 0, needsAttention: 0, notConnected: 2, language: .english),
@@ -82,12 +100,23 @@ final class LocalAgentConnectionRowsPresentationTests: XCTestCase {
         )
         XCTAssertEqual(
             LocalAgentRowPresentation.summary(connected: 4, needsAttention: 1, notConnected: 3, language: .simplifiedChinese),
-            "4 个已连接 · 1 个需要处理 · 3 个未连接"
+            "4 个已配置 · 1 个需要处理 · 3 个未连接"
         )
         XCTAssertEqual(
             LocalAgentRowPresentation.summary(connected: 0, needsAttention: 0, notConnected: 0, language: .english),
             "Checking local Agents…"
         )
+    }
+
+    func testPreviewSetupDoesNotInflateUsableConnectionCount() {
+        let states = Dictionary(uniqueKeysWithValues: LocalAgentRegistry.all.map { ($0.source, LocalAgentHookConnectionState.connected) })
+        XCTAssertEqual(LocalAgentRowPresentation.summary(
+            descriptors: LocalAgentRegistry.all, states: states, language: .english
+        ), "3 set up")
+        let groups = LocalAgentRowPresentation.grouped(LocalAgentRegistry.all, states: states)
+        XCTAssertEqual(groups.first?.descriptors.count, 3)
+        XCTAssertEqual(groups.last?.group, .preview)
+        XCTAssertEqual(groups.last?.descriptors.count, 5)
     }
 
     func testSnapshotSummaryFoldsConfiguredAndUpdateRequiredIntoAttention() {
@@ -99,7 +128,7 @@ final class LocalAgentConnectionRowsPresentationTests: XCTestCase {
         ])
         XCTAssertEqual(
             LocalAgentRowPresentation.summary(snapshot, language: .english),
-            "1 connected · 2 need action · 1 not connected"
+            "1 set up · 2 need action · 1 not connected"
         )
     }
 }

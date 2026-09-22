@@ -7,6 +7,7 @@ import IslandCore
 struct LocalLiveReadinessCheckState: Equatable {
     private(set) var snapshot: LocalLiveReadinessSnapshot?
     private(set) var activeCheckID: UUID?
+    private(set) var source: String?
 
     init(snapshot: LocalLiveReadinessSnapshot? = nil) {
         self.snapshot = snapshot
@@ -14,9 +15,10 @@ struct LocalLiveReadinessCheckState: Equatable {
 
     var isChecking: Bool { activeCheckID != nil }
 
-    mutating func begin() -> UUID? {
+    mutating func begin(source: String? = nil) -> UUID? {
         guard activeCheckID == nil else { return nil }
         let checkID = UUID()
+        self.source = source
         activeCheckID = checkID
         return checkID
     }
@@ -27,7 +29,12 @@ struct LocalLiveReadinessCheckState: Equatable {
         for checkID: UUID
     ) -> Bool {
         guard activeCheckID == checkID else { return false }
-        self.snapshot = snapshot
+        self.snapshot = source.map { source in
+            LocalLiveReadinessSnapshot(
+                listener: snapshot.listener,
+                agents: snapshot.agents.filter { $0.source == source }
+            )
+        } ?? snapshot
         activeCheckID = nil
         return true
     }
@@ -35,6 +42,7 @@ struct LocalLiveReadinessCheckState: Equatable {
     mutating func invalidate() {
         snapshot = nil
         activeCheckID = nil
+        source = nil
     }
 }
 
@@ -88,10 +96,11 @@ enum LocalLiveReadinessPresentation {
 
         if snapshot.isReady {
             return Content(
-                title: L10n.string("Ready for live Agent sessions", language: language),
-                detail: L10n.string(
-                    "Claude Code and Codex passed local setup checks.",
-                    language: language
+                title: L10n.string("Local setup checks passed", language: language),
+                detail: L10n.format(
+                    "%@ passed setup checks. Confirm approval delivery with a real request.",
+                    language: language,
+                    names(in: snapshot, where: { _ in true }, language: language)
                 ),
                 tone: .ready,
                 actionCount: 0

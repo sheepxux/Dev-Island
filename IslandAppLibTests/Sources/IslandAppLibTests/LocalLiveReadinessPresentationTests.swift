@@ -23,6 +23,25 @@ final class LocalLiveReadinessPresentationTests: XCTestCase {
         XCTAssertEqual(state.snapshot, result)
     }
 
+    func testSingleAgentCheckDoesNotAskForAnUnrelatedTool() throws {
+        var state = LocalLiveReadinessCheckState()
+        let checkID = try XCTUnwrap(state.begin(source: "codex"))
+        let result = snapshot(
+            listener: .listening,
+            claude: (.unavailable, .disconnected, .notRequired),
+            codex: (.verified, .connected, .verified)
+        )
+        XCTAssertTrue(state.accept(result, for: checkID))
+        XCTAssertEqual(state.snapshot?.agents.map(\.source), ["codex"])
+        let content = LocalLiveReadinessPresentation.content(snapshot: state.snapshot, isChecking: false, language: .english)
+        XCTAssertEqual(content.tone, .ready)
+        XCTAssertTrue(content.detail.contains("Codex"))
+        XCTAssertFalse(content.detail.contains("Claude"))
+        XCTAssertTrue(content.detail.contains("real request"))
+        state.invalidate()
+        XCTAssertNil(state.source)
+    }
+
     func testInvalidationRejectsLateResultAndAllowsFreshCheck() throws {
         let previousResult = snapshot(
             listener: .listening,
@@ -91,7 +110,7 @@ final class LocalLiveReadinessPresentationTests: XCTestCase {
             language: .english
         )
 
-        XCTAssertEqual(content.title, "Ready for live Agent sessions")
+        XCTAssertEqual(content.title, "Local setup checks passed")
         XCTAssertEqual(content.tone, .ready)
         XCTAssertEqual(content.actionCount, 0)
     }

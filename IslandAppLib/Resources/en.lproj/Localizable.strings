@@ -537,3 +537,46 @@
 "Island not reacting?" = "Island not reacting?";
 "Disconnect all local Agents…" = "Disconnect all local Agents…";
 "Connect the Agents you use. Each one shows its tasks and approvals on the island." = "Connect the Agents you use. Each one shows its tasks and approvals on the island.";
+
+/* Connection clarity and everyday navigation */
+"Setup complete" = "Setup complete";
+"Needs authorization" = "Needs authorization";
+"Preview connectors" = "Preview connectors";
+"%lld set up" = "%lld set up";
+"Session · %lldd" = "Session · %lldd";
+"Session · %lldh" = "Session · %lldh";
+"Session · %lldm" = "Session · %lldm";
+"No recent hook events from %@" = "No recent hook events from %@";
+"Local activity was detected. Check task monitoring and approval authorization separately." = "Local activity was detected. Check task monitoring and approval authorization separately.";
+"Local activity was detected. Check whether this connection can send events." = "Local activity was detected. Check whether this connection can send events.";
+"Check connection" = "Check connection";
+"Choose your tools, then check task activity and approval access separately." = "Choose your tools, then check task activity and approval access separately.";
+"These connectors handle simulated requests only. They are not included in your setup count." = "These connectors handle simulated requests only. They are not included in your setup count.";
+"Task activity visible" = "Task activity visible";
+"Waiting for task activity" = "Waiting for task activity";
+"Simulated requests only" = "Simulated requests only";
+"Hooks installed · verify delivery with a real request" = "Hooks installed · verify delivery with a real request";
+"Attention monitoring only · respond in the Agent" = "Attention monitoring only · respond in the Agent";
+"Task activity only · approvals stay in the Agent" = "Task activity only · approvals stay in the Agent";
+"Start with the tools you use. Preview connectors are available separately in Settings." = "Start with the tools you use. Preview connectors are available separately in Settings.";
+"Setup enables the connection. The final step checks real task activity." = "Setup enables the connection. The final step checks real task activity.";
+"Your island\nis listening." = "Your island\nis listening.";
+"Real task activity has reached your island. You can finish setup and return to your work." = "Real task activity has reached your island. You can finish setup and return to your work.";
+"How the island looks" = "How the island looks";
+"Example" = "Example";
+"Task activity has arrived. Approval delivery needs a separate live request to confirm it." = "Task activity has arrived. Approval delivery needs a separate live request to confirm it.";
+"View recent tasks and results" = "View recent tasks and results";
+"Your notification preferences are saved. System banners and sounds need macOS permission; task activity remains visible in the island." = "Your notification preferences are saved. System banners and sounds need macOS permission; task activity remains visible in the island.";
+
+"Preview setup needs an update · simulation only" = "Preview setup needs an update · simulation only";
+"Preview connector · simulated requests only" = "Preview connector · simulated requests only";
+"Connect to receive task activity" = "Connect to receive task activity";
+"Update this connection to keep receiving activity." = "Update this connection to keep receiving activity.";
+"Approval access needs authorization" = "Approval access needs authorization";
+"Approval access authorized" = "Approval access authorized";
+"Task and approval access configured" = "Task and approval access configured";
+"Attention monitoring configured · respond in the Agent" = "Attention monitoring configured · respond in the Agent";
+"Task monitoring configured" = "Task monitoring configured";
+
+"Local setup checks passed" = "Local setup checks passed";
+"%@ passed setup checks. Confirm approval delivery with a real request." = "%@ passed setup checks. Confirm approval delivery with a real request.";

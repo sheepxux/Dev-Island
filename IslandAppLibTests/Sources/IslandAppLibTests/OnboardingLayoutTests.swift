@@ -23,7 +23,7 @@ final class OnboardingLayoutTests: XCTestCase {
                 state: .configured,
                 hasError: false
             ),
-            "Configured"
+            "Needs authorization"
         )
         XCTAssertEqual(
             OnboardingConnectionStatusPresentation.compactLabel(

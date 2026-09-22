@@ -67,6 +67,7 @@ struct TaskHistoryView: View {
                     )
             }
             .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
             .foregroundStyle(Palette.Window.textSecondary)
             .accessibilityLabel(
                 L10n.string("Close session history", language: language)

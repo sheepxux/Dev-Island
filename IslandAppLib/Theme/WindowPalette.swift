@@ -19,8 +19,8 @@ extension Palette {
         static let ink           = Color(hex: 0x141414)
         static let inkSoft       = Color(hex: 0x2A2925)
         static let onInk         = Color(hex: 0xF1EEE6)
-        static let textSecondary = adaptive(standard: 0x6B685F, increased: 0x45433D)
-        static let textTertiary  = adaptive(standard: 0x858178, increased: 0x5F5C55)
+        static let textSecondary = adaptive(standard: 0x5F5C55, increased: 0x45433D)
+        static let textTertiary  = adaptive(standard: 0x656158, increased: 0x4F4B44)
 
         // Rules and glass
         static let hairline       = adaptive(standard: 0x141414, increased: 0x141414, alpha: 0.08, increasedAlpha: 0.22)
@@ -96,9 +96,9 @@ enum WindowPaletteContrast {
     static let canvasDeep: UInt32 = 0xE4DFD3
     static let ink: UInt32 = 0x141414
     static let onInk: UInt32 = 0xF1EEE6
-    static let textSecondary: UInt32 = 0x6B685F
+    static let textSecondary: UInt32 = 0x5F5C55
     static let textSecondaryIncreased: UInt32 = 0x45433D
-    static let textTertiary: UInt32 = 0x858178
+    static let textTertiary: UInt32 = 0x656158
     static let attentionText: UInt32 = 0x8F570E
     static let destructive: UInt32 = 0xA0421E
     static let stateRunning: UInt32 = 0x185FA5

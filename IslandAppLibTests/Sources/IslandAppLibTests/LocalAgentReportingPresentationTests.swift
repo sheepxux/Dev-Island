@@ -28,15 +28,15 @@ final class LocalAgentReportingPresentationTests: XCTestCase {
             language: .english
         )
         XCTAssertEqual(notice?.source, "codex", "Codex first: its trust gate is the common cause")
-        XCTAssertEqual(notice?.title, "Codex is running but not reporting to the island.")
-        XCTAssertEqual(notice?.hint, "Check session monitoring and approval authorization in Settings › Agents.")
+        XCTAssertEqual(notice?.title, "No recent hook events from Codex")
+        XCTAssertEqual(notice?.hint, "Local activity was detected. Check task monitoring and approval authorization separately.")
 
         let chinese = LocalAgentReportingPresentation.notice(
             snapshot([("codex", "Codex", .notReporting)]),
             language: .simplifiedChinese
         )
-        XCTAssertEqual(chinese?.title, "Codex 正在运行，但没有向岛汇报。")
-        XCTAssertEqual(chinese?.hint, "在设置 › Agent 中检查会话监控和审批授权。")
+        XCTAssertEqual(chinese?.title, "尚未收到 Codex 的近期 Hook 事件")
+        XCTAssertEqual(chinese?.hint, "已检测到本地活动。请分别检查任务监控与审批授权。")
     }
 
     func testOtherAgentsPointAtSettings() {
@@ -44,13 +44,23 @@ final class LocalAgentReportingPresentationTests: XCTestCase {
             snapshot([("claude-code", "Claude Code", .notReporting)]),
             language: .english
         )
-        XCTAssertEqual(notice?.title, "Claude Code is running but not reporting to the island.")
-        XCTAssertEqual(notice?.hint, "Update its hook in Settings › Agents.")
+        XCTAssertEqual(notice?.title, "No recent hook events from Claude Code")
+        XCTAssertEqual(notice?.hint, "Local activity was detected. Check whether this connection can send events.")
         let chinese = LocalAgentReportingPresentation.notice(
             snapshot([("claude-code", "Claude Code", .notReporting)]),
             language: .simplifiedChinese
         )
-        XCTAssertEqual(chinese?.hint, "在设置 › Agent 中更新它的 Hook。")
+        XCTAssertEqual(chinese?.hint, "已检测到本地活动。请检查此连接能否送达事件。")
+    }
+
+    func testVisibleTaskSuppressesStaleNoticeWithoutHidingAnotherAgentsIssue() {
+        let health = snapshot([("codex", "Codex", .notReporting), ("claude-code", "Claude Code", .notReporting)])
+        XCTAssertEqual(LocalAgentReportingPresentation.notice(
+            health, visibleTaskSources: ["codex"], language: .english
+        )?.source, "claude-code")
+        XCTAssertNil(LocalAgentReportingPresentation.notice(
+            health, visibleTaskSources: ["codex", "claude-code"], language: .english
+        ))
     }
 
     func testNoticeCarriesNoPathsOrSessionIdentifiers() {

@@ -37,7 +37,7 @@ struct AgentStateTile: View {
         switch effectiveState {
         case .connected?: return Palette.Window.ink
         case .configured?, .updateRequired?: return Palette.Window.attention
-        case .disconnected?, nil: return Palette.Window.glassDeep
+        case .disconnected?, nil: return Palette.Window.canvasDeep
         }
     }
 

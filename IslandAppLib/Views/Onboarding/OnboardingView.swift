@@ -975,26 +975,13 @@ struct OnboardingView: View {
     }
 
     private var stageSurface: some View {
-        ZStack {
-            stageShape.fill(.thinMaterial)
-            stageShape.fill(Palette.Window.glass)
-        }
+        stageShape.fill(Palette.Window.surface)
     }
 
     private var stageRim: some View {
-        ZStack {
-            stageShape.strokeBorder(Palette.Window.hairline, lineWidth: 0.75)
-            stageShape
-                .strokeBorder(Palette.Window.glassHighlight, lineWidth: 1)
-                .mask(
-                    LinearGradient(
-                        colors: [Color.black, Color.black.opacity(0)],
-                        startPoint: .top,
-                        endPoint: .center
-                    )
-                )
-        }
-        .allowsHitTesting(false)
+        stageShape
+            .strokeBorder(Palette.Window.ring, lineWidth: 0.75)
+            .allowsHitTesting(false)
     }
 
     // MARK: - Navigation
@@ -1022,7 +1009,7 @@ struct OnboardingView: View {
             } label: {
                 Text(L10n.string("Back", language: language))
             }
-                .buttonStyle(TourSecondaryButtonStyle())
+                .buttonStyle(.window(.secondary, size: .large))
                 .opacity(step > 0 ? 1 : 0)
                 .allowsHitTesting(step > 0)
                 .accessibilityHidden(step == 0)
@@ -1036,7 +1023,7 @@ struct OnboardingView: View {
             } label: {
                 Text(L10n.string(actionTitle, language: language))
             }
-            .buttonStyle(TourPrimaryButtonStyle())
+            .buttonStyle(.window(.primary, size: .large))
             .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 20)

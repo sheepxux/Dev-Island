@@ -31,6 +31,11 @@ enum InterfaceContrastPolicy {
             self.alpha = alpha
         }
 
+        /// The 8-bit sRGB value an OKLCH token renders as.
+        init(_ color: OKLCH, alpha: Double = 1) {
+            self.init(hex: color.hex, alpha: alpha)
+        }
+
         var nsColor: NSColor {
             NSColor(
                 srgbRed: red,
@@ -63,22 +68,25 @@ enum InterfaceContrastPolicy {
         isIncreased(contrast) || systemPrefersIncreasedContrast
     }
 
+    /// Island roles read from the dark end of `Sand`, the same ramp the
+    /// windows read from the light end. Quiet text stays at WCAG AA on the
+    /// island ground or better; hierarchy comes from the lightness steps
+    /// between roles, and Increase Contrast moves every role one step
+    /// brighter (rules gain alpha instead).
     static func tone(for role: Role, increased: Bool) -> Tone {
         switch (role, increased) {
-        case (.secondaryText, false): return Tone(hex: 0xA19F9A)
-        case (.secondaryText, true):  return Tone(hex: 0xDEDCD6)
-        case (.tertiaryText, false):  return Tone(hex: 0x7F7D78)
-        case (.tertiaryText, true):   return Tone(hex: 0xB9B6B0)
-        case (.hairline, false):      return Tone(hex: 0xECEBE7, alpha: 0.085)
-        case (.hairline, true):       return Tone(hex: 0xECEBE7, alpha: 0.24)
-        case (.islandBorder, false):  return Tone(hex: 0xFFFFFF, alpha: 0.06)
-        case (.islandBorder, true):   return Tone(hex: 0xFFFFFF, alpha: 0.26)
+        case (.secondaryText, false): return Tone(Sand.s200)
+        case (.secondaryText, true):  return Tone(Sand.s100)
+        case (.tertiaryText, false):  return Tone(Sand.s300)
+        case (.tertiaryText, true):   return Tone(Sand.s200)
+        case (.hairline, false):      return Tone(Sand.s50, alpha: 0.10)
+        case (.hairline, true):       return Tone(Sand.s50, alpha: 0.24)
+        case (.islandBorder, false):  return Tone(Sand.s50, alpha: 0.08)
+        case (.islandBorder, true):   return Tone(Sand.s50, alpha: 0.26)
         // Idle stays quieter than every active state, but it must remain
         // legible as Dev Island's nine-point signature on a black menu bar.
-        // The previous tone disappeared at compact sizes after per-point
-        // field opacity was applied on Retina displays.
-        case (.idleState, false):     return Tone(hex: 0x8A867E)
-        case (.idleState, true):      return Tone(hex: 0xB6B1A8)
+        case (.idleState, false):     return Tone(Sand.s400)
+        case (.idleState, true):      return Tone(Sand.s300)
         }
     }
 
@@ -94,9 +102,15 @@ enum InterfaceContrastPolicy {
     }
 }
 
-/// Product color roles. Surfaces stay nearly achromatic; state colors are the
-/// only saturated ink in the product. This keeps the interface closer to a
-/// precise macOS instrument than a warm editorial/"AI" landing-page palette.
+/// Island color roles. The island is the app icon's black terminal tile, so
+/// it reads from the dark end of `Sand`; windows read from the light end
+/// (`Palette.Window`).
+///
+/// State colors encode urgency, not category. A session that needs you is
+/// the most vivid thing in the menu bar, a failure is next, a finished
+/// response is barely tinted, and running work carries no hue at all — the
+/// orbiting dots are the signal, so the amber of a waiting request never
+/// has to compete with a screen full of busy sessions.
 enum Palette {
     private static func adaptive(_ role: InterfaceContrastPolicy.Role) -> Color {
         Color(nsColor: NSColor(name: nil) { _ in
@@ -105,31 +119,31 @@ enum Palette {
     }
 
     // Surfaces
+    /// Matches the hardware notch exactly; the silhouette must be seamless.
     static let notchBlack   = Color(hex: 0x000000)
-    static let islandTop    = Color(hex: 0x101010)
+    static let islandTop    = Sand.s950.color
 
     // Type + rules
-    static let warmWhite     = Color(hex: 0xECEBE7)
+    static let warmWhite     = Sand.s50.color
     static let textSecondary = adaptive(.secondaryText)
-    // 4.59:1 against the raised surface (#111111). Keep required compact
-    // metadata at this base token; lower-opacity uses are decorative only.
     static let textTertiary  = adaptive(.tertiaryText)
     static let hairline      = adaptive(.hairline)
     static let islandBorder  = adaptive(.islandBorder)
 
-    // Welcome Tour
-    static let tourCanvas       = Color(hex: 0x090909)
-    static let tourCanvasRaised = Color(hex: 0x0D0D0D)
-    static let tourPanel        = Color(hex: 0x101010)
-    static let tourPanelRaised  = Color(hex: 0x151515)
-    static let tourAccent       = Color(hex: 0xC8C6C0)
+    // Welcome Tour stage: the island sample and terminal lines keep the
+    // island's own ground.
+    static let tourCanvas       = Sand.s1000.color
+    static let tourCanvasRaised = Sand.s950.color
+    static let tourPanel        = Sand.s950.color
+    static let tourPanelRaised  = Sand.s900.color
+    static let tourAccent       = Sand.s200.color
 
     // States
     static let stateIdle      = adaptive(.idleState)
-    static let stateRunning   = Color(hex: 0x45C2FF)
-    static let stateWaiting   = Color(hex: 0xFFB84F)
-    static let stateCompleted = Color(hex: 0x64D88C)
-    static let stateFailed    = Color(hex: 0xFF6A61)
+    static let stateRunning   = Sand.s50.color
+    static let stateWaiting   = Signal.attentionOnDark.color
+    static let stateCompleted = Signal.successOnDark.color
+    static let stateFailed    = Signal.failureOnDark.color
 }
 
 extension TaskStatus {

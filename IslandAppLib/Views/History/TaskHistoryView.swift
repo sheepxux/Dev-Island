@@ -93,11 +93,11 @@ struct TaskHistoryView: View {
             .padding(.horizontal, 11)
             .frame(maxWidth: .infinity, minHeight: 30)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Palette.Window.glass)
+                Capsule(style: .continuous)
+                    .fill(Palette.Window.field)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(Palette.Window.hairline, lineWidth: 0.75)
+                        Capsule(style: .continuous)
+                            .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
                     }
             )
 
@@ -159,14 +159,7 @@ struct TaskHistoryView: View {
                             }
                         }
                     }
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Palette.Window.glass)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(Palette.Window.hairline, lineWidth: 0.75)
-                            }
-                    )
+                    .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
                     .padding(22)
                 }
             }
@@ -190,7 +183,7 @@ struct TaskHistoryView: View {
                     Image(systemName: "arrow.clockwise")
                 }
             }
-            .buttonStyle(SettingsControlButtonStyle())
+            .buttonStyle(.window(.secondary))
             .disabled(store.storedTaskHistoryStatus == .loading)
             .accessibilityHint(
                 L10n.string(
@@ -274,7 +267,7 @@ struct TaskHistoryView: View {
                 .frame(maxWidth: 360)
             if let retry {
                 Button(L10n.string("Retry", language: language), action: retry)
-                    .buttonStyle(SettingsControlButtonStyle())
+                    .buttonStyle(.window(.secondary))
                     .padding(.top, 3)
             }
         }
@@ -339,7 +332,7 @@ private struct TaskHistoryRow: View {
             Spacer(minLength: 12)
 
             Button(L10n.string("Open", language: language), action: onOpen)
-                .buttonStyle(SettingsControlButtonStyle())
+                .buttonStyle(.window(.secondary))
                 .accessibilityLabel(openAccessibilityLabel)
                 .accessibilityHint(
                     L10n.string(

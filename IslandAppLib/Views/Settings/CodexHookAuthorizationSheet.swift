@@ -81,14 +81,14 @@ struct CodexHookAuthorizationSheet: View {
                             language: language
                         ))
                     }
-                    .buttonStyle(SettingsControlButtonStyle())
+                    .buttonStyle(.window(.secondary))
                 }
             }
 
             HStack {
                 Spacer()
                 Button(L10n.string("Cancel", language: language)) { dismiss() }
-                    .buttonStyle(SettingsControlButtonStyle())
+                    .buttonStyle(.window(.secondary))
                     .keyboardShortcut(.cancelAction)
                     .disabled(isWorking && review != nil)
                 Button(L10n.string(
@@ -97,7 +97,7 @@ struct CodexHookAuthorizationSheet: View {
                 )) {
                     authorizeReviewedHooks()
                 }
-                .buttonStyle(SettingsPrimaryButtonStyle())
+                .buttonStyle(.window(.primary))
                 .disabled(isWorking || review == nil || errorMessage != nil)
             }
         }

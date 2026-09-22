@@ -111,9 +111,11 @@ private struct IslandQuietActionButtonBody: View {
                     }
             }
             .scaleEffect(
-                reduceMotion
-                    ? 1
-                    : (configuration.isPressed ? 0.985 : (isHovering ? 1.008 : 1))
+                InteractionFeedbackPolicy.pressScale(
+                    isPressed: configuration.isPressed,
+                    pressedScale: 0.96,
+                    reduceMotion: reduceMotion
+                )
             )
             .opacity(isEnabled ? 1 : 0.42)
             .contentShape(Rectangle())
@@ -143,123 +145,5 @@ enum InteractionFeedbackPolicy {
             return 1
         }
         return pressedScale
-    }
-}
-
-/// Primary action used by the Welcome Tour. The warm paper fill is deliberately
-/// neutral: brand color belongs to small identifying details, not every CTA.
-struct TourPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        TourPrimaryButtonBody(
-            configuration: configuration,
-            isEnabled: isEnabled,
-            reduceMotion: reduceMotion
-        )
-    }
-}
-
-private struct TourPrimaryButtonBody: View {
-    let configuration: ButtonStyle.Configuration
-    let isEnabled: Bool
-    let reduceMotion: Bool
-
-    @State private var isHovering = false
-
-    var body: some View {
-        configuration.label
-            .font(Typo.controlLabel)
-            .foregroundStyle(Palette.Window.onInk.opacity(isEnabled ? 1 : 0.55))
-            .frame(width: 142, height: 36)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(background)
-            )
-            .scaleEffect(reduceMotion ? 1 : scale)
-            .opacity(isEnabled ? 1 : 0.42)
-            .animation(Motion.press, value: configuration.isPressed)
-            .animation(
-                Motion.respectingReducedMotion(
-                    reduceMotion,
-                    preferred: Motion.hover
-                ),
-                value: isHovering
-            )
-            .contentShape(Rectangle())
-            .onHover { isHovering = isEnabled && $0 }
-            .pointingHandCursor(enabled: isEnabled)
-    }
-
-    private var background: Color {
-        if configuration.isPressed { return Palette.Window.inkSoft }
-        return isHovering ? Palette.Window.inkSoft : Palette.Window.ink
-    }
-
-    private var scale: CGFloat {
-        if configuration.isPressed { return 0.995 }
-        return isHovering && isEnabled ? 1.005 : 1
-    }
-}
-
-struct TourSecondaryButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        TourSecondaryButtonBody(
-            configuration: configuration,
-            reduceMotion: reduceMotion
-        )
-    }
-}
-
-private struct TourSecondaryButtonBody: View {
-    let configuration: ButtonStyle.Configuration
-    let reduceMotion: Bool
-
-    @State private var isHovering = false
-
-    var body: some View {
-        configuration.label
-            .font(Typo.controlLabel)
-            .foregroundStyle(
-                Palette.Window.ink.opacity(
-                    configuration.isPressed ? 0.6 : 1
-                )
-            )
-            .padding(.horizontal, 14)
-            .frame(height: 36)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(
-                        Palette.Window.field.opacity(
-                            configuration.isPressed ? 1 : (isHovering ? 0.95 : 0.8)
-                        )
-                    )
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .strokeBorder(
-                                Palette.Window.hairlineStrong.opacity(isHovering ? 1 : 0.8),
-                                lineWidth: 0.75
-                            )
-                    )
-            )
-            .scaleEffect(
-                reduceMotion
-                    ? 1
-                    : (configuration.isPressed ? 0.995 : (isHovering ? 1.003 : 1))
-            )
-            .animation(Motion.press, value: configuration.isPressed)
-            .animation(
-                Motion.respectingReducedMotion(
-                    reduceMotion,
-                    preferred: Motion.hover
-                ),
-                value: isHovering
-            )
-            .contentShape(Rectangle())
-            .onHover { isHovering = $0 }
-            .pointingHandCursor()
     }
 }

@@ -59,14 +59,14 @@ struct TaskCard: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(task.title)
-                        .font(Typo.cardTitle)
+                        .font(Typo.islandTitle)
                         .foregroundStyle(Palette.warmWhite.opacity(0.88))
                         .lineLimit(1)
                         .truncationMode(.tail)
 
                     HStack(spacing: 6) {
                         Text(agentDisplayName)
-                            .font(Typo.cardMeta)
+                            .font(Typo.islandMeta)
                             .fixedSize()
                         Text("·")
                             .font(.system(size: 11))
@@ -76,7 +76,7 @@ struct TaskCard: View {
                                 Image(systemName: "arrow.triangle.branch")
                                     .font(.system(size: 9, weight: .medium))
                                 Text(branch)
-                                    .font(Typo.cardMeta)
+                                    .font(Typo.islandMeta)
                                     .lineLimit(1)
                             }
                             .layoutPriority(1)
@@ -94,7 +94,7 @@ struct TaskCard: View {
                                 .opacity(0.5)
                         }
                         Text(durationString(at: referenceDate))
-                            .font(Typo.cardMeta)
+                            .font(Typo.islandMeta)
                             .monospacedDigit()
                             .fixedSize()
                     }

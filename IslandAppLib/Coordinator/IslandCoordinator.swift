@@ -64,9 +64,14 @@ public final class IslandCoordinator {
     /// views that ride along on this morph reach for the same one, and
     /// this used to be a second, slightly different curve of its own.
     public static var modeAnimation: Animation {
+        modeAnimation(expanding: true)
+    }
+
+    /// Collapse runs on the shorter exit curve; see `Motion.islandCollapse`.
+    public static func modeAnimation(expanding: Bool) -> Animation {
         Motion.respectingReducedMotion(
             Motion.systemPrefersReducedMotion,
-            preferred: Motion.islandMorph
+            preferred: Motion.islandMorph(expanding: expanding)
         )
     }
 
@@ -177,7 +182,7 @@ public final class IslandCoordinator {
                 mode = newMode
             }
         } else {
-            withAnimation(Motion.islandMorph) {
+            withAnimation(Motion.islandMorph(expanding: newMode == .expanded)) {
                 mode = newMode
             }
         }

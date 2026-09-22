@@ -2,79 +2,87 @@ import AppKit
 import SwiftUI
 
 extension Palette {
-    /// Settings and other conventional windows.
+    /// Settings, Welcome, History and every other conventional window.
     ///
     /// The product has two layers that mirror the app icon: the island is the
-    /// black inner tile and stays on `Palette`'s near-black tokens; windows are
-    /// the warm off-white outer tile. Everything here is ink on that tile. The
-    /// only chroma is the attention amber shared with the island's waiting
-    /// state; destructive actions get a text color, never a filled button.
+    /// black terminal tile and reads from the dark end of `Sand`; windows are
+    /// the warm off-white base and read from the light end. A window is one
+    /// flat sheet of that base. Raised paper appears only where content is
+    /// grouped, and amber appears only where something asks for the user.
     enum Window {
         // Ground
-        static let canvas        = Color(hex: 0xEFEBE2)
-        static let canvasDeep    = Color(hex: 0xE4DFD3)
-        static let canvasLight   = Color(hex: 0xF7F4EE)
+        /// The window itself.
+        static let canvas = Sand.s50.color
+        /// Sidebars and sunken wells, one step deeper than the canvas.
+        static let canvasDeep = Sand.s100.color
+        /// Raised paper for grouped content.
+        static let surface = Sand.s0.color
+        /// Text fields and other editable wells.
+        static let field = Sand.s0.color
 
         // Ink
-        static let ink           = Color(hex: 0x141414)
-        static let inkSoft       = Color(hex: 0x2A2925)
-        static let onInk         = Color(hex: 0xF1EEE6)
-        static let textSecondary = adaptive(standard: 0x5F5C55, increased: 0x45433D)
-        static let textTertiary  = adaptive(standard: 0x656158, increased: 0x4F4B44)
+        static let ink = Sand.s900.color
+        /// The primary capsule under the pointer.
+        static let inkHover = Sand.s850.color
+        /// The primary capsule while pressed.
+        static let inkSoft = Sand.s800.color
+        static let onInk = Sand.s50.color
+        static let textSecondary = adaptive(standard: Sand.s700, increased: Sand.s800)
+        static let textTertiary = adaptive(standard: Sand.s600, increased: Sand.s700)
+        /// Placeholders and disabled labels only — never information.
+        static let textPlaceholder = Sand.s500.color
 
-        // Rules and glass
-        static let hairline       = adaptive(standard: 0x141414, increased: 0x141414, alpha: 0.08, increasedAlpha: 0.22)
-        static let hairlineStrong = adaptive(standard: 0x141414, increased: 0x141414, alpha: 0.16, increasedAlpha: 0.34)
-        static let glass          = Color.white.opacity(0.58)
-        static let glassDeep      = Color.white.opacity(0.40)
-        static let glassHighlight = Color.white.opacity(0.75)
-        static let field          = Color.white.opacity(0.70)
-        static let hover          = Color(hex: 0x141414).opacity(0.04)
-        static let pressed        = Color(hex: 0x141414).opacity(0.08)
-        static let selected       = Color(hex: 0x141414).opacity(0.06)
+        // Rules and interaction washes. Alpha on a light ground so one token
+        // recedes over canvas, paper and the attention wash alike.
+        static let hairline = adaptive(standard: Sand.s900.opacity(0.09), increased: Sand.s900.opacity(0.22))
+        static let hairlineStrong = adaptive(standard: Sand.s900.opacity(0.15), increased: Sand.s900.opacity(0.32))
+        /// Row separators, drawn one physical pixel tall by `WindowDivider`,
+        /// so the alpha sits a step above the 0.75pt `hairline`.
+        static let divider = adaptive(standard: Sand.s900.opacity(0.13), increased: Sand.s900.opacity(0.30))
+        /// The first layer of raised paper's shadow stack: the edge.
+        static let ring = adaptive(standard: Sand.s900.opacity(0.07), increased: Sand.s900.opacity(0.24))
+        static let hover = Sand.s900.opacity(0.045).color
+        static let pressed = Sand.s900.opacity(0.08).color
+        static let selected = Sand.s900.opacity(0.06).color
 
-        // Semantic ink on the beige ground (deeper than the island's neon
-        // states, which were tuned for black).
-        static let attention      = Color(hex: 0xE29A2E)
-        static let attentionText  = Color(hex: 0x8F570E)
-        static let attentionTint  = Color(hex: 0xE29A2E).opacity(0.14)
-        static let attentionHair  = Color(hex: 0xE29A2E).opacity(0.45)
-        static let destructive    = Color(hex: 0xA0421E)
-        static let stateRunning   = Color(hex: 0x185FA5)
-        static let stateCompleted = Color(hex: 0x3B6D11)
-        static let stateWaiting   = Color(hex: 0x8F570E)
-        static let stateFailed    = Color(hex: 0xA32D2D)
+        // Signals on the light ground
+        static let attention = Signal.attentionFill.color
+        static let attentionText = Signal.attentionOnLight.color
+        static let attentionWash = Signal.attentionWash.color
+        static let attentionHair = Signal.attentionOnLight.opacity(0.32).color
+        static let destructive = Signal.failureOnLight.color
+        /// Running work is neutral; its motion carries the meaning.
+        static let stateRunning = Sand.s700.color
+        static let stateCompleted = Signal.successOnLight.color
+        static let stateWaiting = Signal.attentionOnLight.color
+        static let stateFailed = Signal.failureOnLight.color
 
-        /// Corner radii nest concentrically: window 22, pane 18, group 14,
-        /// tile 8, control capsule.
+        /// Radii are chosen per layer and derived where layers nest
+        /// (inner = outer − padding): pane 18 around a 10pt inset, groups 14,
+        /// inset wells 10, tiles 8, controls are capsules.
         enum Radius {
             static let pane: CGFloat = 18
             static let group: CGFloat = 14
-            static let inset: CGFloat = 11
+            static let inset: CGFloat = 10
             static let tile: CGFloat = 8
         }
 
-        /// Increased Contrast darkens quiet ink instead of brightening it,
-        /// because the ground is light. Same system switch as the island.
-        private static func adaptive(
-            standard: UInt32,
-            increased: UInt32,
-            alpha: Double = 1,
-            increasedAlpha: Double? = nil
-        ) -> Color {
+        /// Increased Contrast darkens quiet ink on a light ground instead of
+        /// brightening it. Same system switch as the island.
+        private static func adaptive(standard: OKLCH, increased: OKLCH) -> Color {
             Color(nsColor: NSColor(name: nil) { _ in
-                let strong = InterfaceContrastPolicy.systemPrefersIncreasedContrast
-                return InterfaceContrastPolicy.Tone(
-                    hex: strong ? increased : standard,
-                    alpha: strong ? (increasedAlpha ?? alpha) : alpha
-                ).nsColor
+                InterfaceContrastPolicy.systemPrefersIncreasedContrast
+                    ? increased.nsColor
+                    : standard.nsColor
             })
         }
     }
 }
 
 /// Relative luminance and contrast helpers for the window palette, exposed so
-/// tests can pin the ink/ground ratios the design relies on.
+/// tests can pin the ink/ground ratios the design relies on. The values are
+/// read from the same OKLCH declarations the palette renders, so the test and
+/// the palette cannot drift apart.
 enum WindowPaletteContrast {
     static func relativeLuminance(hex: UInt32) -> Double {
         func channel(_ value: UInt32) -> Double {
@@ -90,25 +98,24 @@ enum WindowPaletteContrast {
         return (lighter + 0.05) / (darker + 0.05)
     }
 
-    /// The hex values behind the tokens above, kept next to them so the test
-    /// and the palette cannot drift apart silently.
-    static let canvas: UInt32 = 0xEFEBE2
-    static let canvasDeep: UInt32 = 0xE4DFD3
-    static let ink: UInt32 = 0x141414
-    static let onInk: UInt32 = 0xF1EEE6
-    static let textSecondary: UInt32 = 0x5F5C55
-    static let textSecondaryIncreased: UInt32 = 0x45433D
-    static let textTertiary: UInt32 = 0x656158
-    static let attentionText: UInt32 = 0x8F570E
-    static let destructive: UInt32 = 0xA0421E
-    static let stateRunning: UInt32 = 0x185FA5
-    static let stateCompleted: UInt32 = 0x3B6D11
-    static let stateFailed: UInt32 = 0xA32D2D
+    static let canvas = Sand.s50.hex
+    static let canvasDeep = Sand.s100.hex
+    static let surface = Sand.s0.hex
+    static let ink = Sand.s900.hex
+    static let onInk = Sand.s50.hex
+    static let textSecondary = Sand.s700.hex
+    static let textSecondaryIncreased = Sand.s800.hex
+    static let textTertiary = Sand.s600.hex
+    static let attentionText = Signal.attentionOnLight.hex
+    static let attentionWash = Signal.attentionWash.hex
+    static let destructive = Signal.failureOnLight.hex
+    static let stateRunning = Sand.s700.hex
+    static let stateCompleted = Signal.successOnLight.hex
+    static let stateFailed = Signal.failureOnLight.hex
 }
 
 extension BarState {
-    /// The same five states as `color`, deepened for the beige window ground
-    /// where the island's neon values would wash out.
+    /// The same five states as `color`, drawn for the light window ground.
     var windowColor: Color {
         switch self {
         case .idle:      return Palette.Window.textTertiary

@@ -581,7 +581,7 @@ struct LegalDocumentSheet: View {
             Button(L10n.string("Done", language: language)) {
                 dismiss()
             }
-            .buttonStyle(SettingsControlButtonStyle())
+            .buttonStyle(.window(.secondary))
             .keyboardShortcut(.cancelAction)
             .accessibilityHint(
                 L10n.string("Closes the legal document", language: language)

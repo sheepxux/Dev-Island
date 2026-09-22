@@ -139,7 +139,7 @@ struct IslandRootView: View {
             }
 
             if newMode == .collapsed, isHovering {
-                withAnimation(IslandCoordinator.modeAnimation) {
+                withAnimation(IslandCoordinator.modeAnimation(expanding: false)) {
                     isHovering = false
                 }
             }
@@ -503,7 +503,7 @@ struct IslandRootView: View {
             return
         }
 
-        let duration = Motion.islandMorphDuration
+        let duration = Motion.islandMorphDuration(expanding: newMode == .expanded)
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
             guard visualPhaseID == phaseID, mode == newMode else { return }
             visualPhase = newMode == .expanded ? .expanded : .collapsed

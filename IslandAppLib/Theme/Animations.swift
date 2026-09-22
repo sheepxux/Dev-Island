@@ -20,6 +20,19 @@ enum Motion {
     /// the first few frames where sub-pixel reflow would show as a seam.
     static let islandMorphDuration: TimeInterval = 0.30
     static let islandMorph = Animation.smooth(duration: islandMorphDuration, extraBounce: 0)
+    /// Collapse is the exit half of the morph. The user has already moved
+    /// on, so it runs about a quarter faster than the expand it reverses.
+    static let islandCollapseDuration: TimeInterval = 0.22
+    static let islandCollapse = Animation.smooth(duration: islandCollapseDuration, extraBounce: 0)
+
+    /// The morph for a transition toward `expanded`.
+    static func islandMorph(expanding: Bool) -> Animation {
+        expanding ? islandMorph : islandCollapse
+    }
+
+    static func islandMorphDuration(expanding: Bool) -> TimeInterval {
+        expanding ? islandMorphDuration : islandCollapseDuration
+    }
     /// Small hover and press geometry changes can carry a hint of energy.
     static let hover = Animation.smooth(duration: 0.16, extraBounce: 0)
     /// Content enters after its containing surface has begun to settle.
@@ -35,8 +48,9 @@ enum Motion {
     /// the fixed instrument should feel as though its content is refocusing,
     /// not as though an entire web carousel is sliding through the window.
     static let tourStep = Animation.smooth(duration: 0.24, extraBounce: 0)
-    /// Tiny controls should acknowledge immediately.
-    static let press = Animation.easeOut(duration: 0.08)
+    /// Press acknowledgement. Short enough to feel immediate, long enough
+    /// that the 0.96 press scale reads as a press rather than a jump.
+    static let press = Animation.easeOut(duration: 0.12)
     /// Color cross-fade between states.
     static let colorTransitionDuration: TimeInterval = 0.18
     static let colorTransition = Animation.easeInOut(duration: colorTransitionDuration)

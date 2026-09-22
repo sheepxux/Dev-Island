@@ -226,7 +226,7 @@ public struct SettingsView: View {
             .padding(10)
         }
         .frame(width: 214)
-        .settingsGlass(radius: Palette.Window.Radius.pane, tone: .pane)
+        .windowSurface(radius: Palette.Window.Radius.pane, tone: .sidebar)
     }
 
     private var paneHeader: some View {
@@ -508,14 +508,7 @@ private struct UsageInsightsSection: View {
                         .padding(16)
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Palette.Window.glass)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Palette.Window.hairline, lineWidth: 0.75)
-                    }
-            )
+            .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
         }
         .onAppear {
             if isEnabled, usage.status == .idle { usage.refresh() }
@@ -566,7 +559,7 @@ private struct UsageInsightsSection: View {
                         Button(L10n.string("Refresh", language: language)) {
                             usage.refresh()
                         }
-                            .buttonStyle(SettingsControlButtonStyle())
+                            .buttonStyle(.window(.secondary))
                     }
 
                     ForEach(snapshot.windows) { window in
@@ -641,7 +634,7 @@ private struct UsageInsightsSection: View {
             }
             Spacer(minLength: 8)
             Button(L10n.string("Refresh", language: language)) { usage.refresh() }
-                .buttonStyle(SettingsControlButtonStyle())
+                .buttonStyle(.window(.secondary))
         }
     }
 
@@ -753,7 +746,7 @@ private struct UpdatesSection: View {
                     Button(L10n.string("Check Now", language: language)) {
                         updates.checkForUpdates()
                     }
-                    .buttonStyle(SettingsControlButtonStyle())
+                    .buttonStyle(.window(.secondary))
                     .disabled(!updates.canCheckForUpdates)
                     .accessibilityHint(
                         L10n.string(
@@ -764,14 +757,7 @@ private struct UpdatesSection: View {
                 }
                 .padding(16)
             }
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Palette.Window.glass)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Palette.Window.hairline, lineWidth: 0.75)
-                    }
-            )
+            .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
         }
     }
 
@@ -837,7 +823,7 @@ private struct SupportSection: View {
                             Button(kind.buttonTitle(language: language)) {
                                 selectedLegalDocument = kind
                             }
-                            .buttonStyle(SettingsControlButtonStyle())
+                            .buttonStyle(.window(.secondary))
                             .accessibilityHint(
                                 L10n.string(
                                     kind == .privacy
@@ -880,7 +866,7 @@ private struct SupportSection: View {
                                 language: language
                             ))
                         }
-                        .buttonStyle(SettingsControlButtonStyle())
+                        .buttonStyle(.window(.secondary))
                         .disabled(diagnosticsOperation.isBusy)
                         .accessibilityHint(
                             L10n.string(
@@ -892,7 +878,7 @@ private struct SupportSection: View {
                         Button(L10n.string("Save…", language: language)) {
                             saveDiagnostics()
                         }
-                        .buttonStyle(SettingsControlButtonStyle())
+                        .buttonStyle(.window(.secondary))
                         .disabled(diagnosticsOperation.isBusy)
                         .accessibilityHint(
                             L10n.string(
@@ -928,7 +914,7 @@ private struct SupportSection: View {
                         Button(L10n.string("View History", language: language)) {
                             showHistory = true
                         }
-                        .buttonStyle(SettingsControlButtonStyle())
+                        .buttonStyle(.window(.secondary))
                         .accessibilityHint(
                             L10n.string(
                                 "Opens private session history stored on this Mac",
@@ -953,7 +939,7 @@ private struct SupportSection: View {
                             ) {
                                 showClearHistoryConfirmation = true
                             }
-                            .buttonStyle(SettingsControlButtonStyle(isDestructive: true))
+                            .buttonStyle(.window(.secondary))
                             .accessibilityHint(
                                 L10n.string(
                                     "Asks before deleting persisted task and progress records",
@@ -965,14 +951,7 @@ private struct SupportSection: View {
                 }
                 .padding(16)
             }
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Palette.Window.glass)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Palette.Window.hairline, lineWidth: 0.75)
-                    }
-            )
+            .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
         }
         .alert(
             L10n.string("Clear stored history?", language: language),
@@ -1232,11 +1211,11 @@ private struct NotificationsSection: View {
                     Button(L10n.string("Open System Settings", language: language)) {
                         openNotificationSettings()
                     }
-                    .buttonStyle(SettingsControlButtonStyle())
+                    .buttonStyle(.window(.secondary))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
-                .settingsGlass(radius: Palette.Window.Radius.group, tone: .attention)
+                .windowSurface(radius: Palette.Window.Radius.group, tone: .attention)
             }
 
             VStack(spacing: 0) {
@@ -1273,7 +1252,7 @@ private struct NotificationsSection: View {
                     Button(L10n.string("Preview", language: language)) {
                         TaskNotifier.shared.previewSignalSound()
                     }
-                    .buttonStyle(SettingsControlButtonStyle())
+                    .buttonStyle(.window(.secondary))
                     .disabled(!signalSounds)
 
                     Toggle(
@@ -1294,14 +1273,7 @@ private struct NotificationsSection: View {
 
 
             }
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Palette.Window.glass)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Palette.Window.hairline, lineWidth: 0.75)
-                    }
-            )
+            .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
         }
         .onChange(of: attentionRequired) { _, enabled in
             if enabled { TaskNotifier.shared.refreshAuthorizationIfNeeded() }
@@ -1442,26 +1414,26 @@ private struct ConnectedServicesSection: View {
                         .foregroundStyle(Palette.Window.textSecondary)
                     }
                     .padding(14)
-                    .settingsGlass(radius: Palette.Window.Radius.group, tone: .neutral)
+                    .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
                 } else {
                     VStack(alignment: .leading, spacing: 7) {
                         groupLabel(
                             entry.group?.title(language: language) ?? L10n.string("Local Agents", language: language),
-                            tone: entry.group == .needsAttention ? .attention : .neutral
+                            tone: entry.group == .needsAttention ? .attention : .raised
                         )
                         agentRows(entry.descriptors)
-                            .settingsGlass(
+                            .windowSurface(
                                 radius: Palette.Window.Radius.group,
-                                tone: entry.group == .needsAttention ? .attention : .neutral
+                                tone: entry.group == .needsAttention ? .attention : .raised
                             )
                     }
                 }
             }
 
             VStack(alignment: .leading, spacing: 7) {
-                groupLabel(L10n.string("Cloud", language: language), tone: .neutral)
+                groupLabel(L10n.string("Cloud", language: language), tone: .raised)
                 ManusServiceRow(store: store)
-                    .settingsGlass(radius: Palette.Window.Radius.group, tone: .neutral)
+                    .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
             }
 
             footer
@@ -1548,7 +1520,7 @@ private struct ConnectedServicesSection: View {
         .accessibilityAddTraits(.updatesFrequently)
     }
 
-    private func groupLabel(_ text: String, tone: SettingsGlassTone) -> some View {
+    private func groupLabel(_ text: String, tone: WindowSurfaceTone) -> some View {
         Text(text)
             .font(.system(size: 11.5, weight: .medium))
             .foregroundStyle(
@@ -1614,7 +1586,7 @@ private struct ConnectedServicesSection: View {
                         language: language
                     ))
                 }
-                .buttonStyle(SettingsTextButtonStyle(isDestructive: hasManagedLocalHooks))
+                .buttonStyle(.window(.quiet))
                 .disabled(!hasManagedLocalHooks || isRefreshingManagedHookState)
                 .accessibilityHint(
                     L10n.string(
@@ -1814,7 +1786,7 @@ private struct LocalLiveReadinessCard: View {
                     Text(L10n.string(buttonTitle, language: language))
                 }
             }
-            .buttonStyle(SettingsControlButtonStyle())
+            .buttonStyle(.window(.secondary))
             .disabled(isChecking || isMutationInProgress)
             .accessibilityHint(
                 L10n.string(
@@ -1825,7 +1797,7 @@ private struct LocalLiveReadinessCard: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .settingsGlass(radius: Palette.Window.Radius.group, tone: glassTone)
+        .windowSurface(radius: Palette.Window.Radius.group, tone: surfaceTone)
         .accessibilityElement(children: .contain)
     }
 
@@ -1862,10 +1834,10 @@ private struct LocalLiveReadinessCard: View {
         }
     }
 
-    private var glassTone: SettingsGlassTone {
+    private var surfaceTone: WindowSurfaceTone {
         switch content.tone {
         case .attention: return .attention
-        case .neutral, .checking, .retry, .ready: return .neutral
+        case .neutral, .checking, .retry, .ready: return .raised
         }
     }
 }
@@ -1903,12 +1875,12 @@ private struct LocalAgentReportingNoticeView: View {
             }
 
             Button(L10n.string(isChecking ? "Checking…" : "Check connection", language: language), action: onCheck)
-                .buttonStyle(SettingsControlButtonStyle())
+                .buttonStyle(.window(.secondary))
                 .disabled(isChecking)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .settingsGlass(radius: Palette.Window.Radius.group, tone: .attention)
+        .windowSurface(radius: Palette.Window.Radius.group, tone: .attention)
         .accessibilityElement(children: .contain)
     }
 }
@@ -1948,14 +1920,14 @@ private struct LocalHookServiceNotice: View {
             Button(L10n.string("Retry Now", language: language)) {
                 store.retryLocalHookService()
             }
-            .buttonStyle(SettingsControlButtonStyle())
+            .buttonStyle(.window(.secondary))
             .accessibilityHint(
                 L10n.string("Restarts the local Agent listener", language: language)
             )
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .settingsGlass(radius: Palette.Window.Radius.group, tone: .attention)
+        .windowSurface(radius: Palette.Window.Radius.group, tone: .attention)
         .accessibilityElement(children: .contain)
     }
 
@@ -2076,14 +2048,14 @@ private struct ManusServiceRow: View {
             } label: {
                 Text(L10n.string("Disconnect", language: language))
             }
-            .buttonStyle(SettingsTextButtonStyle(isDestructive: true))
+            .buttonStyle(.window(.quiet))
         } else {
             Button {
                 Task { await connect() }
             } label: {
                 Text(L10n.string("Connect", language: language))
             }
-            .buttonStyle(SettingsControlButtonStyle())
+            .buttonStyle(.window(.secondary))
             .disabled(apiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
             .keyboardShortcut(.defaultAction)
         }
@@ -2319,7 +2291,7 @@ private struct AgentConnectionRow: View {
                 } label: {
                     Text(CodexTrustGuidance.actionTitle(language: language))
                 }
-                .buttonStyle(SettingsPrimaryButtonStyle())
+                .buttonStyle(.window(.primary))
                 .disabled(connectionsOperation.isMutating)
                 .accessibilityHint(L10n.string(
                     "Review the exact commands before authorizing Dev Island hooks",
@@ -2332,7 +2304,7 @@ private struct AgentConnectionRow: View {
                 } label: {
                     Text(L10n.string("Update connection", language: language))
                 }
-                .buttonStyle(SettingsPrimaryButtonStyle())
+                .buttonStyle(.window(.primary))
                 .disabled(connectionsOperation.isMutating)
 
             case .connect:
@@ -2341,7 +2313,7 @@ private struct AgentConnectionRow: View {
                 } label: {
                     Text(L10n.string("Connect", language: language))
                 }
-                .buttonStyle(SettingsControlButtonStyle())
+                .buttonStyle(.window(.secondary))
                 .disabled(connectionsOperation.isMutating || connectionState == nil)
             }
         }
@@ -2391,7 +2363,7 @@ private struct AgentConnectionRow: View {
                         } label: {
                             Text(L10n.string("View commands", language: language))
                         }
-                        .buttonStyle(SettingsTextButtonStyle())
+                        .buttonStyle(.window(.quiet))
                         .accessibilityHint(L10n.string(
                             "Review the exact commands before authorizing Dev Island hooks",
                             language: language
@@ -2407,14 +2379,14 @@ private struct AgentConnectionRow: View {
                         .padding(.bottom, 12)
                 }
             }
-            .settingsGlass(radius: Palette.Window.Radius.inset, tone: .inset)
+            .windowSurface(radius: Palette.Window.Radius.inset, tone: .inset)
 
             Button(role: .destructive) {
                 apply(.disable)
             } label: {
                 Text(L10n.string("Disconnect", language: language))
             }
-            .buttonStyle(SettingsTextButtonStyle(isDestructive: true))
+            .buttonStyle(.window(.quiet))
             .disabled(connectionsOperation.isMutating)
             .padding(.leading, 2)
         }
@@ -2660,14 +2632,7 @@ private struct GeneralSection: View {
                     escShortcutRow
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Palette.Window.glass)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Palette.Window.hairline, lineWidth: 0.75)
-                    }
-            )
+            .windowSurface(radius: Palette.Window.Radius.group, tone: .raised)
         }
         // The user grants the permission in System Settings, so re-read it
         // whenever they come back to us rather than caching it for the
@@ -2698,7 +2663,7 @@ private struct GeneralSection: View {
             } label: {
                 Text(L10n.string("Open System Settings", language: language))
             }
-            .buttonStyle(SettingsControlButtonStyle())
+            .buttonStyle(.window(.secondary))
         }
         .padding(16)
     }
@@ -2735,175 +2700,7 @@ private func sectionTitle(_ text: LocalizedStringKey) -> some View {
 }
 
 private var settingsDivider: some View {
-    Rectangle()
-        .fill(Palette.Window.hairline)
-        .frame(height: 1)
-}
-
-// MARK: - Window materials and controls
-
-enum SettingsGlassTone {
-    /// The floating sidebar.
-    case pane
-    /// Grouped lists and cards.
-    case neutral
-    /// A panel nested inside a row.
-    case inset
-    /// The one group that asks for something.
-    case attention
-}
-
-/// Frosted glass over the beige canvas: material, a translucent fill, a
-/// hairline and a top highlight, with radii that nest concentrically.
-private struct SettingsGlass: ViewModifier {
-    let radius: CGFloat
-    let tone: SettingsGlassTone
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        return content
-            .background {
-                ZStack {
-                    if tone == .pane || tone == .neutral {
-                        shape.fill(.thinMaterial)
-                    }
-                    shape.fill(fill)
-                }
-            }
-            .clipShape(shape)
-            .overlay {
-                shape.strokeBorder(stroke, lineWidth: 0.75)
-            }
-            .overlay(alignment: .top) {
-                shape
-                    .strokeBorder(Palette.Window.glassHighlight, lineWidth: 1)
-                    .mask(
-                        LinearGradient(
-                            colors: [Color.black, Color.black.opacity(0)],
-                            startPoint: .top,
-                            endPoint: .center
-                        )
-                    )
-                    .allowsHitTesting(false)
-            }
-            .shadow(color: shadow, radius: tone == .pane ? 18 : 3, y: tone == .pane ? 8 : 1)
-    }
-
-    private var fill: Color {
-        switch tone {
-        case .pane, .neutral: return Palette.Window.glass
-        case .inset:          return Palette.Window.glassDeep
-        case .attention:      return Palette.Window.attentionTint
-        }
-    }
-
-    private var stroke: Color {
-        tone == .attention ? Palette.Window.attentionHair : Palette.Window.hairline
-    }
-
-    private var shadow: Color {
-        switch tone {
-        case .pane:    return Color(hex: 0x463A22).opacity(0.10)
-        case .neutral: return Color(hex: 0x463A22).opacity(0.05)
-        case .inset, .attention: return .clear
-        }
-    }
-}
-
-extension View {
-    func settingsGlass(radius: CGFloat, tone: SettingsGlassTone) -> some View {
-        modifier(SettingsGlass(radius: radius, tone: tone))
-    }
-}
-
-/// The window ground: the icon's beige with two soft lights for the glass
-/// to refract. Flat color would make the material invisible.
-struct WindowCanvas: View {
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Palette.Window.canvasLight, Palette.Window.canvas, Palette.Window.canvasDeep],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            RadialGradient(
-                colors: [Palette.Window.canvasLight.opacity(0.9), Palette.Window.canvasLight.opacity(0)],
-                center: UnitPoint(x: 0.78, y: 0),
-                startRadius: 0,
-                endRadius: 420
-            )
-            RadialGradient(
-                colors: [Color(hex: 0xD4C4A0).opacity(0.35), Color(hex: 0xD4C4A0).opacity(0)],
-                center: UnitPoint(x: 0.06, y: 1),
-                startRadius: 0,
-                endRadius: 360
-            )
-        }
-        .ignoresSafeArea()
-    }
-}
-
-/// Secondary capsule: glass with a hairline. The default for every row action.
-struct SettingsControlButtonStyle: ButtonStyle {
-    var isDestructive = false
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(isDestructive ? Palette.Window.destructive : Palette.Window.ink)
-            .padding(.horizontal, 12)
-            .frame(height: 28)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Palette.Window.field.opacity(configuration.isPressed ? 1 : 0.8))
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
-                    }
-            )
-            .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.45)
-            .animation(Motion.press, value: configuration.isPressed)
-    }
-}
-
-/// Primary capsule: the icon's black tile. At most one per view.
-struct SettingsPrimaryButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Palette.Window.onInk)
-            .padding(.horizontal, 13)
-            .frame(height: 28)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(configuration.isPressed ? Palette.Window.inkSoft : Palette.Window.ink)
-            )
-            .opacity(isEnabled ? 1 : 0.45)
-            .animation(Motion.press, value: configuration.isPressed)
-    }
-}
-
-/// Text-only action for the quiet end of a row; destructive gets a color,
-/// never a filled shape.
-struct SettingsTextButtonStyle: ButtonStyle {
-    var isDestructive = false
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(
-                (isDestructive ? Palette.Window.destructive : Palette.Window.ink)
-                    .opacity(configuration.isPressed ? 0.55 : 1)
-            )
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-            .opacity(isEnabled ? 1 : 0.45)
-            .animation(Motion.press, value: configuration.isPressed)
-    }
+    WindowDivider()
 }
 
 #if PREVIEWS && DEBUG

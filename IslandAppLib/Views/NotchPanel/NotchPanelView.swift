@@ -163,7 +163,7 @@ struct NotchPanelView: View {
             )
 
             Text(L10n.string(headerTitle, language: language))
-                .font(Typo.sectionHeader)
+                .font(Typo.islandHeadline)
                 .foregroundStyle(Palette.warmWhite.opacity(0.9))
 
             Text("\(headerCount)")

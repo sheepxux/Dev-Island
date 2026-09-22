@@ -75,18 +75,18 @@ enum InterfaceContrastPolicy {
     /// brighter (rules gain alpha instead).
     static func tone(for role: Role, increased: Bool) -> Tone {
         switch (role, increased) {
-        case (.secondaryText, false): return Tone(Sand.s200)
-        case (.secondaryText, true):  return Tone(Sand.s100)
-        case (.tertiaryText, false):  return Tone(Sand.s300)
-        case (.tertiaryText, true):   return Tone(Sand.s200)
+        case (.secondaryText, false): return Tone(Sand.s300)
+        case (.secondaryText, true):  return Tone(Sand.s200)
+        case (.tertiaryText, false):  return Tone(Sand.s400)
+        case (.tertiaryText, true):   return Tone(Sand.s300)
         case (.hairline, false):      return Tone(Sand.s50, alpha: 0.10)
         case (.hairline, true):       return Tone(Sand.s50, alpha: 0.24)
         case (.islandBorder, false):  return Tone(Sand.s50, alpha: 0.08)
         case (.islandBorder, true):   return Tone(Sand.s50, alpha: 0.26)
         // Idle stays quieter than every active state, but it must remain
         // legible as Dev Island's nine-point signature on a black menu bar.
-        case (.idleState, false):     return Tone(Sand.s400)
-        case (.idleState, true):      return Tone(Sand.s300)
+        case (.idleState, false):     return Tone(Sand.s500)
+        case (.idleState, true):      return Tone(Sand.s400)
         }
     }
 
@@ -122,6 +122,12 @@ enum Palette {
     /// Matches the hardware notch exactly; the silhouette must be seamless.
     static let notchBlack   = Color(hex: 0x000000)
     static let islandTop    = Sand.s950.color
+    /// A card raised off the panel: one step lighter than the panel ground
+    /// and edged with `hairline`. Shadows disappear on black, so the island
+    /// separates surfaces by tone and ring alone.
+    static let islandRaised = Sand.s900.color
+    /// Commands and plan text sunk into a card.
+    static let islandWell   = Sand.s1000.color
 
     // Type + rules
     static let warmWhite     = Sand.s50.color

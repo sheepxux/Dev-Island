@@ -71,6 +71,15 @@ struct NotchBarView: View {
         }
     }
 
+    /// The title brightens only when the session it names is waiting on
+    /// the user or has failed; ordinary progress stays one step quieter.
+    private var titleColor: Color {
+        switch state {
+        case .waiting, .failed: return Palette.warmWhite
+        case .idle, .running, .completed: return Palette.textSecondary
+        }
+    }
+
     // MARK: - Content (status dot + task count)
 
     @ViewBuilder
@@ -104,30 +113,26 @@ struct NotchBarView: View {
         } else {
             // Synthetic notch: mirror a Dynamic Island compact layout.
             // Left = state, center = current task label, right = count.
-            HStack(spacing: 12) {
+            // Spacing alone separates the count; a rule would only repeat it.
+            HStack(spacing: 10) {
                 StatusDot(state: state)
                     .frame(width: 16, height: 16)
 
                 Text(title)
                     .font(Typo.barTitle)
-                    .foregroundStyle(.white.opacity(0.76))
+                    .foregroundStyle(titleColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(Motion.colorTransition, value: state)
 
-                if summary.total > 0 {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.12))
-                        .frame(width: 1, height: 12)
-
-                    CompactTaskStatusSummary(summary: summary)
-                }
+                CompactTaskStatusSummary(summary: summary)
             }
             .frame(maxWidth: .infinity)
             .frame(height: min(28, layout.barHeight), alignment: .center)
             .frame(maxHeight: .infinity, alignment: .center)
-            .padding(.leading, 18)
-            .padding(.trailing, 18)
+            .padding(.leading, 16)
+            .padding(.trailing, 16)
         }
     }
 }

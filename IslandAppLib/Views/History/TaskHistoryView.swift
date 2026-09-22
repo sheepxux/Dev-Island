@@ -43,13 +43,13 @@ struct TaskHistoryView: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.string("Session History", language: language))
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(Typo.title)
                     .tracking(-0.35)
                 Text(L10n.string(
                     "A private, read-only record stored on this Mac.",
                     language: language
                 ))
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textSecondary)
             }
 
@@ -88,15 +88,15 @@ struct TaskHistoryView: View {
                     text: $query
                 )
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(Typo.callout)
             }
             .padding(.horizontal, 11)
             .frame(maxWidth: .infinity, minHeight: 30)
             .background(
-                Capsule(style: .continuous)
+                Capsule()
                     .fill(Palette.Window.field)
                     .overlay {
-                        Capsule(style: .continuous)
+                        Capsule()
                             .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
                     }
             )
@@ -153,9 +153,8 @@ struct TaskHistoryView: View {
                                 onOpen: { store.jumpToTask(task) }
                             )
                             if index < visibleTasks.count - 1 {
-                                Divider()
-                                    .overlay(Palette.Window.hairline)
-                                    .padding(.leading, 58)
+                                WindowDivider()
+                                    .padding(.leading, 54)
                             }
                         }
                     }
@@ -169,7 +168,8 @@ struct TaskHistoryView: View {
     private var footer: some View {
         HStack(spacing: 12) {
             Text(historyCountCopy)
-                .font(.system(size: 10, design: .monospaced))
+                .font(Typo.caption)
+                .monospacedDigit()
                 .foregroundStyle(Palette.Window.textTertiary)
 
             Spacer()
@@ -215,14 +215,14 @@ struct TaskHistoryView: View {
         let loaded = store.storedTaskHistory.count
         if total > loaded {
             return L10n.format(
-                "SHOWING %lld OF %lld MOST RECENT",
+                "Showing the %lld most recent of %lld",
                 language: language,
                 Int64(loaded),
                 Int64(total)
             )
         }
         return L10n.format(
-            total == 1 ? "%lld STORED SESSION" : "%lld STORED SESSIONS",
+            total == 1 ? "%lld stored session" : "%lld stored sessions",
             language: language,
             Int64(total)
         )
@@ -259,9 +259,9 @@ struct TaskHistoryView: View {
                 ProgressView().controlSize(.small)
             }
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(Typo.bodyStrong)
             Text(detail)
-                .font(.system(size: 11))
+                .font(Typo.caption)
                 .foregroundStyle(Palette.Window.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
@@ -282,8 +282,32 @@ private struct TaskHistoryRow: View {
     let onOpen: () -> Void
 
     @Environment(\.devIslandLanguage) private var language
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
 
     var body: some View {
+        Button(action: onOpen) { rowContent }
+            .buttonStyle(.plain)
+            .background {
+                Rectangle()
+                    .fill(isHovering ? Palette.Window.hover : .clear)
+                    .animation(
+                        Motion.respectingReducedMotion(reduceMotion, preferred: Motion.hoverHighlight),
+                        value: isHovering
+                    )
+            }
+            .onHover { isHovering = $0 }
+            .pointingHandCursor()
+            .accessibilityLabel(openAccessibilityLabel)
+            .accessibilityHint(
+                L10n.string(
+                    "Returns to the Agent or its host app",
+                    language: language
+                )
+            )
+    }
+
+    private var rowContent: some View {
         HStack(spacing: 12) {
             AgentLogoBadge(
                 source: task.source,
@@ -298,16 +322,16 @@ private struct TaskHistoryRow: View {
                         ? L10n.string("Untitled session", language: language)
                         : task.title
                 )
-                    .font(.system(size: 12, weight: .medium))
+                    .font(Typo.calloutStrong)
                     .foregroundStyle(Palette.Window.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 HStack(spacing: 6) {
                     Text(TaskHistoryPresentation.sourceName(task.source))
-                    Text("·")
+                    Text(verbatim: "·")
                     DotMatrixMark(
-                        color: task.status.color,
+                        color: task.status.windowColor,
                         size: 9,
                         pattern: task.status.matrixPattern,
                         intensity: task.status.matrixIntensity
@@ -318,32 +342,28 @@ private struct TaskHistoryRow: View {
                         isLive: isLive,
                         language: language
                     ))
-                    Text("·")
+                    Text(verbatim: "·")
                     Text(TaskHistoryPresentation.relativeAgeLabel(
                         for: task.updatedAt,
                         relativeTo: .now,
                         language: language
                     ))
                 }
-                .font(.system(size: 10))
+                .font(Typo.caption)
                 .foregroundStyle(Palette.Window.textSecondary)
             }
 
             Spacer(minLength: 12)
 
-            Button(L10n.string("Open", language: language), action: onOpen)
-                .buttonStyle(.window(.secondary))
-                .accessibilityLabel(openAccessibilityLabel)
-                .accessibilityHint(
-                    L10n.string(
-                        "Returns to the Agent or its host app",
-                        language: language
-                    )
-                )
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.Window.textTertiary)
+                .opacity(isHovering ? 1 : 0)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 58)
-        .accessibilityElement(children: .contain)
+        .contentShape(Rectangle())
     }
 
     private var openAccessibilityLabel: String {

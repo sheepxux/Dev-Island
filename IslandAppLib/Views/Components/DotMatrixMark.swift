@@ -195,7 +195,9 @@ struct DotMatrixMark: View {
             // what makes rotation legible at 14pt without hiding any point.
             return 0.34 + signal * 0.66
         case .attention:
-            return 0.48 + signal * 0.52
+            // The waiting ripple is the most urgent mark in the menu bar, so
+            // its trough stays well lit; depth comes from the travelling peak.
+            return 0.58 + signal * 0.42
         }
     }
 }

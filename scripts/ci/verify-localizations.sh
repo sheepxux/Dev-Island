@@ -159,7 +159,7 @@ rg -Fq 'func testCodexNotificationsDescribeAResponseRatherThanAnEntireTask()' \
 
 for invariant in \
   '@Environment(\.devIslandLanguage) private var language' \
-  'L10n.string("APPROVAL", language: language)' \
+  'L10n.string("Approval", language: language)' \
   'L10n.format("Expires in %@", language: language, expiresIn)' \
   'language: language'; do
   rg -Fq "$invariant" "$ACTION_SURFACE" \

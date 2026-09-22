@@ -15,10 +15,11 @@ struct WindowCanvas: View {
 // MARK: - Surfaces
 
 enum WindowSurfaceTone {
-    /// Navigation floating over the window. On macOS 26 and later this is
-    /// the system's Liquid Glass, the material Apple reserves for the
-    /// navigation layer; earlier systems get the same shape as one flat step
-    /// deeper than the canvas.
+    /// Navigation inset into the window: the floating silhouette of a macOS
+    /// 26 sidebar, one flat warm step deeper than the canvas. System Liquid
+    /// Glass was tried here in a live window (2026-09-22): over the flat
+    /// cream canvas it resolves to a cool gray slab that fights the palette,
+    /// and offscreen snapshots cannot capture it at all.
     case sidebar
     /// Grouped content lifted off the canvas as paper.
     case raised
@@ -30,44 +31,24 @@ enum WindowSurfaceTone {
 
 /// One depth cue per surface. Raised paper uses a stacked shadow whose first
 /// layer is a ring, so the edge composites with whatever sits behind it;
-/// wells separate by tone alone and the sidebar by its material.
+/// the sidebar and wells separate by tone alone.
 private struct WindowSurface: ViewModifier {
     let radius: CGFloat
     let tone: WindowSurfaceTone
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        if tone == .sidebar {
-            sidebar(content, in: shape)
-        } else {
-            content
-                .background { shape.fill(fill) }
-                .clipShape(shape)
-                .overlay {
-                    if let ring {
-                        shape.strokeBorder(ring, lineWidth: 0.75)
-                    }
+        content
+            .background { shape.fill(fill) }
+            .clipShape(shape)
+            .overlay {
+                if let ring {
+                    shape.strokeBorder(ring, lineWidth: 0.75)
                 }
-                .compositingGroup()
-                .shadow(color: contact, radius: 1.5, y: 1)
-                .shadow(color: ambient, radius: 6, y: 4)
-        }
-    }
-
-    @ViewBuilder
-    private func sidebar(_ content: Content, in shape: RoundedRectangle) -> some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            content.glassEffect(
-                .regular.tint(Sand.s100.opacity(0.55).color),
-                in: shape
-            )
-        } else {
-            content.background { shape.fill(Palette.Window.canvasDeep) }
-        }
-        #else
-        content.background { shape.fill(Palette.Window.canvasDeep) }
-        #endif
+            }
+            .compositingGroup()
+            .shadow(color: contact, radius: 1.5, y: 1)
+            .shadow(color: ambient, radius: 6, y: 4)
     }
 
     private var fill: Color {
@@ -175,7 +156,7 @@ private struct WindowButtonBody: View {
             .padding(.horizontal, horizontalPadding)
             .frame(minHeight: height)
             .background { background }
-            .contentShape(Capsule(style: .continuous))
+            .contentShape(Capsule())
             .scaleEffect(pressedScale)
             .animation(Motion.press, value: configuration.isPressed)
             .animation(
@@ -237,7 +218,7 @@ private struct WindowButtonBody: View {
 
     @ViewBuilder
     private var background: some View {
-        let capsule = Capsule(style: .continuous)
+        let capsule = Capsule()
         switch style.role {
         case .primary:
             capsule.fill(isEnabled ? primaryFill : Palette.Window.canvasDeep)

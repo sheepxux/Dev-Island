@@ -106,17 +106,16 @@
 "Adds Dev Island's managed hooks for %@" = "Adds Dev Island's managed hooks for %@";
 
 /* Settings navigation and key controls */
-"SETTINGS" = "SETTINGS";
 "Agents" = "Agents";
 "General" = "General";
 "Usage & Limits" = "Usage & Limits";
 "Updates" = "Updates";
 "Privacy & Support" = "Privacy & Support";
-"Choose how Dev Island behaves when you sign in to this Mac." = "Choose how Dev Island behaves when you sign in to this Mac.";
-"Reserve interruptions for moments that genuinely need your attention." = "Reserve interruptions for moments that genuinely need your attention.";
-"Read provider-authored usage windows locally, without retaining prompts." = "Read provider-authored usage windows locally, without retaining prompts.";
-"Control authenticated update checks for signed release builds." = "Control authenticated update checks for signed release builds.";
-"Inspect private local history and copy a redacted diagnostic summary." = "Inspect private local history and copy a redacted diagnostic summary.";
+"What Dev Island does when you sign in to this Mac." = "What Dev Island does when you sign in to this Mac.";
+"Interrupt only when a session needs you." = "Interrupt only when a session needs you.";
+"Codex rate limits, read on this Mac. Prompts are never stored." = "Codex rate limits, read on this Mac. Prompts are never stored.";
+"Signed updates for Dev Island, verified before they install." = "Signed updates for Dev Island, verified before they install.";
+"Local history, legal documents and a redacted diagnostic summary." = "Local history, legal documents and a redacted diagnostic summary.";
 "Selected" = "Selected";
 "Welcome Tour" = "Welcome Tour";
 "Quit Dev Island" = "Quit Dev Island";
@@ -130,8 +129,6 @@
 "Read provider-authored rate-limit events from recent Codex activity. Off by default and never uploaded." = "Read provider-authored rate-limit events from recent Codex activity. Off by default and never uploaded.";
 "Reading the latest local Codex usage snapshot…" = "Reading the latest local Codex usage snapshot…";
 "Reading local Codex usage" = "Reading local Codex usage";
-"STALE" = "STALE";
-"LOCAL" = "LOCAL";
 "Refresh" = "Refresh";
 "Check Automatically" = "Check Automatically";
 "Updates are verified before extraction and installation." = "Updates are verified before extraction and installation.";
@@ -144,7 +141,6 @@
 "Terms of Use" = "Terms of Use";
 "Opens the exact privacy notice bundled with this app" = "Opens the exact privacy notice bundled with this app";
 "Opens the exact terms bundled with this app" = "Opens the exact terms bundled with this app";
-"LEGAL · LOCAL COPY" = "LEGAL · LOCAL COPY";
 "Done" = "Done";
 "Closes the legal document" = "Closes the legal document";
 "Loading legal document" = "Loading legal document";
@@ -169,7 +165,6 @@
 "Open System Settings" = "Open System Settings";
 "Disconnect" = "Disconnect";
 "Connect" = "Connect";
-"PREVIEW" = "PREVIEW";
 "Track sessions and surface requests that need attention" = "Track sessions and surface requests that need attention";
 "Track sessions and handle tool approvals in the island" = "Track sessions and handle tool approvals in the island";
 "Track Cursor agent lifecycle and results in the island" = "Track Cursor agent lifecycle and results in the island";
@@ -249,9 +244,6 @@
 "%lld running" = "%lld running";
 "%lld completed" = "%lld completed";
 ", " = ", ";
-"Working" = "Working";
-"Review" = "Review";
-"Results" = "Results";
 "Sessions" = "Sessions";
 "%@, %lld. %@. %lld sessions total." = "%@, %lld. %@. %lld sessions total.";
 "Reconnecting…" = "Reconnecting…";
@@ -293,9 +285,9 @@
 "Reading the private database on this Mac." = "Reading the private database on this Mac.";
 "History is unavailable" = "History is unavailable";
 "Your live sessions are unaffected. Retry after the local database becomes available." = "Your live sessions are unaffected. Retry after the local database becomes available.";
-"SHOWING %lld OF %lld MOST RECENT" = "SHOWING %lld OF %lld MOST RECENT";
-"%lld STORED SESSION" = "%lld STORED SESSION";
-"%lld STORED SESSIONS" = "%lld STORED SESSIONS";
+"Showing the %lld most recent of %lld" = "Showing the %lld most recent of %lld";
+"%lld stored session" = "%lld stored session";
+"%lld stored sessions" = "%lld stored sessions";
 "No stored sessions yet" = "No stored sessions yet";
 "No matching sessions" = "No matching sessions";
 "Completed and in-progress Agent snapshots will appear here without changing the live island." = "Completed and in-progress Agent snapshots will appear here without changing the live island.";
@@ -357,15 +349,10 @@
 
 /* Approval, plan review and question surfaces */
 "Session %@" = "Session %@";
-"APPROVAL" = "APPROVAL";
-"PLAN REVIEW" = "PLAN REVIEW";
-"QUESTION" = "QUESTION";
-"QUESTION %lld/%lld" = "QUESTION %lld/%lld";
 "+%lld queued" = "+%lld queued";
 "%lld more requests queued for this session" = "%lld more requests queued for this session";
 "Expires in %@" = "Expires in %@";
 "%@, %@, expires in %@" = "%@, %@, expires in %@";
-"%@ for %@, %@" = "%@ for %@, %@";
 "%@ for %@" = "%@ for %@";
 "Not selected" = "Not selected";
 "Select this answer" = "Select this answer";
@@ -550,7 +537,7 @@
 "Local activity was detected. Check task monitoring and approval authorization separately." = "Local activity was detected. Check task monitoring and approval authorization separately.";
 "Local activity was detected. Check whether this connection can send events." = "Local activity was detected. Check whether this connection can send events.";
 "Check connection" = "Check connection";
-"Choose your tools, then check task activity and approval access separately." = "Choose your tools, then check task activity and approval access separately.";
+"Connect the tools you use. Task activity and approvals are checked separately." = "Connect the tools you use. Task activity and approvals are checked separately.";
 "These connectors handle simulated requests only. They are not included in your setup count." = "These connectors handle simulated requests only. They are not included in your setup count.";
 "Task activity visible" = "Task activity visible";
 "Waiting for task activity" = "Waiting for task activity";
@@ -580,3 +567,12 @@
 
 "Local setup checks passed" = "Local setup checks passed";
 "%@ passed setup checks. Confirm approval delivery with a real request." = "%@ passed setup checks. Confirm approval delivery with a real request.";
+
+/* Island panel and request card */
+"Needs you" = "Needs you";
+"Approval" = "Approval";
+"Plan review" = "Plan review";
+"Question" = "Question";
+"Question %lld of %lld" = "Question %lld of %lld";
+"Legal · local copy" = "Legal · local copy";
+"Manus API key" = "Manus API key";

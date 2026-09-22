@@ -5,7 +5,8 @@ import IslandCore
 ///
 /// Layout: status matrix • tool logo • session title + agent·phase·duration
 /// • chevron.
-/// State appears once, in the matrix. Rows stay transparent until hovered so the
+/// State leads the row and appears once, in the matrix; the vendor logo is a
+/// smaller identity mark after it. Rows stay transparent until hovered so the
 /// panel reads as one calm surface instead of a stack of animated cards.
 struct TaskCard: View {
     let task: AgentTask
@@ -46,8 +47,6 @@ struct TaskCard: View {
                         size: TaskCardLeadingIdentityMetrics.statusSize,
                         isLive: isLive
                     )
-                    .compositingGroup()
-                    .shadow(color: Palette.islandTop, radius: 1.5)
                     .animation(Motion.colorTransition, value: task.status)
 
                     toolLogo
@@ -60,66 +59,54 @@ struct TaskCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(task.title)
                         .font(Typo.islandTitle)
-                        .foregroundStyle(Palette.warmWhite.opacity(0.88))
+                        .foregroundStyle(Palette.warmWhite)
                         .lineLimit(1)
                         .truncationMode(.tail)
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Text(agentDisplayName)
-                            .font(Typo.islandMeta)
                             .fixedSize()
-                        Text("·")
-                            .font(.system(size: 11))
-                            .opacity(0.5)
+                        separator
                         if let branch = projectBranch {
                             HStack(spacing: 3) {
                                 Image(systemName: "arrow.triangle.branch")
-                                    .font(.system(size: 9, weight: .medium))
+                                    .font(.system(size: 10, weight: .medium))
+                                    .accessibilityHidden(true)
                                 Text(branch)
-                                    .font(Typo.islandMeta)
                                     .lineLimit(1)
                             }
                             .layoutPriority(1)
-                            Text("·")
-                                .font(.system(size: 11))
-                                .opacity(0.5)
+                            separator
                         }
                         if let phase = displayedPhase {
                             Text(phase)
-                                .font(.system(size: 11))
                                 .lineLimit(1)
                                 .layoutPriority(1)
-                            Text("·")
-                                .font(.system(size: 11))
-                                .opacity(0.5)
+                            separator
                         }
                         Text(durationString(at: referenceDate))
-                            .font(Typo.islandMeta)
                             .monospacedDigit()
                             .fixedSize()
                     }
-                    .foregroundStyle(Palette.textSecondary.opacity(0.72))
+                    .font(Typo.islandMeta)
+                    .foregroundStyle(Palette.textSecondary)
                 }
 
                 Spacer(minLength: 8)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Palette.textSecondary.opacity(isHovering ? 0.72 : 0))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.textTertiary)
+                    .opacity(isHovering ? 1 : 0)
                     .animation(Motion.hoverHighlight, value: isHovering)
+                    .accessibilityHidden(true)
             }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .padding(.horizontal, TaskCardMetrics.horizontalPadding)
+            .frame(maxWidth: .infinity, minHeight: TaskCardMetrics.minHeight, alignment: .leading)
             .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: NotchMetrics.panelRowRadius, style: .continuous)
                     .fill(cardBackground)
                     .animation(Motion.hoverHighlight, value: isHovering)
-            }
-            .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(Palette.warmWhite.opacity(isHighlighted ? 0.34 : 0))
-                    .frame(width: 1, height: 20)
-                    .padding(.leading, 1)
             }
         }
         .buttonStyle(PressableButtonStyle())
@@ -139,22 +126,30 @@ struct TaskCard: View {
 
     // MARK: - Pieces
 
+    private var separator: some View {
+        Text(verbatim: "·")
+            .foregroundStyle(Palette.textTertiary)
+            .accessibilityHidden(true)
+    }
+
     private var toolLogo: some View {
         // Real brand logo (template PNG) with monogram fallback —
         // see AgentBrand.
         AgentLogoBadge(
             source: task.source,
             size: TaskCardLeadingIdentityMetrics.logoSize,
-            ink: Palette.warmWhite.opacity(0.82),
+            ink: Palette.textSecondary,
             badge: nil
         )
     }
 
+    /// One depth cue: the highlighted row (the one the island opened for)
+    /// gets a tint; hover gets a lighter one. No rail, no border.
     private var cardBackground: Color {
         if isHighlighted {
-            return Color.white.opacity(0.055)
+            return Palette.warmWhite.opacity(0.07)
         }
-        return isHovering ? Color.white.opacity(0.04) : .clear
+        return isHovering ? Palette.warmWhite.opacity(0.045) : .clear
     }
 
     private var agentDisplayName: String {
@@ -216,12 +211,20 @@ struct TaskCard: View {
 
 /// Fixed leading geometry keeps the semantic status mark and the vendor logo
 /// as two distinct signals. The previous bottom-trailing overlay made dense
-/// marks such as Codex read like one malformed composite icon.
+/// marks such as Codex read like one malformed composite icon. State is the
+/// larger of the two: it is what the row is for.
 enum TaskCardLeadingIdentityMetrics {
-    static let statusSize: CGFloat = 9
-    static let logoSize: CGFloat = 26
-    static let spacing: CGFloat = 7
+    static let statusSize: CGFloat = 12
+    static let logoSize: CGFloat = 20
+    static let spacing: CGFloat = 9
     static let width = statusSize + spacing + logoSize
+}
+
+/// Row geometry shared by task rows, response receipts and the panel header
+/// so their leading marks sit in one column.
+enum TaskCardMetrics {
+    static let horizontalPadding: CGFloat = 12
+    static let minHeight: CGFloat = 52
 }
 
 /// Keeps the continuous opacity loop in Core Animation instead of rebuilding

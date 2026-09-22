@@ -63,10 +63,10 @@ struct ActionRequestSurface: View {
     }
 
     var body: some View {
+        let card = RoundedRectangle(cornerRadius: NotchMetrics.panelRowRadius, style: .continuous)
         VStack(alignment: .leading, spacing: 10) {
             header
                 .opacity(request.kind == .question ? questionPageOpacity : 1)
-            contextLabel
 
             switch request.kind {
             case .permission:
@@ -78,18 +78,20 @@ struct ActionRequestSurface: View {
                 planReviewContent
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 9)
+        .padding(.horizontal, TaskCardMetrics.horizontalPadding)
+        .padding(.top, 11)
         .padding(.bottom, 12)
-        .background(alignment: .bottom) {
-            Rectangle()
-                .fill(
-                    usesIncreasedContrast
-                        ? Color.white.opacity(0.22)
-                        : Palette.hairline
+        // The one thing in the panel that asks for something is raised off
+        // it: a lighter step plus a ring, since shadows vanish on black.
+        .background { card.fill(Palette.islandRaised) }
+        .overlay {
+            card.strokeBorder(
+                Palette.hairline,
+                lineWidth: InterfaceContrastPolicy.borderWidth(
+                    increased: usesIncreasedContrast,
+                    standard: 0.75
                 )
-                .frame(height: usesIncreasedContrast ? 1 : 0.5)
-                .padding(.horizontal, 2)
+            )
         }
         .transition(.opacity)
         .accessibilityElement(children: .contain)
@@ -106,32 +108,17 @@ struct ActionRequestSurface: View {
     }
 
     @ViewBuilder
-    private var contextLabel: some View {
-        if let contextTitle, !contextTitle.isEmpty {
-            Text(contextTitle)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(
-                    Palette.textSecondary.opacity(usesIncreasedContrast ? 1 : 0.78)
-                )
-                .lineLimit(1)
-                .truncationMode(.tail)
-                // The containing decision group already includes this title
-                // in its label; suppress a duplicate VoiceOver stop.
-                .accessibilityHidden(true)
-        }
-    }
-
-    @ViewBuilder
     private var planReviewContent: some View {
         if request.planReview != nil {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(request.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.warmWhite.opacity(usesIncreasedContrast ? 1 : 0.94))
+                    .font(Typo.islandHeadline)
+                    .foregroundStyle(Palette.warmWhite)
 
                 Text(request.message)
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Palette.textSecondary.opacity(usesIncreasedContrast ? 1 : 0.9))
+                    .font(Typo.islandBody)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             ScrollView {
@@ -141,7 +128,7 @@ struct ActionRequestSurface: View {
                             "This plan cannot be rendered safely.",
                             language: language
                         ))
-                            .font(.system(size: 11))
+                            .font(Typo.islandMeta)
                             .foregroundStyle(Palette.textSecondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 11)
@@ -157,7 +144,7 @@ struct ActionRequestSurface: View {
                             .controlSize(.mini)
                             .accessibilityHidden(true)
                         Text(L10n.string("Preparing plan…", language: language))
-                            .font(.system(size: 11, weight: .medium))
+                            .font(Typo.islandMeta)
                             .foregroundStyle(Palette.textSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -171,17 +158,7 @@ struct ActionRequestSurface: View {
             }
             .scrollIndicators(.visible)
             .frame(minHeight: 96, maxHeight: 210)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.black.opacity(usesIncreasedContrast ? 0.52 : 0.24))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(
-                        Color.white.opacity(usesIncreasedContrast ? 0.18 : 0.06),
-                        lineWidth: usesIncreasedContrast ? 1 : 0.5
-                    )
-            }
+            .modifier(IslandWell(increasedContrast: usesIncreasedContrast))
             .accessibilityLabel(
                 L10n.string("Claude Code plan", language: language)
             )
@@ -214,7 +191,12 @@ struct ActionRequestSurface: View {
 
                 Spacer(minLength: 5)
 
-                Button(L10n.string("Reject", language: language)) { onDecision(.deny) }
+                Button { onDecision(.deny) } label: {
+                    ActionDecisionLabel(
+                        title: L10n.string("Reject", language: language),
+                        shortcut: isKeyboardPrimary ? "⌘D" : nil
+                    )
+                }
                     .buttonStyle(ActionDecisionButtonStyle(role: .secondary))
                     .disabled(!isPlanDecisionReady)
                     .help(actionHelp("Reject this plan", shortcut: "⌘D"))
@@ -230,8 +212,11 @@ struct ActionRequestSurface: View {
                         enabled: isKeyboardPrimary && isPlanDecisionReady
                     )
 
-                Button(L10n.string("Approve plan", language: language)) {
-                    onDecision(.allow)
+                Button { onDecision(.allow) } label: {
+                    ActionDecisionLabel(
+                        title: L10n.string("Approve plan", language: language),
+                        shortcut: isKeyboardPrimary ? "⌘↩" : nil
+                    )
                 }
                     .buttonStyle(ActionDecisionButtonStyle(role: .primary))
                     .disabled(!isPlanDecisionReady)
@@ -253,7 +238,7 @@ struct ActionRequestSurface: View {
             }
         } else {
             Text(L10n.string("This plan cannot be rendered safely.", language: language))
-                .font(.system(size: 11))
+                .font(Typo.islandMeta)
                 .foregroundStyle(Palette.textSecondary)
             Button(L10n.string("Continue in Claude", language: language)) {
                 onDeferToAgent()
@@ -304,46 +289,43 @@ struct ActionRequestSurface: View {
 
     @ViewBuilder
     private var permissionContent: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(request.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Palette.warmWhite.opacity(usesIncreasedContrast ? 1 : 0.94))
-                .lineLimit(1)
+                .font(Typo.islandHeadline)
+                .foregroundStyle(Palette.warmWhite)
+                .lineLimit(2)
 
             Text(request.message)
-                .font(.system(size: 11.5, weight: .regular))
-                .foregroundStyle(Palette.textSecondary.opacity(usesIncreasedContrast ? 1 : 0.9))
+                .font(Typo.islandBody)
+                .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
 
+        // The command is what is being approved, so it is set at full
+        // strength rather than as muted decoration.
         if let detail = request.detail, !detail.isEmpty {
             Text(detail)
-                .font(.system(size: 10.5, weight: .regular, design: .monospaced))
-                .foregroundStyle(Palette.warmWhite.opacity(usesIncreasedContrast ? 0.9 : 0.72))
+                .font(Typo.islandCode)
+                .foregroundStyle(Palette.warmWhite)
                 .lineLimit(4)
                 .truncationMode(.tail)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 9)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.black.opacity(usesIncreasedContrast ? 0.52 : 0.24))
-                }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(
-                            Color.white.opacity(usesIncreasedContrast ? 0.18 : 0.055),
-                            lineWidth: usesIncreasedContrast ? 1 : 0.5
-                        )
-                }
+                .modifier(IslandWell(increasedContrast: usesIncreasedContrast))
         }
 
         HStack(spacing: 8) {
             queuedLabel
             Spacer(minLength: 8)
 
-            Button(L10n.string("Deny", language: language)) { onDecision(.deny) }
+            Button { onDecision(.deny) } label: {
+                ActionDecisionLabel(
+                    title: L10n.string("Deny", language: language),
+                    shortcut: isKeyboardPrimary ? "⌘D" : nil
+                )
+            }
                 .buttonStyle(ActionDecisionButtonStyle(role: .secondary))
                 .help(actionHelp("Deny this request", shortcut: "⌘D"))
                 .accessibilityHint(
@@ -355,7 +337,12 @@ struct ActionRequestSurface: View {
                     enabled: isKeyboardPrimary
                 )
 
-            Button(L10n.string("Allow once", language: language)) { onDecision(.allow) }
+            Button { onDecision(.allow) } label: {
+                ActionDecisionLabel(
+                    title: L10n.string("Allow once", language: language),
+                    shortcut: isKeyboardPrimary ? "⌘↩" : nil
+                )
+            }
                 .buttonStyle(ActionDecisionButtonStyle(role: .primary))
                 .help(actionHelp("Allow this request once", shortcut: "⌘↩"))
                 .accessibilityHint(
@@ -375,23 +362,20 @@ struct ActionRequestSurface: View {
     @ViewBuilder
     private var questionContent: some View {
         if let question = currentQuestion {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
+                // Amber already marks the card once, in its header.
                 Text(question.header)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(0.45)
-                    .foregroundStyle(
-                        Palette.stateWaiting.opacity(usesIncreasedContrast ? 1 : 0.9)
-                    )
-                    .textCase(.uppercase)
+                    .font(Typo.islandLabel)
+                    .foregroundStyle(Palette.textSecondary)
 
                 Text(question.question)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Palette.warmWhite.opacity(usesIncreasedContrast ? 1 : 0.94))
+                    .font(Typo.islandHeadline)
+                    .foregroundStyle(Palette.warmWhite)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if question.allowsMultipleSelection {
                     Text(L10n.string("Select one or more", language: language))
-                        .font(.system(size: 9.5, weight: .regular))
+                        .font(Typo.islandMeta)
                         .foregroundStyle(Palette.textTertiary)
                 }
             }
@@ -410,19 +394,13 @@ struct ActionRequestSurface: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(option.label)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(
-                                        Palette.warmWhite.opacity(usesIncreasedContrast ? 1 : 0.9)
-                                    )
+                                    .font(Typo.islandBody.weight(.medium))
+                                    .foregroundStyle(Palette.warmWhite)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 if let description = option.description {
                                     Text(description)
-                                        .font(.system(size: 9.5))
-                                        .foregroundStyle(
-                                            usesIncreasedContrast
-                                                ? Palette.textSecondary
-                                                : Palette.textTertiary
-                                        )
+                                        .font(Typo.islandMeta)
+                                        .foregroundStyle(Palette.textSecondary)
                                         .lineLimit(2)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
@@ -485,13 +463,16 @@ struct ActionRequestSurface: View {
                     )
                 }
 
-                Button(
-                    L10n.string(
-                        isLastQuestion ? "Submit" : "Next",
-                        language: language
-                    )
-                ) {
+                Button {
                     advanceOrSubmit()
+                } label: {
+                    ActionDecisionLabel(
+                        title: L10n.string(
+                            isLastQuestion ? "Submit" : "Next",
+                            language: language
+                        ),
+                        shortcut: isKeyboardPrimary ? "⌘↩" : nil
+                    )
                 }
                 .buttonStyle(ActionDecisionButtonStyle(role: .primary))
                 .disabled(!hasSelection(for: question))
@@ -518,7 +499,7 @@ struct ActionRequestSurface: View {
                 "This question cannot be rendered safely.",
                 language: language
             ))
-                .font(.system(size: 11))
+                .font(Typo.islandMeta)
                 .foregroundStyle(Palette.textSecondary)
             Button(L10n.string("Continue in Claude", language: language)) {
                 onDeferToAgent()
@@ -553,7 +534,7 @@ struct ActionRequestSurface: View {
                 language: language,
                 Int64(additionalQueuedCount)
             ))
-                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                .font(Typo.islandNumeric)
                 .foregroundStyle(Palette.textTertiary)
                 .monospacedDigit()
                 .accessibilityLabel(
@@ -584,40 +565,40 @@ struct ActionRequestSurface: View {
             expiresAt: request.expiresAt,
             at: referenceDate
         )
-        return HStack(spacing: 7) {
+        return HStack(spacing: 6) {
+            // Drawn at rest, at full strength: a frozen frame of the ripple
+            // would show the waiting mark at its dimmest.
             DotMatrixMark(
                 color: Palette.stateWaiting,
-                size: 9,
-                phase: 0.7,
-                motion: .attention,
+                size: TaskCardLeadingIdentityMetrics.statusSize,
+                motion: .still,
                 pattern: .ring,
                 intensity: 1
             )
+            .padding(.trailing, 3)
 
             Text(headerLabel)
-                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                .tracking(0.8)
-                .foregroundStyle(Palette.stateWaiting.opacity(0.96))
+                .font(Typo.islandLabel)
+                .foregroundStyle(Palette.stateWaiting)
+                .fixedSize()
 
-            Text("·")
-                .font(.system(size: 9))
-                .foregroundStyle(Palette.textTertiary.opacity(0.7))
+            Text(verbatim: "·")
+                .font(Typo.islandMeta)
+                .foregroundStyle(Palette.textTertiary)
 
             Text(agentAndSession)
-                .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                .foregroundStyle(
-                    usesIncreasedContrast ? Palette.textSecondary : Palette.textTertiary
-                )
+                .font(Typo.islandMeta)
+                .foregroundStyle(Palette.textSecondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
 
             Spacer(minLength: 6)
 
             Text(expiresIn)
-                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                .foregroundStyle(
-                    usesIncreasedContrast ? Palette.textSecondary : Palette.textTertiary
-                )
+                .font(Typo.islandNumeric)
+                .foregroundStyle(Palette.textTertiary)
                 .monospacedDigit()
+                .fixedSize()
                 .accessibilityLabel(
                     L10n.format("Expires in %@", language: language, expiresIn)
                 )
@@ -635,16 +616,7 @@ struct ActionRequestSurface: View {
     }
 
     private var accessibilityLabel: String {
-        if let contextTitle, !contextTitle.isEmpty {
-            return L10n.format(
-                "%@ for %@, %@",
-                language: language,
-                headerLabel,
-                agentAndSession,
-                contextTitle
-            )
-        }
-        return L10n.format(
+        L10n.format(
             "%@ for %@",
             language: language,
             headerLabel,
@@ -684,15 +656,15 @@ struct ActionRequestSurface: View {
     private var headerLabel: String {
         switch request.kind {
         case .permission:
-            return L10n.string("APPROVAL", language: language)
+            return L10n.string("Approval", language: language)
         case .planReview:
-            return L10n.string("PLAN REVIEW", language: language)
+            return L10n.string("Plan review", language: language)
         case .question:
-            guard !request.questions.isEmpty else {
-                return L10n.string("QUESTION", language: language)
+            guard request.questions.count > 1 else {
+                return L10n.string("Question", language: language)
             }
             return L10n.format(
-                "QUESTION %lld/%lld",
+                "Question %lld of %lld",
                 language: language,
                 Int64(min(questionDraft.currentIndex + 1, request.questions.count)),
                 Int64(request.questions.count)
@@ -772,9 +744,15 @@ struct ActionRequestSurface: View {
         }
     }
 
+    /// Who is asking: the Agent, then the session in words the user already
+    /// knows — its own title. A short fingerprint stands in only when the
+    /// request's session row is not in the panel to borrow a title from.
     private var agentAndSession: String {
         let agent = LocalAgentRegistry.descriptor(for: request.source)?.displayName
             ?? request.source.capitalized
+        if let contextTitle, !contextTitle.isEmpty {
+            return "\(agent) · \(contextTitle)"
+        }
         let reference = ActionRequestPresentationPolicy.sessionReference(
             for: request.sessionId,
             language: language
@@ -829,13 +807,13 @@ private struct PlanMarkdownView: View {
         case .heading(let level, let text):
             Text(text)
                 .font(headingFont(level: level))
-                .foregroundStyle(Palette.warmWhite.opacity(usesIncreasedContrast ? 1 : 0.94))
+                .foregroundStyle(Palette.warmWhite)
                 .fixedSize(horizontal: false, vertical: true)
 
         case .paragraph(let text):
             Text(text)
-                .font(.system(size: 11.25, weight: .regular))
-                .foregroundStyle(Palette.warmWhite.opacity(usesIncreasedContrast ? 0.96 : 0.82))
+                .font(Typo.islandBody)
+                .foregroundStyle(Palette.warmWhite)
                 .fixedSize(horizontal: false, vertical: true)
 
         case .unorderedListItem(let text):
@@ -847,8 +825,8 @@ private struct PlanMarkdownView: View {
         case .code(let code):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code)
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Palette.warmWhite.opacity(usesIncreasedContrast ? 0.94 : 0.76))
+                    .font(Typo.islandCode)
+                    .foregroundStyle(Palette.warmWhite)
                     .fixedSize(horizontal: true, vertical: true)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 8)
@@ -863,27 +841,63 @@ private struct PlanMarkdownView: View {
     private func listRow(marker: String, text: AttributedString) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Text(marker)
-                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                .foregroundStyle(Palette.stateWaiting.opacity(usesIncreasedContrast ? 1 : 0.84))
+                .font(Typo.islandNumeric)
+                .foregroundStyle(Palette.stateWaiting)
                 .frame(width: 19, alignment: .trailing)
 
             Text(text)
-                .font(.system(size: 11.25, weight: .regular))
-                .foregroundStyle(Palette.warmWhite.opacity(usesIncreasedContrast ? 0.96 : 0.82))
+                .font(Typo.islandBody)
+                .foregroundStyle(Palette.warmWhite)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func headingFont(level: Int) -> Font {
-        switch level {
-        case 1: return .system(size: 13.5, weight: .semibold)
-        case 2: return .system(size: 13, weight: .semibold)
-        default: return .system(size: 12, weight: .semibold)
-        }
+        level <= 2 ? Typo.islandHeadline : Typo.islandControl
     }
 
     private var usesIncreasedContrast: Bool {
         InterfaceContrastPolicy.usesIncreasedContrast(accessibilityContrast)
+    }
+}
+
+/// A decision's title with its key equivalent printed beside it, so the
+/// shortcut is discoverable without hovering for a tooltip. Only the oldest
+/// pending request owns shortcuts, so only it shows them.
+private struct ActionDecisionLabel: View {
+    let title: String
+    let shortcut: String?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+            if let shortcut {
+                Text(verbatim: shortcut)
+                    .font(Typo.islandNumeric)
+                    .opacity(0.62)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+/// Sunken wells for commands and plan text inside a request card.
+private struct IslandWell: ViewModifier {
+    let increasedContrast: Bool
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        content
+            .background { shape.fill(Palette.islandWell) }
+            .overlay {
+                shape.strokeBorder(
+                    Palette.hairline,
+                    lineWidth: InterfaceContrastPolicy.borderWidth(
+                        increased: increasedContrast,
+                        standard: 0.75
+                    )
+                )
+            }
     }
 }
 
@@ -917,30 +931,32 @@ private struct ActionDecisionButtonBody: View {
     @State private var isHovering = false
 
     var body: some View {
+        let capsule = Capsule()
         configuration.label
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(foreground.opacity(configuration.isPressed ? 0.72 : 1))
-            .padding(.horizontal, 12)
-            .frame(height: 30)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(background.opacity(configuration.isPressed ? 0.78 : 1))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(border, lineWidth: increasedContrast ? 1 : 0.6)
-            }
-            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.985 : 1))
+            .font(Typo.islandControl)
+            .foregroundStyle(foreground)
+            .lineLimit(1)
+            .padding(.horizontal, 13)
+            .frame(height: 28)
+            .background { capsule.fill(background) }
+            .overlay { capsule.strokeBorder(border, lineWidth: increasedContrast ? 1 : 0.75) }
+            .scaleEffect(
+                InteractionFeedbackPolicy.pressScale(
+                    isPressed: configuration.isPressed,
+                    pressedScale: 0.96,
+                    reduceMotion: reduceMotion
+                )
+            )
             .opacity(isEnabled ? 1 : 0.38)
             .animation(Motion.press, value: configuration.isPressed)
             .animation(
                 Motion.respectingReducedMotion(
                     reduceMotion,
-                    preferred: Motion.hover
+                    preferred: Motion.hoverHighlight
                 ),
                 value: isHovering
             )
-            .contentShape(Rectangle())
+            .contentShape(capsule)
             .onHover { isHovering = isEnabled && $0 }
             .pointingHandCursor(enabled: isEnabled)
     }
@@ -950,30 +966,28 @@ private struct ActionDecisionButtonBody: View {
         case .primary:
             return Palette.islandTop
         case .secondary:
-            return Palette.warmWhite.opacity(
-                increasedContrast ? 1 : (isHovering ? 0.9 : 0.76)
-            )
+            return isHovering || configuration.isPressed || increasedContrast
+                ? Palette.warmWhite
+                : Palette.textSecondary
         }
     }
 
     private var background: Color {
         switch role {
         case .primary:
-            return isHovering ? Color.white.opacity(0.98) : Palette.warmWhite.opacity(0.92)
+            if configuration.isPressed { return Sand.s200.color }
+            return isHovering ? Sand.s0.color : Palette.warmWhite
         case .secondary:
-            return Color.white.opacity(
-                increasedContrast ? (isHovering ? 0.14 : 0.075) : (isHovering ? 0.06 : 0)
-            )
+            if configuration.isPressed { return Palette.warmWhite.opacity(0.12) }
+            return Palette.warmWhite.opacity(isHovering ? 0.08 : (increasedContrast ? 0.06 : 0))
         }
     }
 
     private var border: Color {
         switch role {
-        case .primary: return Color.clear
+        case .primary: return .clear
         case .secondary:
-            return Color.white.opacity(
-                increasedContrast ? (isHovering ? 0.34 : 0.2) : (isHovering ? 0.13 : 0)
-            )
+            return increasedContrast || isHovering ? Palette.hairline : .clear
         }
     }
 }
@@ -1090,10 +1104,10 @@ private struct QuestionOptionButtonBody: View {
 
     var body: some View {
         configuration.label
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .background {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(
                         isSelected
                             ? Palette.stateWaiting.opacity(
@@ -1109,7 +1123,7 @@ private struct QuestionOptionButtonBody: View {
                     )
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(
                         isSelected
                             ? Palette.stateWaiting.opacity(
@@ -1121,7 +1135,13 @@ private struct QuestionOptionButtonBody: View {
                         lineWidth: increasedContrast ? 1 : 0.6
                     )
             }
-            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.992 : 1))
+            .scaleEffect(
+                InteractionFeedbackPolicy.pressScale(
+                    isPressed: configuration.isPressed,
+                    pressedScale: 0.98,
+                    reduceMotion: reduceMotion
+                )
+            )
             .animation(Motion.press, value: configuration.isPressed)
             .animation(
                 Motion.respectingReducedMotion(

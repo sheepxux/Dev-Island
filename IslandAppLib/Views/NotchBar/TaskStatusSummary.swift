@@ -87,8 +87,9 @@ struct CompactTaskStatusSummary: View {
     var body: some View {
         if summary.total > 0 {
             Text(summary.compactLabel(language: language))
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundStyle(Palette.textTertiary)
                 .font(Typo.barCount)
+                .fixedSize()
                 .monospacedDigit()
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(summary.accessibilityLabel(language: language))

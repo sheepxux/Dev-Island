@@ -565,13 +565,12 @@ struct LegalDocumentSheet: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 18) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(L10n.string("LEGAL · LOCAL COPY", language: language))
-                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                    .tracking(0.9)
+                Text(L10n.string("Legal · local copy", language: language))
+                    .font(Typo.caption.weight(.medium))
                     .foregroundStyle(Palette.Window.textTertiary)
 
                 Text(presentation?.title ?? kind.buttonTitle(language: language))
-                    .font(.system(size: 21, weight: .semibold))
+                    .font(Typo.title)
                     .tracking(-0.45)
                     .foregroundStyle(Palette.Window.ink)
             }
@@ -595,7 +594,7 @@ struct LegalDocumentSheet: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 Text(presentation.lastUpdated)
-                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .font(Typo.numeric)
                     .foregroundStyle(Palette.Window.textTertiary)
                     .accessibilityLabel(presentation.lastUpdated)
 
@@ -626,7 +625,7 @@ struct LegalDocumentSheet: View {
 
         case .paragraph(let text):
             Text(LegalDocumentLinkPolicy.attributedText(text))
-                .font(.system(size: 12.25))
+                .font(Typo.body)
                 .lineSpacing(4)
                 .foregroundStyle(Palette.Window.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -634,11 +633,11 @@ struct LegalDocumentSheet: View {
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("—")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textTertiary)
                     .accessibilityHidden(true)
                 Text(LegalDocumentLinkPolicy.attributedText(text))
-                    .font(.system(size: 12.25))
+                    .font(Typo.body)
                     .lineSpacing(4)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -652,7 +651,7 @@ struct LegalDocumentSheet: View {
                     .frame(width: 1.5)
                     .accessibilityHidden(true)
                 Text(LegalDocumentLinkPolicy.attributedText(text))
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(Typo.calloutStrong)
                     .lineSpacing(3)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -664,12 +663,12 @@ struct LegalDocumentSheet: View {
     private var failureBody: some View {
         VStack(spacing: 10) {
             Text(L10n.string("Legal document unavailable", language: language))
-                .font(.system(size: 15, weight: .semibold))
+                .font(Typo.headline)
             Text(L10n.string(
                 "The bundled copy could not be verified. Reinstall a signed Dev Island build before relying on it.",
                 language: language
             ))
-                .font(.system(size: 12))
+                .font(Typo.callout)
                 .foregroundStyle(Palette.Window.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
@@ -684,7 +683,7 @@ struct LegalDocumentSheet: View {
                 .accessibilityHidden(true)
             Text(appVersion)
         }
-        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+        .font(Typo.caption)
         .foregroundStyle(Palette.Window.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 24)

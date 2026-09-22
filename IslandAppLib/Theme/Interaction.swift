@@ -61,55 +61,36 @@ struct PressableButtonStyle: ButtonStyle {
     }
 }
 
-/// A low-noise outlined action for compact island surfaces.
-///
-/// It is deliberately smaller and darker than the Welcome Tour CTA: the
-/// empty panel should make the next step unmistakably interactive without
-/// turning a quiet state into a promotional card.
+/// A low-noise outlined capsule for compact island surfaces. The empty panel
+/// uses it so the next step reads as interactive without turning a quiet
+/// state into a promotion.
 struct IslandQuietActionButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     func makeBody(configuration: Configuration) -> some View {
-        IslandQuietActionButtonBody(
-            configuration: configuration,
-            isEnabled: isEnabled,
-            reduceMotion: reduceMotion
-        )
+        IslandQuietActionButtonBody(configuration: configuration)
     }
 }
 
 private struct IslandQuietActionButtonBody: View {
     let configuration: ButtonStyle.Configuration
-    let isEnabled: Bool
-    let reduceMotion: Bool
 
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
     var body: some View {
+        let capsule = Capsule()
         configuration.label
-            .foregroundStyle(
-                Palette.warmWhite.opacity(
-                    configuration.isPressed ? 0.62 : (isHovering ? 0.90 : 0.76)
-                )
-            )
-            .padding(.horizontal, 10)
+            .font(Typo.islandControl)
+            .foregroundStyle(isHovering || configuration.isPressed ? Palette.warmWhite : Palette.textSecondary)
+            .padding(.horizontal, 12)
             .frame(height: 28)
             .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        Palette.warmWhite.opacity(
-                            configuration.isPressed ? 0.055 : (isHovering ? 0.070 : 0.035)
-                        )
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(
-                                Palette.warmWhite.opacity(isHovering ? 0.16 : 0.095),
-                                lineWidth: 0.75
-                            )
-                    }
+                capsule
+                    .fill(Palette.warmWhite.opacity(configuration.isPressed ? 0.10 : (isHovering ? 0.07 : 0.035)))
+                    .overlay { capsule.strokeBorder(Palette.hairline, lineWidth: 0.75) }
             }
+            .opacity(isEnabled ? 1 : 0.42)
+            .contentShape(capsule)
             .scaleEffect(
                 InteractionFeedbackPolicy.pressScale(
                     isPressed: configuration.isPressed,
@@ -117,18 +98,53 @@ private struct IslandQuietActionButtonBody: View {
                     reduceMotion: reduceMotion
                 )
             )
-            .opacity(isEnabled ? 1 : 0.42)
-            .contentShape(Rectangle())
             .animation(Motion.press, value: configuration.isPressed)
             .animation(
-                Motion.respectingReducedMotion(
-                    reduceMotion,
-                    preferred: Motion.hover
-                ),
+                Motion.respectingReducedMotion(reduceMotion, preferred: Motion.hoverHighlight),
                 value: isHovering
             )
             .onHover { isHovering = isEnabled && $0 }
             .pointingHandCursor(enabled: isEnabled)
+    }
+}
+
+/// Icon-only island controls (history, settings). The glyph stays small; the
+/// hit area is a 28pt circle, the macOS size for a toolbar control.
+struct IslandIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        IslandIconButtonBody(configuration: configuration)
+    }
+}
+
+private struct IslandIconButtonBody: View {
+    let configuration: ButtonStyle.Configuration
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+
+    var body: some View {
+        configuration.label
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(isHovering || configuration.isPressed ? Palette.warmWhite : Palette.textSecondary)
+            .frame(width: 28, height: 28)
+            .background {
+                Circle().fill(Palette.warmWhite.opacity(configuration.isPressed ? 0.10 : (isHovering ? 0.06 : 0)))
+            }
+            .contentShape(Circle())
+            .scaleEffect(
+                InteractionFeedbackPolicy.pressScale(
+                    isPressed: configuration.isPressed,
+                    pressedScale: 0.96,
+                    reduceMotion: reduceMotion
+                )
+            )
+            .animation(Motion.press, value: configuration.isPressed)
+            .animation(
+                Motion.respectingReducedMotion(reduceMotion, preferred: Motion.hoverHighlight),
+                value: isHovering
+            )
+            .onHover { isHovering = $0 }
+            .pointingHandCursor()
     }
 }
 

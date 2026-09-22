@@ -126,15 +126,9 @@ public struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Dev Island")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Palette.Window.ink)
-                    Text(L10n.string("SETTINGS", language: language))
-                        .font(.system(size: 8.5, weight: .medium, design: .monospaced))
-                        .tracking(0.8)
-                        .foregroundStyle(Palette.Window.textTertiary)
-                }
+                Text("Dev Island")
+                    .font(Typo.bodyStrong)
+                    .foregroundStyle(Palette.Window.ink)
             }
             .padding(.horizontal, 14)
             // The pane runs under the transparent title bar; leave the
@@ -147,7 +141,7 @@ public struct SettingsView: View {
                     presentation.showsHistory = true
                 } label: {
                     Label(L10n.string("Session History", language: language), systemImage: "clock.arrow.circlepath")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(Typo.control)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.leading, 4)
                 }
@@ -180,7 +174,7 @@ public struct SettingsView: View {
                                 .accessibilityHidden(true)
 
                             Text(pane.title(language: language))
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(Typo.control)
                                 .foregroundStyle(
                                     pane == selectedPane ? Palette.Window.onInk : Palette.Window.inkSoft
                                 )
@@ -232,12 +226,12 @@ public struct SettingsView: View {
     private var paneHeader: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(selectedPane.title(language: language))
-                .font(.system(size: 26, weight: .semibold))
-                .tracking(-0.5)
+                .font(Typo.title)
+                .tracking(-0.4)
                 .foregroundStyle(Palette.Window.ink)
 
             Text(selectedPane.detail(language: language))
-                .font(.system(size: 13))
+                .font(Typo.body)
                 .foregroundStyle(Palette.Window.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -316,32 +310,32 @@ enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .agents:
             return L10n.string(
-                "Choose your tools, then check task activity and approval access separately.",
+                "Connect the tools you use. Task activity and approvals are checked separately.",
                 language: language
             )
         case .general:
             return L10n.string(
-                "Choose how Dev Island behaves when you sign in to this Mac.",
+                "What Dev Island does when you sign in to this Mac.",
                 language: language
             )
         case .notifications:
             return L10n.string(
-                "Reserve interruptions for moments that genuinely need your attention.",
+                "Interrupt only when a session needs you.",
                 language: language
             )
         case .usage:
             return L10n.string(
-                "Read provider-authored usage windows locally, without retaining prompts.",
+                "Codex rate limits, read on this Mac. Prompts are never stored.",
                 language: language
             )
         case .updates:
             return L10n.string(
-                "Control authenticated update checks for signed release builds.",
+                "Signed updates for Dev Island, verified before they install.",
                 language: language
             )
         case .support:
             return L10n.string(
-                "Inspect private local history and copy a redacted diagnostic summary.",
+                "Local history, legal documents and a redacted diagnostic summary.",
                 language: language
             )
         }
@@ -417,7 +411,7 @@ private struct SettingsSidebarUtilityButtonBody: View {
 
     var body: some View {
         configuration.label
-            .font(.system(size: 11.5, weight: .medium))
+            .font(Typo.calloutStrong)
             .foregroundStyle(isHovering ? Palette.Window.ink : Palette.Window.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
@@ -455,9 +449,9 @@ private struct SettingsToggleRow: View {
         HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.string(title, language: language))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(Typo.bodyStrong)
                 Text(L10n.string(subtitle, language: language))
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -533,7 +527,7 @@ private struct UsageInsightsSection: View {
                     "Reading the latest local Codex usage snapshot…",
                     language: language
                 ))
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textSecondary)
                 Spacer()
             }
@@ -546,15 +540,10 @@ private struct UsageInsightsSection: View {
             if let snapshot = usage.snapshot {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 8) {
+                        // Freshness and locality are stated once, in the
+                        // footer under the limits.
                         Text("Codex")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(L10n.string(
-                            snapshot.isStale() ? "STALE" : "LOCAL",
-                            language: language
-                        ))
-                            .font(.system(size: 9, weight: .semibold))
-                            .tracking(0.7)
-                            .foregroundStyle(Palette.Window.textTertiary)
+                            .font(Typo.bodyStrong)
                         Spacer()
                         Button(L10n.string("Refresh", language: language)) {
                             usage.refresh()
@@ -567,7 +556,7 @@ private struct UsageInsightsSection: View {
                     }
 
                     Text(snapshotFooter(snapshot))
-                        .font(.system(size: 10))
+                        .font(Typo.caption)
                         .foregroundStyle(Palette.Window.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -591,14 +580,14 @@ private struct UsageInsightsSection: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text(windowLabel(window))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(Typo.caption.weight(.medium))
                 Spacer()
                 Text(L10n.format(
                     "%lld%% used",
                     language: language,
                     Int64(window.usedPercent.rounded())
                 ))
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(Typo.numeric)
                     .foregroundStyle(Palette.Window.ink.opacity(0.86))
             }
 
@@ -607,7 +596,7 @@ private struct UsageInsightsSection: View {
                 .tint(usageTint(window.usedPercent))
 
             Text(resetLabel(window.resetsAt))
-                .font(.system(size: 10))
+                .font(Typo.caption)
                 .foregroundStyle(Palette.Window.textTertiary)
         }
         .accessibilityElement(children: .combine)
@@ -626,9 +615,9 @@ private struct UsageInsightsSection: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(L10n.string(title, language: language))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(Typo.bodyStrong)
                 Text(L10n.string(detail, language: language))
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -732,12 +721,12 @@ private struct UpdatesSection: View {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Dev Island \(previewAppVersion ?? updates.currentVersion)")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(Typo.bodyStrong)
                         Text(L10n.string(
                             "Updates are verified before extraction and installation.",
                             language: language
                         ))
-                            .font(.system(size: 11))
+                            .font(Typo.caption)
                             .foregroundStyle(Palette.Window.textSecondary)
                     }
 
@@ -806,12 +795,12 @@ private struct SupportSection: View {
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L10n.string("Legal Documents", language: language))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(Typo.bodyStrong)
                         Text(L10n.string(
                             "Offline review copies bundled with this build. No browser or network is required.",
                             language: language
                         ))
-                            .font(.system(size: 11))
+                            .font(Typo.caption)
                             .foregroundStyle(Palette.Window.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -842,7 +831,7 @@ private struct SupportSection: View {
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L10n.string("Diagnostic Summary", language: language))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(Typo.bodyStrong)
                         Text(diagnosticsFeedback.message
                              ?? L10n.string(
                                 diagnosticsFeedback.copied
@@ -850,7 +839,7 @@ private struct SupportSection: View {
                                     : "Aggregate app and session state only. No keys, prompts, paths, titles, URLs, or session IDs.",
                                 language: language
                              ))
-                            .font(.system(size: 11))
+                            .font(Typo.caption)
                             .foregroundStyle(Palette.Window.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -895,13 +884,13 @@ private struct SupportSection: View {
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L10n.string("Stored Task History", language: language))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(Typo.bodyStrong)
                         Text(historyMessage
                              ?? L10n.string(
                                 "Remove persisted task and progress records from this Mac. Active sessions stay visible.",
                                 language: language
                              ))
-                            .font(.system(size: 11))
+                            .font(Typo.caption)
                             .foregroundStyle(historyMessage == nil
                                              ? Palette.Window.textSecondary
                                              : Palette.Window.ink.opacity(0.8))
@@ -1143,12 +1132,12 @@ struct LaunchHealthNotice: View {
                     "Previous launch did not reach ready state",
                     language: language
                 ))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(Typo.bodyStrong)
                 Text(L10n.string(
                     "Dev Island ended before its brief startup health check completed. This can follow a quick Force Quit, restart, power loss, or a crash. No crash report was read or sent.",
                     language: language
                 ))
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -1157,7 +1146,7 @@ struct LaunchHealthNotice: View {
                         "This happened repeatedly. Keep this launch open briefly, then relaunch. If it repeats, copy the private diagnostic summary below.",
                         language: language
                     ))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(Typo.caption.weight(.medium))
                         .foregroundStyle(Palette.Window.stateWaiting.opacity(0.82))
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
@@ -1203,9 +1192,9 @@ private struct NotificationsSection: View {
             if notificationsEnabled, let authorizationIssue {
                 VStack(alignment: .leading, spacing: 10) {
                     Label(L10n.string(authorizationIssue, language: language), systemImage: "bell.slash")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Typo.bodyStrong)
                     Text(L10n.string("Your notification preferences are saved. System banners and sounds need macOS permission; task activity remains visible in the island.", language: language))
-                        .font(.system(size: 12))
+                        .font(Typo.callout)
                         .foregroundStyle(Palette.Window.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Button(L10n.string("Open System Settings", language: language)) {
@@ -1238,12 +1227,12 @@ private struct NotificationsSection: View {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("Signal Sounds", language: language))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(Typo.bodyStrong)
                         Text(L10n.string(
                             "Brief, distinct cues for input, failure, and completion.",
                             language: language
                         ))
-                            .font(.system(size: 11))
+                            .font(Typo.caption)
                             .foregroundStyle(Palette.Window.textSecondary)
                     }
 
@@ -1397,7 +1386,7 @@ private struct ConnectedServicesSection: View {
                     DisclosureGroup(isExpanded: $showsPreviewConnectors) {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(L10n.string("These connectors handle simulated requests only. They are not included in your setup count.", language: language))
-                                .font(.system(size: 12))
+                                .font(Typo.callout)
                                 .foregroundStyle(Palette.Window.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             agentRows(entry.descriptors)
@@ -1410,7 +1399,7 @@ private struct ConnectedServicesSection: View {
                             Text("\(entry.descriptors.count)")
                                 .monospacedDigit()
                         }
-                        .font(.system(size: 12, weight: .medium))
+                        .font(Typo.calloutStrong)
                         .foregroundStyle(Palette.Window.textSecondary)
                     }
                     .padding(14)
@@ -1514,7 +1503,7 @@ private struct ConnectedServicesSection: View {
             states: connectionStates,
             language: language
         ))
-        .font(.system(size: 12, weight: .medium))
+        .font(Typo.calloutStrong)
         .foregroundStyle(Palette.Window.textSecondary)
         .monospacedDigit()
         .accessibilityAddTraits(.updatesFrequently)
@@ -1522,7 +1511,7 @@ private struct ConnectedServicesSection: View {
 
     private func groupLabel(_ text: String, tone: WindowSurfaceTone) -> some View {
         Text(text)
-            .font(.system(size: 11.5, weight: .medium))
+            .font(Typo.calloutStrong)
             .foregroundStyle(
                 tone == .attention ? Palette.Window.attentionText : Palette.Window.textSecondary
             )
@@ -1563,7 +1552,7 @@ private struct ConnectedServicesSection: View {
     private var localAgentMaintenanceRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(maintenanceMessage ?? maintenanceStatusMessage)
-                .font(.system(size: 11))
+                .font(Typo.caption)
                 .foregroundStyle(maintenanceFailed
                                  ? Palette.Window.destructive
                                  : Palette.Window.textTertiary)
@@ -1766,10 +1755,10 @@ private struct LocalLiveReadinessCard: View {
                 Text(snapshot == nil && !isChecking
                      ? L10n.string("Island not reacting?", language: language)
                      : content.title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(Typo.bodyStrong)
                     .foregroundStyle(Palette.Window.ink)
                 Text(content.detail)
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1866,10 +1855,10 @@ private struct LocalAgentReportingNoticeView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(notice.title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(Typo.bodyStrong)
                     .foregroundStyle(Palette.Window.ink)
                 Text(notice.hint)
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1907,10 +1896,10 @@ private struct LocalHookServiceNotice: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.string(title, language: language))
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(Typo.bodyStrong)
                     .foregroundStyle(Palette.Window.ink)
                 Text(L10n.string(detail, language: language))
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -2003,9 +1992,9 @@ private struct ManusServiceRow: View {
                     isBusy: isSubmitting
                 )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Manus").font(.system(size: 13.5, weight: .semibold))
+                    Text("Manus").font(Typo.bodyStrong)
                     Text(L10n.string(statusLine, language: language))
-                        .font(.system(size: 12))
+                        .font(Typo.callout)
                         .foregroundStyle(Palette.Window.textSecondary)
                 }
                 Spacer()
@@ -2021,7 +2010,7 @@ private struct ManusServiceRow: View {
 
             if let lastError {
                 Text(lastError)
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.destructive)
                     .padding(.leading, 40)
             }
@@ -2061,28 +2050,41 @@ private struct ManusServiceRow: View {
         }
     }
 
+    /// A persistent label above the field: the `sk-…` format hint is a
+    /// placeholder and disappears the moment typing starts.
     private var keyField: some View {
-        // Per S's docs/manus-api-field-notes.md, the real API key
-        // format is `sk-…` (not the `mk_live_…` from the public docs
-        // example). Placeholder updated to match what users actually
-        // get from manus.im.
-        SecureField("sk-…", text: $apiKeyDraft)
-            .textFieldStyle(.plain)
-            .font(.system(size: 12, design: .monospaced))
-            .padding(.horizontal, 12)
-            .frame(height: 30)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(Palette.Window.field)
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
-                    }
+        VStack(alignment: .leading, spacing: 5) {
+            Text(L10n.string("Manus API key", language: language))
+                .font(Typo.caption.weight(.medium))
+                .foregroundStyle(Palette.Window.textSecondary)
+                .accessibilityHidden(true)
+
+            // Per S's docs/manus-api-field-notes.md, the real API key
+            // format is `sk-…` (not the `mk_live_…` from the public docs
+            // example). Placeholder updated to match what users actually
+            // get from manus.im.
+            SecureField(
+                L10n.string("Manus API key", language: language),
+                text: $apiKeyDraft,
+                prompt: Text(verbatim: "sk-…")
             )
-            .onSubmit {
-                guard !apiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                Task { await connect() }
-            }
+                .textFieldStyle(.plain)
+                .font(Typo.mono)
+                .padding(.horizontal, 12)
+                .frame(height: 30)
+                .background(
+                    Capsule()
+                        .fill(Palette.Window.field)
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
+                        }
+                )
+                .onSubmit {
+                    guard !apiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                    Task { await connect() }
+                }
+        }
     }
 
     @MainActor
@@ -2169,7 +2171,7 @@ private struct AgentConnectionRow: View {
 
             if let lastError {
                 Text(lastError)
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.destructive)
                     .padding(.horizontal, 14)
                     .padding(.leading, 40)
@@ -2219,22 +2221,13 @@ private struct AgentConnectionRow: View {
             AgentStateTile(state: connectionState, isBusy: isBusy)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 7) {
-                    Text(descriptor.displayName)
-                        .font(.system(size: 13.5, weight: .semibold))
-                        .foregroundStyle(Palette.Window.ink)
-                    if descriptor.releaseStage == .preview {
-                        Text(L10n.string("PREVIEW", language: language))
-                            .font(.system(size: 10, weight: .medium))
-                            .tracking(0.7)
-                            .foregroundStyle(Palette.Window.textTertiary)
-                            .accessibilityLabel(
-                                L10n.string("Preview connector", language: language)
-                            )
-                    }
-                }
+                // Preview connectors live in their own "Preview connectors"
+                // group, which already says what a tag here would.
+                Text(descriptor.displayName)
+                    .font(Typo.bodyStrong)
+                    .foregroundStyle(Palette.Window.ink)
                 Text(statusLine)
-                    .font(.system(size: 12))
+                    .font(Typo.callout)
                     .foregroundStyle(
                         action == .authorize || action == .update
                             ? Palette.Window.attentionText
@@ -2247,7 +2240,7 @@ private struct AgentConnectionRow: View {
                             ? "Task activity visible" : "Waiting for task activity",
                         language: language
                     ))
-                    .font(.system(size: 11.5))
+                    .font(Typo.callout)
                     .foregroundStyle(Palette.Window.textSecondary)
                 }
             }
@@ -2271,7 +2264,7 @@ private struct AgentConnectionRow: View {
                     language: language
                 ))
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(Typo.caption.weight(.medium))
             .foregroundStyle(Palette.Window.textSecondary)
             .accessibilityElement(children: .combine)
         } else {
@@ -2345,7 +2338,7 @@ private struct AgentConnectionRow: View {
                     Text(CodexSessionMonitoringPresentation.status(
                         store.codexSessionMonitorStatus, language: language
                     ))
-                    .font(.system(size: 12))
+                    .font(Typo.callout)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
@@ -2372,7 +2365,7 @@ private struct AgentConnectionRow: View {
                 }
                 if descriptor.source == "codex" {
                     Text(L10n.string("Hooks installed · verify delivery with a real request", language: language))
-                        .font(.system(size: 12))
+                        .font(Typo.callout)
                         .foregroundStyle(Palette.Window.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12)
@@ -2400,10 +2393,10 @@ private struct AgentConnectionRow: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(Typo.bodyStrong)
                     .foregroundStyle(Palette.Window.ink)
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(Typo.callout)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -2543,12 +2536,12 @@ private struct GeneralSection: View {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.string("Language", language: language))
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(Typo.bodyStrong)
                         Text(L10n.string(
                             "Change Dev Island without changing your Mac language.",
                             language: language
                         ))
-                            .font(.system(size: 11))
+                            .font(Typo.caption)
                             .foregroundStyle(Palette.Window.textSecondary)
                     }
 
@@ -2581,10 +2574,10 @@ private struct GeneralSection: View {
                                 .lineLimit(1)
                             Spacer(minLength: 4)
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 8, weight: .semibold))
+                                .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(Palette.Window.textTertiary)
                         }
-                        .font(.system(size: 11, weight: .medium))
+                        .font(Typo.caption.weight(.medium))
                         .foregroundStyle(Palette.Window.ink.opacity(0.82))
                         .padding(.horizontal, 10)
                         .frame(width: 150, height: 30)
@@ -2621,7 +2614,7 @@ private struct GeneralSection: View {
 
                 if let lastError {
                     Text(lastError)
-                        .font(.system(size: 11))
+                        .font(Typo.caption)
                         .foregroundStyle(Palette.Window.stateFailed)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
@@ -2648,12 +2641,12 @@ private struct GeneralSection: View {
                 .foregroundStyle(Palette.Window.textTertiary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.string("Close the Panel with Esc", language: language))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(Typo.bodyStrong)
                 Text(L10n.string(
                     "Needs Accessibility access — Esc is pressed while your editor still has focus. Clicking away always closes the panel.",
                     language: language
                 ))
-                    .font(.system(size: 11))
+                    .font(Typo.caption)
                     .foregroundStyle(Palette.Window.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -2695,7 +2688,7 @@ private struct GeneralSection: View {
 @ViewBuilder
 private func sectionTitle(_ text: LocalizedStringKey) -> some View {
     Text(text)
-        .font(.system(size: 12, weight: .medium))
+        .font(Typo.calloutStrong)
         .foregroundStyle(Palette.Window.ink.opacity(0.72))
 }
 

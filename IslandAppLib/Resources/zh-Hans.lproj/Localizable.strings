@@ -92,13 +92,13 @@
 "Try again" = "请重试";
 "Connected" = "已连接";
 "Configured" = "已配置";
-"Configured · review %@" = "已配置 · 请在 %@ 中确认";
+"Configured · review %@" = "已配置 · 待在 %@ 中确认";
 "Needs update" = "需要更新";
 "Not connected" = "未连接";
 "Retry" = "重试";
 "Update" = "更新";
 "Add" = "添加";
-"Configured; confirm Hook trust in %@" = "已配置；请在 %@ 中确认 Hook 信任";
+"Configured; confirm Hook trust in %@" = "已配置；待在 %@ 中确认 Hook 信任";
 "Checking %@ connection" = "正在检查 %@ 连接";
 "Update %@ connection" = "更新 %@ 连接";
 "Connect %@" = "连接 %@";
@@ -106,17 +106,16 @@
 "Adds Dev Island's managed hooks for %@" = "为 %@ 添加由 Dev Island 管理的 Hook";
 
 /* 设置导航与关键操作 */
-"SETTINGS" = "设置";
 "Agents" = "Agent";
 "General" = "通用";
 "Usage & Limits" = "用量与限额";
 "Updates" = "更新";
 "Privacy & Support" = "隐私与支持";
-"Choose how Dev Island behaves when you sign in to this Mac." = "设置 Dev Island 在你登录这台 Mac 时的行为。";
-"Reserve interruptions for moments that genuinely need your attention." = "只在真正需要你关注时打断。";
-"Read provider-authored usage windows locally, without retaining prompts." = "在本地读取服务商提供的用量窗口，不保留提示词。";
-"Control authenticated update checks for signed release builds." = "管理已签名发布版本的可信更新检查。";
-"Inspect private local history and copy a redacted diagnostic summary." = "查看本地私密历史，并复制已脱敏的诊断摘要。";
+"What Dev Island does when you sign in to this Mac." = "登录这台 Mac 时 Dev Island 的行为。";
+"Interrupt only when a session needs you." = "只在会话需要你时打断。";
+"Codex rate limits, read on this Mac. Prompts are never stored." = "在这台 Mac 上读取 Codex 的用量限制，从不保存提示词。";
+"Signed updates for Dev Island, verified before they install." = "Dev Island 的签名更新，安装前会先验证。";
+"Local history, legal documents and a redacted diagnostic summary." = "本地历史、法律文件和已脱敏的诊断摘要。";
 "Selected" = "已选择";
 "Welcome Tour" = "欢迎引导";
 "Quit Dev Island" = "退出 Dev Island";
@@ -130,8 +129,6 @@
 "Read provider-authored rate-limit events from recent Codex activity. Off by default and never uploaded." = "从近期 Codex 活动中读取服务商提供的限流事件。默认关闭，数据永不上传。";
 "Reading the latest local Codex usage snapshot…" = "正在读取最新的本地 Codex 用量快照…";
 "Reading local Codex usage" = "正在读取本地 Codex 用量";
-"STALE" = "已过期";
-"LOCAL" = "本地";
 "Refresh" = "刷新";
 "Check Automatically" = "自动检查";
 "Updates are verified before extraction and installation." = "更新会在解压和安装前完成验证。";
@@ -144,7 +141,6 @@
 "Terms of Use" = "使用条款";
 "Opens the exact privacy notice bundled with this app" = "打开当前 App 内原样打包的隐私说明";
 "Opens the exact terms bundled with this app" = "打开当前 App 内原样打包的使用条款";
-"LEGAL · LOCAL COPY" = "法律文件 · 本地副本";
 "Done" = "完成";
 "Closes the legal document" = "关闭法律文件";
 "Loading legal document" = "正在载入法律文件";
@@ -169,7 +165,6 @@
 "Open System Settings" = "打开系统设置";
 "Disconnect" = "断开";
 "Connect" = "连接";
-"PREVIEW" = "预览";
 "Track sessions and surface requests that need attention" = "跟踪会话，并在需要你时将请求带到前台";
 "Track sessions and handle tool approvals in the island" = "跟踪会话，并直接在灵动岛中处理工具审批";
 "Track Cursor agent lifecycle and results in the island" = "跟踪 Cursor Agent 的运行状态与结果";
@@ -236,7 +231,7 @@
 "Connection unavailable — reconnect to retry" = "连接不可用 — 请重新连接后重试";
 "Remote callback cleanup pending — retry Disconnect" = "远端回调清理待完成 — 请再次断开";
 "Stored key is invalid" = "已存储的密钥无效";
-"Not connected — paste an API key below" = "未连接 — 请在下方粘贴 API 密钥";
+"Not connected — paste an API key below" = "未连接 — 在下方粘贴 API 密钥";
 "Disconnected, but the saved key couldn’t be removed. Retry Disconnect before uninstalling." = "连接已断开，但无法移除已存储的密钥。卸载前请再次尝试断开。";
 "Check again" = "再次检查";
 
@@ -249,9 +244,6 @@
 "%lld running" = "%lld 个运行中";
 "%lld completed" = "%lld 个已完成";
 ", " = "，";
-"Working" = "工作中";
-"Review" = "待检查";
-"Results" = "结果";
 "Sessions" = "会话";
 "%@, %lld. %@. %lld sessions total." = "%@，%lld。%@。共 %lld 个会话。";
 "Reconnecting…" = "正在重新连接…";
@@ -293,13 +285,13 @@
 "Reading the private database on this Mac." = "正在读取这台 Mac 上的私密数据库。";
 "History is unavailable" = "历史记录暂不可用";
 "Your live sessions are unaffected. Retry after the local database becomes available." = "实时会话不受影响。本地数据库恢复后请重试。";
-"SHOWING %lld OF %lld MOST RECENT" = "显示最近 %lld 个，共 %lld 个";
-"%lld STORED SESSION" = "已存储 %lld 个会话";
-"%lld STORED SESSIONS" = "已存储 %lld 个会话";
+"Showing the %lld most recent of %lld" = "显示最近 %lld 个，共 %lld 个";
+"%lld stored session" = "已存储 %lld 个会话";
+"%lld stored sessions" = "已存储 %lld 个会话";
 "No stored sessions yet" = "暂无已存储的会话";
 "No matching sessions" = "没有匹配的会话";
 "Completed and in-progress Agent snapshots will appear here without changing the live island." = "已完成和进行中的 Agent 快照会显示在这里，不会改变实时灵动岛。";
-"Try another search or status filter." = "请尝试其他关键词或状态筛选。";
+"Try another search or status filter." = "换个关键词或状态筛选试试。";
 "Reloads private session history from this Mac" = "重新载入这台 Mac 上的私密会话历史";
 "Untitled session" = "未命名会话";
 "Open" = "打开";
@@ -357,15 +349,10 @@
 
 /* 批准、计划审阅与问题 */
 "Session %@" = "会话 %@";
-"APPROVAL" = "待批准";
-"PLAN REVIEW" = "计划审阅";
-"QUESTION" = "问题";
-"QUESTION %lld/%lld" = "问题 %lld/%lld";
 "+%lld queued" = "+%lld 个排队中";
 "%lld more requests queued for this session" = "此会话还有 %lld 个请求在排队";
 "Expires in %@" = "%@ 后过期";
 "%@, %@, expires in %@" = "%1$@，%2$@，将在 %3$@ 后过期";
-"%@ for %@, %@" = "%2$@ 的 %1$@：%3$@";
 "%@ for %@" = "%2$@ 的 %1$@";
 "Not selected" = "未选择";
 "Select this answer" = "选择此答案";
@@ -550,7 +537,7 @@
 "Local activity was detected. Check task monitoring and approval authorization separately." = "已检测到本地活动。请分别检查任务监控与审批授权。";
 "Local activity was detected. Check whether this connection can send events." = "已检测到本地活动。请检查此连接能否送达事件。";
 "Check connection" = "检查连接";
-"Choose your tools, then check task activity and approval access separately." = "选择你使用的工具，分别确认任务活动与审批权限。";
+"Connect the tools you use. Task activity and approvals are checked separately." = "连接你使用的工具。任务活动与审批会分别确认。";
 "These connectors handle simulated requests only. They are not included in your setup count." = "这些连接器目前仅处理模拟请求，不计入上方的已配置数量。";
 "Task activity visible" = "已收到任务活动";
 "Waiting for task activity" = "等待任务活动";
@@ -580,3 +567,12 @@
 
 "Local setup checks passed" = "本地配置检查通过";
 "%@ passed setup checks. Confirm approval delivery with a real request." = "%@ 已通过配置检查。请用真实请求确认审批能否送达。";
+
+/* Island panel and request card */
+"Needs you" = "需要你处理";
+"Approval" = "待批准";
+"Plan review" = "计划审阅";
+"Question" = "问题";
+"Question %lld of %lld" = "问题 %lld/%lld";
+"Legal · local copy" = "法律文件 · 本地副本";
+"Manus API key" = "Manus API 密钥";

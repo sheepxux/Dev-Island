@@ -1,4 +1,5 @@
 import AppKit
+import IslandCore
 import SwiftUI
 
 extension Palette {
@@ -114,13 +115,29 @@ enum WindowPaletteContrast {
     static let stateFailed = Signal.failureOnLight.hex
 }
 
+extension TaskStatus {
+    /// Status marks drawn on a light window ground (History). The island's
+    /// own colors are tuned for black: its neutral running white would
+    /// vanish on paper, and marks need 3:1 against their ground.
+    var windowColor: Color {
+        switch self {
+        case .running:   return Palette.Window.stateRunning
+        case .waiting:   return Palette.Window.stateWaiting
+        case .completed: return Palette.Window.stateCompleted
+        case .failed:    return Palette.Window.stateFailed
+        }
+    }
+}
+
 extension BarState {
-    /// The same five states as `color`, drawn for the light window ground.
+    /// The same five states as `color`, drawn as marks on the light window
+    /// ground. Waiting uses the amber ink, not the tile fill, so the dots
+    /// keep 3:1 against paper.
     var windowColor: Color {
         switch self {
         case .idle:      return Palette.Window.textTertiary
         case .running:   return Palette.Window.stateRunning
-        case .waiting:   return Palette.Window.attention
+        case .waiting:   return Palette.Window.stateWaiting
         case .completed: return Palette.Window.stateCompleted
         case .failed:    return Palette.Window.stateFailed
         }

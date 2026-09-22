@@ -127,14 +127,14 @@ struct NotchPanelView: View {
         if layout.hasNotch {
             HStack(spacing: 0) {
                 titleLabel
-                    .padding(.leading, 14)
+                    .padding(.leading, NotchMetrics.panelInset + TaskCardMetrics.horizontalPadding)
                     .frame(width: sideExtensionWidth, alignment: .leading)
 
                 // Hardware notch corridor — transparent
                 Spacer().frame(width: layout.notchWidth)
 
                 trailingCluster
-                    .padding(.trailing, 10)
+                    .padding(.trailing, 8)
                     .frame(width: sideExtensionWidth, alignment: .trailing)
             }
             .frame(height: layout.notchHeight)
@@ -144,18 +144,23 @@ struct NotchPanelView: View {
                 Spacer()
                 trailingCluster
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 11)
-            .padding(.bottom, 9)
+            .padding(.leading, NotchMetrics.panelInset + TaskCardMetrics.horizontalPadding)
+            .padding(.trailing, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 6)
         }
     }
 
+    /// Gap between the header's state mark and its title; the empty state
+    /// aligns its text to the title with it.
+    private static let headerMarkSpacing: CGFloat = 7
+
     @ViewBuilder
     private var titleLabel: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: Self.headerMarkSpacing) {
             AnimatedDotMatrixMark(
                 color: headerState.color,
-                size: 8,
+                size: TaskCardLeadingIdentityMetrics.statusSize,
                 motion: headerState.matrixMotion,
                 pattern: headerState.matrixPattern,
                 intensity: headerState.matrixIntensity,
@@ -164,16 +169,18 @@ struct NotchPanelView: View {
 
             Text(L10n.string(headerTitle, language: language))
                 .font(Typo.islandHeadline)
-                .foregroundStyle(Palette.warmWhite.opacity(0.9))
+                .foregroundStyle(Palette.warmWhite)
 
-            Text("\(headerCount)")
-                .font(Typo.barCount)
-                .foregroundStyle(headerState.color.opacity(0.9))
-                .monospacedDigit()
+            if headerCount > 0 {
+                Text("\(headerCount)")
+                    .font(Typo.islandNumeric)
+                    .foregroundStyle(headerState.color)
+                    .monospacedDigit()
+            }
 
-            if !layout.hasNotch, headerCount != tasks.count {
+            if !layout.hasNotch, headerSummary.total > 0, headerCount != headerSummary.total {
                 Text("· \(sessionCountLabel)")
-                    .font(Typo.barCount)
+                    .font(Typo.islandMeta)
                     .foregroundStyle(Palette.textTertiary)
                     .monospacedDigit()
             }
@@ -187,13 +194,15 @@ struct NotchPanelView: View {
         presentationState ?? BarState.derive(from: tasks)
     }
 
+    /// Names the state the header count refers to, in the words the rows
+    /// already use, so "2" always reads as "2 of this kind".
     private var headerTitle: String {
         switch headerState {
-        case .waiting:   return "Attention"
-        case .failed:    return "Review"
-        case .completed: return "Results"
-        case .running:   return "Working"
-        case .idle:      return "Sessions"
+        case .waiting:   return "Needs you"
+        case .failed:    return "Failed"
+        case .completed: return "Completed"
+        case .running:   return "Running"
+        case .idle:      return "No sessions"
         }
     }
 
@@ -212,7 +221,7 @@ struct NotchPanelView: View {
     }
 
     private var sessionCountLabel: String {
-        L10n.sessionCount(tasks.count, language: language)
+        L10n.sessionCount(headerSummary.total, language: language)
     }
 
     private var headerAccessibilityLabel: String {
@@ -231,17 +240,12 @@ struct NotchPanelView: View {
 
     @ViewBuilder
     private var trailingCluster: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 2) {
             connectionDot
             Button(action: onHistoryTap) {
                 Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.textSecondary.opacity(0.72))
-                    .frame(width: 24, height: 26)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
-            .pointingHandCursor()
+            .buttonStyle(IslandIconButtonStyle())
             .help(L10n.string("Session History", language: language))
             .accessibilityLabel(
                 L10n.string("Session History", language: language)
@@ -252,13 +256,8 @@ struct NotchPanelView: View {
 
             Button(action: onSettingsTap) {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Palette.textSecondary.opacity(0.72))
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
-            .pointingHandCursor()
+            .buttonStyle(IslandIconButtonStyle())
             .help(L10n.string("Open Settings", language: language))
             .accessibilityLabel(
                 L10n.string("Open Dev Island Settings", language: language)
@@ -282,31 +281,37 @@ struct NotchPanelView: View {
             language: language
         )
 
+        // Healthy connections are the expected state and stay silent; the
+        // mark appears only while a transport is reconnecting or broken.
         // The same point-field signature used by task status keeps connection
         // state from falling back to a generic system dot.
-        AnimatedDotMatrixMark(
-            color: connectionColor(presentation.state),
-            size: 8,
-            motion: connectionMotion(presentation.state),
-            pattern: connectionPattern(presentation.state),
-            intensity: connectionIntensity(presentation.state),
-            isAnimated: isLive && !reduceMotion
-        )
-            .animation(Motion.colorTransition, value: presentation.state)
-            .help(presentation.help)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(presentation.accessibilityLabel)
-            .accessibilityValue(presentation.accessibilityValue)
+        if presentation.state != .available {
+            AnimatedDotMatrixMark(
+                color: connectionColor(presentation.state),
+                size: 9,
+                motion: connectionMotion(presentation.state),
+                pattern: connectionPattern(presentation.state),
+                intensity: connectionIntensity(presentation.state),
+                isAnimated: isLive && !reduceMotion
+            )
+                .frame(width: 20, height: 28)
+                .contentShape(Rectangle())
+                .help(presentation.help)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(presentation.accessibilityLabel)
+                .accessibilityValue(presentation.accessibilityValue)
+                .transition(.opacity)
+        }
     }
 
     private func connectionColor(
         _ state: AgentConnectionIndicatorSnapshot.State
     ) -> Color {
         switch state {
-        case .available:       return Palette.stateCompleted.opacity(0.88)
-        case .transitioning:   return Palette.stateRunning.opacity(0.92)
-        case .needsAttention:  return Palette.stateWaiting.opacity(0.94)
-        case .inactive:        return Color.white.opacity(0.20)
+        case .available:       return Palette.stateCompleted
+        case .transitioning:   return Palette.stateRunning
+        case .needsAttention:  return Palette.stateWaiting
+        case .inactive:        return Palette.stateIdle
         }
     }
 
@@ -362,9 +367,9 @@ struct NotchPanelView: View {
     ) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 1) {
+                LazyVStack(spacing: 2) {
                     ForEach(tasks, id: \.identity) { task in
-                        VStack(spacing: 1) {
+                        VStack(spacing: 2) {
                             if let request = requestPresentation.primary(
                                 for: task.identity
                             ) {
@@ -441,8 +446,8 @@ struct NotchPanelView: View {
                         .id(request.id)
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
+                .padding(.horizontal, NotchMetrics.panelInset)
+                .padding(.bottom, NotchMetrics.panelInset)
             }
             .onChange(of: highlightedTask, initial: true) { _, identity in
                 guard let identity,
@@ -555,64 +560,63 @@ struct NotchPanelView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        HStack(alignment: .top, spacing: 13) {
-            DotMatrixMark(
-                color: Palette.stateIdle,
-                size: 18,
-                pattern: .field,
-                intensity: 0.95
-            )
-            .padding(.top, 1)
-
-            VStack(alignment: .leading, spacing: 7) {
-                Text(L10n.string("Nothing needs you", language: language))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.warmWhite.opacity(0.90))
-
+        // The header already names the state ("No sessions") with its mark;
+        // the body only explains what will appear and offers the next step,
+        // aligned under the header's text rather than repeating a mark.
+        HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(L10n.string(
                     "Agent sessions will appear here automatically.",
                     language: language
                 ))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.textSecondary.opacity(0.88))
+                    .font(Typo.islandBody)
+                    .foregroundStyle(Palette.textSecondary)
 
                 if let reportingNotice {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(reportingNotice.title)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(Typo.islandLabel)
                             .foregroundStyle(Palette.stateWaiting)
                         Text(reportingNotice.hint)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Palette.textSecondary.opacity(0.88))
+                            .font(Typo.islandMeta)
+                            .foregroundStyle(Palette.textSecondary)
                     }
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
                     .accessibilityElement(children: .combine)
                 }
 
                 if let todaySummary {
                     Text(todaySummary)
-                        .font(.system(size: 11))
+                        .font(Typo.islandMeta)
                         .monospacedDigit()
-                        .foregroundStyle(Palette.textSecondary.opacity(0.72))
+                        .foregroundStyle(Palette.textTertiary)
                         .lineLimit(1)
                 }
 
                 Button(action: onConnectTap) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Text(L10n.string("Connect an agent", language: language))
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(.system(size: 9, weight: .semibold))
+                            .accessibilityHidden(true)
                     }
-                    .font(.system(size: 11, weight: .medium))
                 }
                 .buttonStyle(IslandQuietActionButtonStyle())
-                .padding(.top, 3)
+                .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 20)
+        .padding(
+            .leading,
+            NotchMetrics.panelInset
+                + TaskCardMetrics.horizontalPadding
+                + TaskCardLeadingIdentityMetrics.statusSize
+                + Self.headerMarkSpacing
+        )
+        .padding(.trailing, 18)
+        .padding(.top, 2)
+        .padding(.bottom, 16)
     }
 
     // MARK: - Geometry
@@ -638,37 +642,34 @@ private struct ActionResponseReceiptRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: TaskCardLeadingIdentityMetrics.spacing) {
             AnimatedDotMatrixMark(
                 color: Palette.stateRunning,
-                size: 9,
+                size: TaskCardLeadingIdentityMetrics.statusSize,
                 motion: .orbiting,
                 pattern: .orbit,
                 intensity: 0.96,
                 isAnimated: isLive && !reduceMotion
             )
-            .frame(width: 9, height: 9)
+            .frame(
+                width: TaskCardLeadingIdentityMetrics.statusSize,
+                height: TaskCardLeadingIdentityMetrics.statusSize
+            )
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(snapshot.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Palette.warmWhite.opacity(0.92))
+                    .font(Typo.islandTitle)
+                    .foregroundStyle(Palette.warmWhite)
 
                 Text(snapshot.detail)
-                    .font(.system(size: 10.5, weight: .regular))
-                    .foregroundStyle(Palette.textSecondary.opacity(0.82))
+                    .font(Typo.islandMeta)
+                    .foregroundStyle(Palette.textSecondary)
             }
 
             Spacer(minLength: 8)
         }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-        .background(alignment: .bottom) {
-            Rectangle()
-                .fill(Palette.hairline)
-                .frame(height: 0.5)
-                .padding(.horizontal, 2)
-        }
+        .padding(.horizontal, TaskCardMetrics.horizontalPadding)
+        .frame(maxWidth: .infinity, minHeight: TaskCardMetrics.minHeight, alignment: .leading)
         .transition(.opacity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(snapshot.accessibilityLabel)

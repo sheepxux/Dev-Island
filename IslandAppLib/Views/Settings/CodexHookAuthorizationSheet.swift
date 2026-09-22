@@ -19,20 +19,20 @@ struct CodexHookAuthorizationSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L10n.string("Authorize Dev Island hooks", language: language))
-                .font(.system(size: 18, weight: .semibold))
+                .font(Typo.title)
                 .accessibilityAddTraits(.isHeader)
             Text(L10n.string(
                 "Allow Codex to run these Dev Island commands for task updates and approval requests on this Mac. Each tool request still follows your Codex approval settings.",
                 language: language
             ))
-                .font(.system(size: 12))
+                .font(Typo.callout)
                 .foregroundStyle(Palette.Window.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(L10n.string(
                 "Authorizing saves trust records for exactly these entries in your Codex configuration (config.toml). Nothing else is changed.",
                 language: language
             ))
-                .font(.system(size: 12))
+                .font(Typo.callout)
                 .foregroundStyle(Palette.Window.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -42,9 +42,9 @@ struct CodexHookAuthorizationSheet: View {
                         ForEach(review.entries, id: \.eventName) { entry in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(verbatim: entry.eventName)
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(Typo.caption.weight(.semibold))
                                 Text(verbatim: entry.command)
-                                    .font(.system(size: 10, design: .monospaced))
+                                    .font(Typo.mono)
                                     .foregroundStyle(Palette.Window.textSecondary)
                                     .textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -67,11 +67,11 @@ struct CodexHookAuthorizationSheet: View {
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 12))
+                    .font(Typo.callout)
                     .foregroundStyle(Palette.Window.stateWaiting)
                 if let executableURL {
                     Text(CodexTrustGuidance.manualInstructions(language: language))
-                        .font(.system(size: 11))
+                        .font(Typo.caption)
                         .foregroundStyle(Palette.Window.textSecondary)
                     Button {
                         copiedLauncher = CodexTrustGuidance.copyCLILaunchCommand(executableURL: executableURL)

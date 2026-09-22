@@ -264,13 +264,18 @@ final class DotMatrixLayerView: NSView {
         for row in 0..<3 {
             for column in 0..<3 {
                 let dot = dots[row * 3 + column]
+                // Under Reduce Motion the mark never animates, so it rests
+                // on its full pattern instead of one frame of its loop —
+                // otherwise the waiting ripple would freeze near its dimmest.
+                // Before the loop starts, the waiting ripple rests at its
+                // peak (phase 0.25) rather than mid-trough.
                 let restingOpacity = DotMatrixMark.opacity(
                     pattern: configuration.pattern,
-                    motion: configuration.motion,
+                    motion: Motion.systemPrefersReducedMotion ? .still : configuration.motion,
                     intensity: configuration.intensity,
                     row: row,
                     column: column,
-                    phase: 0.5
+                    phase: configuration.motion == .attention ? 0.25 : 0.5
                 )
                 dot.opacity = Float(restingOpacity)
 

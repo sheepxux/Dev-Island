@@ -18,7 +18,12 @@ public enum NotchMetrics {
     /// Outer-bottom corner radius for the synthetic notch on non-notched Macs.
     public static let syntheticCornerRadius: CGFloat = 12
     /// Outer-bottom corner radius for the expanded panel (Task 2).
-    public static let panelCornerRadius: CGFloat = 14
+    public static let panelCornerRadius: CGFloat = 22
+    /// Horizontal inset of the panel's rows and request cards.
+    public static let panelInset: CGFloat = 10
+    /// Rows and cards sit inside the panel's corner, so their radius is
+    /// derived rather than repeated: 22 − 10.
+    public static let panelRowRadius: CGFloat = panelCornerRadius - panelInset
     /// Default panel width (synthetic-notch displays).
     public static let panelWidth: CGFloat = 420
     /// Maximum panel width on notched displays — never exceed this.

@@ -81,7 +81,7 @@ private struct IslandQuietActionButtonBody: View {
         let capsule = Capsule()
         configuration.label
             .font(Typo.islandControl)
-            .foregroundStyle(isHovering || configuration.isPressed ? Palette.warmWhite : Palette.textSecondary)
+            .foregroundStyle(foreground)
             .padding(.horizontal, 12)
             .frame(height: 28)
             .background {
@@ -89,7 +89,6 @@ private struct IslandQuietActionButtonBody: View {
                     .fill(Palette.warmWhite.opacity(configuration.isPressed ? 0.10 : (isHovering ? 0.07 : 0.035)))
                     .overlay { capsule.strokeBorder(Palette.hairline, lineWidth: 0.75) }
             }
-            .opacity(isEnabled ? 1 : 0.42)
             .contentShape(capsule)
             .scaleEffect(
                 InteractionFeedbackPolicy.pressScale(
@@ -105,6 +104,11 @@ private struct IslandQuietActionButtonBody: View {
             )
             .onHover { isHovering = isEnabled && $0 }
             .pointingHandCursor(enabled: isEnabled)
+    }
+
+    private var foreground: Color {
+        guard isEnabled else { return Palette.textTertiary }
+        return isHovering || configuration.isPressed ? Palette.warmWhite : Palette.textSecondary
     }
 }
 

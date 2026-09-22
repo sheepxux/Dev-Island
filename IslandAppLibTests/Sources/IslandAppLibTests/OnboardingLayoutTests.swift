@@ -50,13 +50,4 @@ final class OnboardingLayoutTests: XCTestCase {
             "Try again"
         )
     }
-
-    func testSkipActionDisappearsWhenTheTourHasReachedItsDecisionStep() {
-        XCTAssertTrue(OnboardingNavigationPolicy.showsSkipAction(step: 0, stepCount: 4))
-        XCTAssertTrue(OnboardingNavigationPolicy.showsSkipAction(step: 1, stepCount: 4))
-        XCTAssertTrue(OnboardingNavigationPolicy.showsSkipAction(step: 2, stepCount: 4))
-        XCTAssertFalse(OnboardingNavigationPolicy.showsSkipAction(step: 3, stepCount: 4))
-        XCTAssertFalse(OnboardingNavigationPolicy.showsSkipAction(step: -1, stepCount: 4))
-        XCTAssertFalse(OnboardingNavigationPolicy.showsSkipAction(step: 0, stepCount: 1))
-    }
 }

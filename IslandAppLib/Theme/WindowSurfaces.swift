@@ -38,17 +38,22 @@ private struct WindowSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        // The shadow is cast by the background shape alone, not by a
+        // composited copy of the content: hovering a row inside a long
+        // group then repaints the row, not the group and its shadows.
         content
-            .background { shape.fill(fill) }
             .clipShape(shape)
+            .background {
+                shape
+                    .fill(fill)
+                    .shadow(color: contact, radius: 1.5, y: 1)
+                    .shadow(color: ambient, radius: 6, y: 4)
+            }
             .overlay {
                 if let ring {
                     shape.strokeBorder(ring, lineWidth: 0.75)
                 }
             }
-            .compositingGroup()
-            .shadow(color: contact, radius: 1.5, y: 1)
-            .shadow(color: ambient, radius: 6, y: 4)
     }
 
     private var fill: Color {

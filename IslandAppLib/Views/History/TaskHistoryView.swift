@@ -44,7 +44,7 @@ struct TaskHistoryView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.string("Session History", language: language))
                     .font(Typo.title)
-                    .tracking(-0.35)
+                    .tracking(Typo.titleTracking)
                 Text(L10n.string(
                     "A private, read-only record stored on this Mac.",
                     language: language
@@ -282,23 +282,18 @@ private struct TaskHistoryRow: View {
     let onOpen: () -> Void
 
     @Environment(\.devIslandLanguage) private var language
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
+    /// The whole row opens the session. VoiceOver hears the title as the
+    /// label and source, status and age as the value, the same facts the
+    /// row shows.
     var body: some View {
         Button(action: onOpen) { rowContent }
-            .buttonStyle(.plain)
-            .background {
-                Rectangle()
-                    .fill(isHovering ? Palette.Window.hover : .clear)
-                    .animation(
-                        Motion.respectingReducedMotion(reduceMotion, preferred: Motion.hoverHighlight),
-                        value: isHovering
-                    )
-            }
+            .buttonStyle(HistoryRowButtonStyle(isHovering: isHovering))
             .onHover { isHovering = $0 }
             .pointingHandCursor()
-            .accessibilityLabel(openAccessibilityLabel)
+            .accessibilityLabel(titleText)
+            .accessibilityValue(accessibilityDetails)
             .accessibilityHint(
                 L10n.string(
                     "Returns to the Agent or its host app",
@@ -307,21 +302,31 @@ private struct TaskHistoryRow: View {
             )
     }
 
+    private var titleText: String {
+        task.title.isEmpty
+            ? L10n.string("Untitled session", language: language)
+            : task.title
+    }
+
+    private var accessibilityDetails: String {
+        [
+            TaskHistoryPresentation.sourceName(task.source),
+            TaskHistoryPresentation.statusLabel(for: task, isLive: isLive, language: language),
+            TaskHistoryPresentation.relativeAgeLabel(for: task.updatedAt, relativeTo: .now, language: language),
+        ].joined(separator: L10n.string(", ", language: language))
+    }
+
     private var rowContent: some View {
         HStack(spacing: 12) {
             AgentLogoBadge(
                 source: task.source,
                 size: 28,
-                ink: Palette.Window.ink.opacity(0.82),
-                badge: Palette.Window.ink.opacity(0.045)
+                ink: Palette.Window.ink,
+                badge: Palette.Window.canvasDeep
             )
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(
-                    task.title.isEmpty
-                        ? L10n.string("Untitled session", language: language)
-                        : task.title
-                )
+                Text(titleText)
                     .font(Typo.calloutStrong)
                     .foregroundStyle(Palette.Window.ink)
                     .lineLimit(1)
@@ -366,10 +371,27 @@ private struct TaskHistoryRow: View {
         .contentShape(Rectangle())
     }
 
-    private var openAccessibilityLabel: String {
-        if task.title.isEmpty {
-            return L10n.string("Open session", language: language)
-        }
-        return L10n.format("Open %@", language: language, task.title)
+}
+
+/// Hover and press washes for whole-row History buttons.
+private struct HistoryRowButtonStyle: ButtonStyle {
+    let isHovering: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background {
+                Rectangle().fill(
+                    configuration.isPressed
+                        ? Palette.Window.pressed
+                        : (isHovering ? Palette.Window.hover : .clear)
+                )
+            }
+            .animation(
+                Motion.respectingReducedMotion(reduceMotion, preferred: Motion.hoverHighlight),
+                value: isHovering
+            )
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }

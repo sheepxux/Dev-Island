@@ -8,12 +8,15 @@ import SwiftUI
 enum Typo {
     // MARK: Windows (light ground)
 
-    /// Welcome headlines. Tracking −0.8.
+    /// Welcome headlines. Pair with `displayTracking`.
     static let display = Font.system(size: 30, weight: .semibold)
+    static let displayTracking: CGFloat = -0.8
     /// The one sentence under a Welcome headline.
     static let lead = Font.system(size: 14)
-    /// Pane titles in Settings and sheet titles. Tracking −0.4.
+    /// Pane titles in Settings and sheet titles. Pair with `titleTracking`.
     static let title = Font.system(size: 22, weight: .semibold)
+    /// `Font` cannot carry tracking, so the two tightened roles name theirs.
+    static let titleTracking: CGFloat = -0.4
     /// Group headings and prominent row titles.
     static let headline = Font.system(size: 15, weight: .semibold)
     static let body = Font.system(size: 13)

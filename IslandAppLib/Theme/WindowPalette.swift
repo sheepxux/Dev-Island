@@ -44,7 +44,12 @@ extension Palette {
         static let ring = adaptive(standard: Sand.s900.opacity(0.07), increased: Sand.s900.opacity(0.24))
         static let hover = Sand.s900.opacity(0.045).color
         static let pressed = Sand.s900.opacity(0.08).color
-        static let selected = Sand.s900.opacity(0.06).color
+        /// Shadow ink for dark objects on the light ground (the Welcome
+        /// island specimen); callers set the opacity per layer.
+        static let shadow = Sand.s1000.color
+        /// The one painted element on the Welcome canvas: the glow centered
+        /// on the island specimen.
+        static let glow = Sand.s150.color
 
         // Signals on the light ground
         static let attention = Signal.attentionFill.color

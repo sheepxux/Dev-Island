@@ -20,6 +20,7 @@ struct CodexHookAuthorizationSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(L10n.string("Authorize Dev Island hooks", language: language))
                 .font(Typo.title)
+                .tracking(Typo.titleTracking)
                 .accessibilityAddTraits(.isHeader)
             Text(L10n.string(
                 "Allow Codex to run these Dev Island commands for task updates and approval requests on this Mac. Each tool request still follows your Codex approval settings.",

@@ -126,8 +126,10 @@ struct NotchPanelView: View {
     private var topRow: some View {
         if layout.hasNotch {
             HStack(spacing: 0) {
+                // No rows sit beside the notch, so the wing keeps its own
+                // tighter inset instead of the row column.
                 titleLabel
-                    .padding(.leading, NotchMetrics.panelInset + TaskCardMetrics.horizontalPadding)
+                    .padding(.leading, 14)
                     .frame(width: sideExtensionWidth, alignment: .leading)
 
                 // Hardware notch corridor — transparent
@@ -155,8 +157,20 @@ struct NotchPanelView: View {
     /// aligns its text to the title with it.
     private static let headerMarkSpacing: CGFloat = 7
 
-    @ViewBuilder
+    /// The first variant that fits its space, never a truncated one. Beside
+    /// a hardware notch the wing can be under 90pt, so the state word gives
+    /// way to the mark and its count; VoiceOver always hears the full label.
     private var titleLabel: some View {
+        ViewThatFits(in: .horizontal) {
+            headerTitle(showsWord: true, showsTotal: !layout.hasNotch)
+            headerTitle(showsWord: true, showsTotal: false)
+            headerTitle(showsWord: false, showsTotal: false)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(headerAccessibilityLabel)
+    }
+
+    private func headerTitle(showsWord: Bool, showsTotal: Bool) -> some View {
         HStack(spacing: Self.headerMarkSpacing) {
             AnimatedDotMatrixMark(
                 color: headerState.color,
@@ -167,9 +181,11 @@ struct NotchPanelView: View {
                 isAnimated: isLive && !reduceMotion
             )
 
-            Text(L10n.string(headerTitle, language: language))
-                .font(Typo.islandHeadline)
-                .foregroundStyle(Palette.warmWhite)
+            if showsWord {
+                Text(L10n.string(headerTitle, language: language))
+                    .font(Typo.islandHeadline)
+                    .foregroundStyle(Palette.warmWhite)
+            }
 
             if headerCount > 0 {
                 Text("\(headerCount)")
@@ -178,7 +194,7 @@ struct NotchPanelView: View {
                     .monospacedDigit()
             }
 
-            if !layout.hasNotch, headerSummary.total > 0, headerCount != headerSummary.total {
+            if showsTotal, headerSummary.total > 0, headerCount != headerSummary.total {
                 Text("· \(sessionCountLabel)")
                     .font(Typo.islandMeta)
                     .foregroundStyle(Palette.textTertiary)
@@ -186,8 +202,7 @@ struct NotchPanelView: View {
             }
         }
         .lineLimit(1)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(headerAccessibilityLabel)
+        .fixedSize()
     }
 
     private var headerState: BarState {
@@ -282,26 +297,28 @@ struct NotchPanelView: View {
         )
 
         // Healthy connections are the expected state and stay silent; the
-        // mark appears only while a transport is reconnecting or broken.
-        // The same point-field signature used by task status keeps connection
-        // state from falling back to a generic system dot.
-        if presentation.state != .available {
-            AnimatedDotMatrixMark(
-                color: connectionColor(presentation.state),
-                size: 9,
-                motion: connectionMotion(presentation.state),
-                pattern: connectionPattern(presentation.state),
-                intensity: connectionIntensity(presentation.state),
-                isAnimated: isLive && !reduceMotion
-            )
-                .frame(width: 20, height: 28)
-                .contentShape(Rectangle())
-                .help(presentation.help)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(presentation.accessibilityLabel)
-                .accessibilityValue(presentation.accessibilityValue)
-                .transition(.opacity)
-        }
+        // mark shows only while a transport is reconnecting or broken. Its
+        // slot is always reserved, so the header never shifts when it
+        // appears. The point-field signature keeps connection state from
+        // falling back to a generic system dot.
+        let isQuiet = presentation.state == .available
+        AnimatedDotMatrixMark(
+            color: connectionColor(presentation.state),
+            size: 9,
+            motion: connectionMotion(presentation.state),
+            pattern: connectionPattern(presentation.state),
+            intensity: connectionIntensity(presentation.state),
+            isAnimated: isLive && !reduceMotion && !isQuiet
+        )
+            .frame(width: 20, height: 28)
+            .opacity(isQuiet ? 0 : 1)
+            .animation(Motion.colorTransition, value: presentation.state)
+            .contentShape(Rectangle())
+            .help(isQuiet ? "" : presentation.help)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(presentation.accessibilityLabel)
+            .accessibilityValue(presentation.accessibilityValue)
+            .accessibilityHidden(isQuiet)
     }
 
     private func connectionColor(

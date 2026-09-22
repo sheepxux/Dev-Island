@@ -257,8 +257,6 @@
 "Reloads private session history from this Mac" = "重新载入这台 Mac 上的私密会话历史";
 "Untitled session" = "未命名会话";
 "Open" = "打开";
-"Open session" = "打开会话";
-"Open %@" = "打开 %@";
 "Returns to the Agent or its host app" = "返回对应 Agent 或其宿主应用";
 "Running now" = "正在运行";
 "Last seen running" = "上次状态：运行中";
@@ -537,7 +535,6 @@
 "A small space at the top of your screen" = "屏幕顶端的一小块空间";
 "Agent progress stays at the top of your screen. When a session needs you, the island says so." = "任务进度留在屏幕顶端。需要你时，再轻轻叫你一声。";
 "Allow shell command?" = "允许执行命令？";
-"Also when work finishes" = "完成时也提醒";
 "Answer it right on the island. No hunting through terminal windows." = "直接在岛上处理，不用在几个终端之间来回找。";
 "Back to work" = "已继续工作";
 "Bring your tools onto the island." = "把常用的工具带上岛。";
@@ -548,8 +545,6 @@
 "Interruptions only when they matter." = "只在值得时提醒你。";
 "It works. You focus." = "它在忙，你可以专注。";
 "Light up your island." = "点亮你的岛。";
-"Live connection status" = "实时连接状态";
-"Needs me, plus finished responses" = "需要我时，以及回复完成时";
 "No agent is connected yet. Go back one step to connect one." = "还没有连接任何 Agent。返回上一步连接一个。";
 "One answer, and it keeps going." = "看一眼，就能继续。";
 "Open Dev Island when you log in" = "登录时打开 Dev Island";
@@ -565,7 +560,15 @@
 "The island folds back and stays quiet until the next time you are needed." = "处理完，岛就收回屏幕顶端，直到下一次需要你。";
 "Waiting for a real task" = "等待第一条真实任务";
 "Waiting for input, or failed" = "等待回复或遇到问题";
-"When a session needs me" = "需要我时";
 "When it needs you, it asks." = "轮到你时，它会出现。";
 "Your island is listening." = "你的岛已经在听了。";
 "Authorize" = "授权";
+"Connection status" = "连接状态";
+"How the island calls you" = "岛会怎样叫你";
+"Your island" = "你的岛";
+"Example island" = "示例岛";
+"When I'm needed" = "需要我时";
+"Also when it finishes" = "完成时也提醒";
+"Plus finished responses" = "另加回复完成时";
+"Island only" = "只在岛上显示";
+"No system notifications" = "不发送系统通知";

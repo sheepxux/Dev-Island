@@ -128,6 +128,11 @@ enum Palette {
     static let islandRaised = Sand.s900.color
     /// Commands and plan text sunk into a card.
     static let islandWell   = Sand.s1000.color
+    /// The request card's primary button under the pointer and pressed.
+    static let islandActionHover   = Sand.s0.color
+    static let islandActionPressed = Sand.s200.color
+    /// A printed shortcut (⌘↩) on the light primary button: 4.9:1.
+    static let islandActionShortcut = Sand.s600.color
 
     // Type + rules
     static let warmWhite     = Sand.s50.color
@@ -135,14 +140,6 @@ enum Palette {
     static let textTertiary  = adaptive(.tertiaryText)
     static let hairline      = adaptive(.hairline)
     static let islandBorder  = adaptive(.islandBorder)
-
-    // Welcome Tour stage: the island sample and terminal lines keep the
-    // island's own ground.
-    static let tourCanvas       = Sand.s1000.color
-    static let tourCanvasRaised = Sand.s950.color
-    static let tourPanel        = Sand.s950.color
-    static let tourPanelRaised  = Sand.s900.color
-    static let tourAccent       = Sand.s200.color
 
     // States
     static let stateIdle      = adaptive(.idleState)

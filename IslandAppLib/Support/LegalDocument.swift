@@ -571,7 +571,7 @@ struct LegalDocumentSheet: View {
 
                 Text(presentation?.title ?? kind.buttonTitle(language: language))
                     .font(Typo.title)
-                    .tracking(-0.45)
+                    .tracking(Typo.titleTracking)
                     .foregroundStyle(Palette.Window.ink)
             }
 

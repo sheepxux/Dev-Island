@@ -257,8 +257,6 @@
 "Reloads private session history from this Mac" = "Reloads private session history from this Mac";
 "Untitled session" = "Untitled session";
 "Open" = "Open";
-"Open session" = "Open session";
-"Open %@" = "Open %@";
 "Returns to the Agent or its host app" = "Returns to the Agent or its host app";
 "Running now" = "Running now";
 "Last seen running" = "Last seen running";
@@ -537,7 +535,6 @@
 "A small space at the top of your screen" = "A small space at the top of your screen";
 "Agent progress stays at the top of your screen. When a session needs you, the island says so." = "Agent progress stays at the top of your screen. When a session needs you, the island says so.";
 "Allow shell command?" = "Allow shell command?";
-"Also when work finishes" = "Also when work finishes";
 "Answer it right on the island. No hunting through terminal windows." = "Answer it right on the island. No hunting through terminal windows.";
 "Back to work" = "Back to work";
 "Bring your tools onto the island." = "Bring your tools onto the island.";
@@ -548,8 +545,6 @@
 "Interruptions only when they matter." = "Interruptions only when they matter.";
 "It works. You focus." = "It works. You focus.";
 "Light up your island." = "Light up your island.";
-"Live connection status" = "Live connection status";
-"Needs me, plus finished responses" = "Needs me, plus finished responses";
 "No agent is connected yet. Go back one step to connect one." = "No agent is connected yet. Go back one step to connect one.";
 "One answer, and it keeps going." = "One answer, and it keeps going.";
 "Open Dev Island when you log in" = "Open Dev Island when you log in";
@@ -565,7 +560,15 @@
 "The island folds back and stays quiet until the next time you are needed." = "The island folds back and stays quiet until the next time you are needed.";
 "Waiting for a real task" = "Waiting for a real task";
 "Waiting for input, or failed" = "Waiting for input, or failed";
-"When a session needs me" = "When a session needs me";
 "When it needs you, it asks." = "When it needs you, it asks.";
 "Your island is listening." = "Your island is listening.";
 "Authorize" = "Authorize";
+"Connection status" = "Connection status";
+"How the island calls you" = "How the island calls you";
+"Your island" = "Your island";
+"Example island" = "Example island";
+"When I'm needed" = "When I'm needed";
+"Also when it finishes" = "Also when it finishes";
+"Plus finished responses" = "Plus finished responses";
+"Island only" = "Island only";
+"No system notifications" = "No system notifications";

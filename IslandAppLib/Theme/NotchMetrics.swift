@@ -24,6 +24,8 @@ public enum NotchMetrics {
     /// Rows and cards sit inside the panel's corner, so their radius is
     /// derived rather than repeated: 22 − 10.
     public static let panelRowRadius: CGFloat = panelCornerRadius - panelInset
+    /// Command and plan wells inside a request card.
+    public static let panelWellRadius: CGFloat = 8
     /// Default panel width (synthetic-notch displays).
     public static let panelWidth: CGFloat = 420
     /// Maximum panel width on notched displays — never exceed this.

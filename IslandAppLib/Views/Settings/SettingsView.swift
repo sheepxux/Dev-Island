@@ -227,7 +227,7 @@ public struct SettingsView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(selectedPane.title(language: language))
                 .font(Typo.title)
-                .tracking(-0.4)
+                .tracking(Typo.titleTracking)
                 .foregroundStyle(Palette.Window.ink)
 
             Text(selectedPane.detail(language: language))

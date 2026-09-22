@@ -22,12 +22,6 @@ enum OnboardingMetrics {
     static let islandRequestRadius: CGFloat = 22
 }
 
-enum OnboardingNavigationPolicy {
-    static func showsSkipAction(step: Int, stepCount: Int) -> Bool {
-        stepCount > 1 && step >= 0 && step < stepCount - 1
-    }
-}
-
 /// Welcome, built on the 2026-09-20 "float" direction: one cream canvas, the
 /// charcoal island floating on the central axis, one title, one sentence, the
 /// choices that step needs and one primary action.
@@ -239,24 +233,22 @@ struct OnboardingView: View {
     /// example or live.
     private var stage: some View {
         VStack(spacing: 14) {
-            Text(L10n.string(stageLabel, language: language))
-                .font(Typo.caption.weight(.medium))
-                .foregroundStyle(Palette.Window.textTertiary)
+            stageCaption
                 // Drawn above the island's glow, which reaches up behind it.
                 .zIndex(1)
 
             WelcomeIslandSpecimen(
                 content: islandContent,
-                isLive: !reduceMotion,
                 allowsDefaultAction: step == 0 && demo == .asking,
                 onAllow: { resolveDemo() },
                 onDeny: { resolveDemo() }
             )
             .background { halo }
-            .animation(
-                reduceMotion ? nil : Motion.islandMorph,
-                value: islandContent.isRequest
-            )
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(L10n.string(
+                stageIsExample ? "Example island" : "Your island",
+                language: language
+            ))
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 24)
@@ -270,9 +262,9 @@ struct OnboardingView: View {
             .fill(
                 EllipticalGradient(
                     stops: [
-                        .init(color: Sand.s150.opacity(0.85).color, location: 0),
-                        .init(color: Sand.s150.opacity(0.35).color, location: 0.55),
-                        .init(color: Sand.s150.opacity(0).color, location: 1),
+                        .init(color: Palette.Window.glow.opacity(0.85), location: 0),
+                        .init(color: Palette.Window.glow.opacity(0.35), location: 0.55),
+                        .init(color: Palette.Window.glow.opacity(0), location: 1),
                     ],
                     center: .center,
                     startRadiusFraction: 0,
@@ -284,12 +276,28 @@ struct OnboardingView: View {
             .accessibilityHidden(true)
     }
 
+    /// Steps 1 and 3 show an example and say so; steps 2 and 4 are live.
+    private var stageCaption: some View {
+        HStack(spacing: 6) {
+            Text(L10n.string(stageLabel, language: language))
+            Text(verbatim: "·")
+            Text(L10n.string(stageIsExample ? "Example" : "Live", language: language))
+                .fontWeight(.semibold)
+        }
+        .font(Typo.caption.weight(.medium))
+        .foregroundStyle(Palette.Window.textTertiary)
+    }
+
+    private var stageIsExample: Bool {
+        step == 0 || step == 2
+    }
+
     private var stageLabel: String {
         switch step {
         case 0: return "A small space at the top of your screen"
-        case 1: return "Live connection status"
-        case 2: return "Example"
-        default: return "Live"
+        case 1: return "Connection status"
+        case 2: return "How the island calls you"
+        default: return "Your island"
         }
     }
 
@@ -360,7 +368,7 @@ struct OnboardingView: View {
         VStack(spacing: 10) {
             Text(title)
                 .font(Typo.display)
-                .tracking(-0.8)
+                .tracking(Typo.displayTracking)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -371,6 +379,8 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
+                // About 60 characters a line at 14pt.
+                .frame(maxWidth: 430)
         }
         .frame(maxWidth: .infinity)
     }
@@ -428,13 +438,12 @@ struct OnboardingView: View {
         demo == .working ? "Show me a request" : "Choose my agents"
     }
 
+    /// The step's CTA: show the request, or move on once it is answered.
+    /// While the example asks, the island's own buttons answer it.
     private func advanceDemo() {
-        switch demo {
-        case .working:
+        if demo == .working {
             setDemo(.asking)
-        case .asking:
-            resolveDemo()
-        case .resumed:
+        } else {
             move(to: 1)
         }
     }
@@ -444,9 +453,12 @@ struct OnboardingView: View {
         setDemo(.resumed)
     }
 
+    /// Opening the example request resizes the island and moves the copy
+    /// below it, so both ride the island's morph together, and under Reduce
+    /// Motion the change snaps rather than sliding.
     private func setDemo(_ phase: WelcomeDemoPhase) {
         withAnimation(
-            Motion.respectingReducedMotion(reduceMotion, preferred: Motion.contentReveal)
+            Motion.allowsSpatialFeedback(reduceMotion) ? Motion.islandMorph : nil
         ) {
             demo = phase
         }
@@ -601,9 +613,11 @@ struct OnboardingView: View {
                 )
             )
 
-            HStack(alignment: .top, spacing: 12) {
+            // Island only sends nothing, so finishing the tour does not ask
+            // macOS for notification permission.
+            HStack(alignment: .top, spacing: 10) {
                 WelcomeChoice(
-                    title: L10n.string("When a session needs me", language: language),
+                    title: L10n.string("When I'm needed", language: language),
                     detail: L10n.string("Waiting for input, or failed", language: language),
                     isSelected: attentionRequired && !completions
                 ) {
@@ -612,12 +626,21 @@ struct OnboardingView: View {
                 }
 
                 WelcomeChoice(
-                    title: L10n.string("Also when work finishes", language: language),
-                    detail: L10n.string("Needs me, plus finished responses", language: language),
+                    title: L10n.string("Also when it finishes", language: language),
+                    detail: L10n.string("Plus finished responses", language: language),
                     isSelected: attentionRequired && completions
                 ) {
                     attentionRequired = true
                     completions = true
+                }
+
+                WelcomeChoice(
+                    title: L10n.string("Island only", language: language),
+                    detail: L10n.string("No system notifications", language: language),
+                    isSelected: !attentionRequired && !completions
+                ) {
+                    attentionRequired = false
+                    completions = false
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -819,13 +842,10 @@ struct OnboardingView: View {
                 language: language
             ))
         }
-        .padding(.leading, 14)
+        .padding(.leading, 16)
         .padding(.trailing, 6)
         .frame(width: 340, height: 40)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Palette.islandTop)
-        )
+        .background(Capsule().fill(Palette.islandTop))
     }
 
     private func copyLiveSignalCommand(_ command: String) {
@@ -1031,7 +1051,6 @@ private struct WelcomeIslandSpecimen: View {
     }
 
     let content: Content
-    let isLive: Bool
     var allowsDefaultAction = false
     let onAllow: () -> Void
     let onDeny: () -> Void
@@ -1052,8 +1071,8 @@ private struct WelcomeIslandSpecimen: View {
         .background { shape.fill(Palette.islandTop) }
         .overlay { shape.strokeBorder(Palette.islandBorder, lineWidth: 0.75) }
         .compositingGroup()
-        .shadow(color: .black.opacity(0.10), radius: 1, y: 1)
-        .shadow(color: .black.opacity(0.16), radius: 18, y: 12)
+        .shadow(color: Palette.Window.shadow.opacity(0.12), radius: 1, y: 1)
+        .shadow(color: Palette.Window.shadow.opacity(0.18), radius: 18, y: 12)
         .accessibilityElement(children: .contain)
     }
 
@@ -1137,21 +1156,29 @@ private struct WelcomeIslandSpecimen: View {
     }
 }
 
-/// The island's decision buttons, at specimen scale.
+/// The island's decision buttons at the real island's size.
 private struct WelcomeIslandButtonStyle: ButtonStyle {
     let isPrimary: Bool
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     func makeBody(configuration: Configuration) -> some View {
+        WelcomeIslandButtonBody(configuration: configuration, isPrimary: isPrimary)
+    }
+}
+
+private struct WelcomeIslandButtonBody: View {
+    let configuration: ButtonStyle.Configuration
+    let isPrimary: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+
+    var body: some View {
         configuration.label
             .font(Typo.islandControl)
-            .foregroundStyle(isPrimary ? Palette.islandTop : Palette.textSecondary)
-            .padding(.horizontal, 12)
-            .frame(height: 26)
-            .background {
-                Capsule().fill(isPrimary ? Palette.warmWhite : Color.clear)
-            }
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 13)
+            .frame(height: 28)
+            .background { Capsule().fill(background) }
             .contentShape(Capsule())
             .scaleEffect(
                 InteractionFeedbackPolicy.pressScale(
@@ -1161,7 +1188,25 @@ private struct WelcomeIslandButtonStyle: ButtonStyle {
                 )
             )
             .animation(Motion.press, value: configuration.isPressed)
+            .animation(
+                Motion.respectingReducedMotion(reduceMotion, preferred: Motion.hoverHighlight),
+                value: isHovering
+            )
+            .onHover { isHovering = $0 }
             .pointingHandCursor()
+    }
+
+    private var foreground: Color {
+        if isPrimary { return Palette.islandTop }
+        return isHovering ? Palette.warmWhite : Palette.textSecondary
+    }
+
+    private var background: Color {
+        if isPrimary {
+            if configuration.isPressed { return Palette.islandActionPressed }
+            return isHovering ? Palette.islandActionHover : Palette.warmWhite
+        }
+        return Palette.warmWhite.opacity(isHovering ? 0.08 : 0)
     }
 }
 
@@ -1184,7 +1229,7 @@ private struct WelcomeChoice: View {
                 ZStack {
                     Circle()
                         .strokeBorder(
-                            isSelected ? Palette.Window.ink : Palette.Window.hairlineStrong,
+                            isSelected ? Palette.Window.ink : Palette.Window.textTertiary,
                             lineWidth: isSelected ? 5 : 1
                         )
                         .frame(width: 16, height: 16)
@@ -1207,7 +1252,7 @@ private struct WelcomeChoice: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle(pressedScale: 0.98))
         .windowSurface(
             radius: Palette.Window.Radius.group,
             tone: isSelected ? .raised : .sidebar

@@ -163,9 +163,9 @@ struct ActionRequestSurface: View {
                 L10n.string("Claude Code plan", language: language)
             )
 
-            HStack(spacing: 7) {
-                queuedLabel
+            queuedLabel
 
+            HStack(spacing: 7) {
                 Button(L10n.string("Continue in Claude", language: language)) {
                     onDeferToAgent()
                 }
@@ -215,7 +215,8 @@ struct ActionRequestSurface: View {
                 Button { onDecision(.allow) } label: {
                     ActionDecisionLabel(
                         title: L10n.string("Approve plan", language: language),
-                        shortcut: isKeyboardPrimary ? "⌘↩" : nil
+                        shortcut: isKeyboardPrimary ? "⌘↩" : nil,
+                        isPrimary: true
                     )
                 }
                     .buttonStyle(ActionDecisionButtonStyle(role: .primary))
@@ -316,8 +317,9 @@ struct ActionRequestSurface: View {
                 .modifier(IslandWell(increasedContrast: usesIncreasedContrast))
         }
 
+        queuedLabel
+
         HStack(spacing: 8) {
-            queuedLabel
             Spacer(minLength: 8)
 
             Button { onDecision(.deny) } label: {
@@ -340,7 +342,8 @@ struct ActionRequestSurface: View {
             Button { onDecision(.allow) } label: {
                 ActionDecisionLabel(
                     title: L10n.string("Allow once", language: language),
-                    shortcut: isKeyboardPrimary ? "⌘↩" : nil
+                    shortcut: isKeyboardPrimary ? "⌘↩" : nil,
+                    isPrimary: true
                 )
             }
                 .buttonStyle(ActionDecisionButtonStyle(role: .primary))
@@ -425,9 +428,9 @@ struct ActionRequestSurface: View {
                 }
             }
 
-            HStack(spacing: 7) {
-                queuedLabel
+            queuedLabel
 
+            HStack(spacing: 7) {
                 Button(L10n.string("Continue in Claude", language: language)) {
                     onDeferToAgent()
                 }
@@ -471,7 +474,8 @@ struct ActionRequestSurface: View {
                             isLastQuestion ? "Submit" : "Next",
                             language: language
                         ),
-                        shortcut: isKeyboardPrimary ? "⌘↩" : nil
+                        shortcut: isKeyboardPrimary ? "⌘↩" : nil,
+                        isPrimary: true
                     )
                 }
                 .buttonStyle(ActionDecisionButtonStyle(role: .primary))
@@ -565,44 +569,22 @@ struct ActionRequestSurface: View {
             expiresAt: request.expiresAt,
             at: referenceDate
         )
-        return HStack(spacing: 6) {
-            // Drawn at rest, at full strength: a frozen frame of the ripple
-            // would show the waiting mark at its dimmest.
-            DotMatrixMark(
-                color: Palette.stateWaiting,
-                size: TaskCardLeadingIdentityMetrics.statusSize,
-                motion: .still,
-                pattern: .ring,
-                intensity: 1
-            )
-            .padding(.trailing, 3)
-
-            Text(headerLabel)
-                .font(Typo.islandLabel)
-                .foregroundStyle(Palette.stateWaiting)
-                .fixedSize()
-
-            Text(verbatim: "·")
-                .font(Typo.islandMeta)
-                .foregroundStyle(Palette.textTertiary)
-
-            Text(agentAndSession)
-                .font(Typo.islandMeta)
-                .foregroundStyle(Palette.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            Spacer(minLength: 6)
-
-            Text(expiresIn)
-                .font(Typo.islandNumeric)
-                .foregroundStyle(Palette.textTertiary)
-                .monospacedDigit()
-                .fixedSize()
-                .accessibilityLabel(
-                    L10n.format("Expires in %@", language: language, expiresIn)
-                )
+        // One line when the whole context fits; otherwise the session title
+        // takes its own line rather than shrinking to a few characters, so
+        // two sessions of the same Agent stay distinguishable.
+        return ViewThatFits(in: .horizontal) {
+            headerLine(context: agentAndSession, expiresIn: expiresIn)
+            VStack(alignment: .leading, spacing: 4) {
+                headerLine(context: agentName, expiresIn: expiresIn)
+                Text(sessionContext)
+                    .font(Typo.islandMeta)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.leading, TaskCardLeadingIdentityMetrics.statusSize + 9)
+            }
         }
+        .help(sessionContext)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             L10n.format(
@@ -646,6 +628,47 @@ struct ActionRequestSurface: View {
             key = "Oldest pending request. Command Return advances or submits after an answer is selected, and Command O continues in Claude Code. Escape only closes Dev Island."
         }
         return L10n.string(key, language: language)
+    }
+
+    private func headerLine(context: String, expiresIn: String) -> some View {
+        HStack(spacing: 6) {
+            // Drawn at rest, at full strength: a frozen frame of the ripple
+            // would show the waiting mark at its dimmest.
+            DotMatrixMark(
+                color: Palette.stateWaiting,
+                size: TaskCardLeadingIdentityMetrics.statusSize,
+                motion: .still,
+                pattern: .ring,
+                intensity: 1
+            )
+            .padding(.trailing, 3)
+
+            Text(headerLabel)
+                .font(Typo.islandLabel)
+                .foregroundStyle(Palette.stateWaiting)
+                .fixedSize()
+
+            Text(verbatim: "·")
+                .font(Typo.islandMeta)
+                .foregroundStyle(Palette.textTertiary)
+
+            Text(context)
+                .font(Typo.islandMeta)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 6)
+
+            Text(expiresIn)
+                .font(Typo.islandNumeric)
+                .foregroundStyle(Palette.textTertiary)
+                .monospacedDigit()
+                .fixedSize()
+                .accessibilityLabel(
+                    L10n.format("Expires in %@", language: language, expiresIn)
+                )
+        }
     }
 
     private func actionHelp(_ message: String, shortcut: String) -> String {
@@ -744,20 +767,27 @@ struct ActionRequestSurface: View {
         }
     }
 
-    /// Who is asking: the Agent, then the session in words the user already
-    /// knows — its own title. A short fingerprint stands in only when the
-    /// request's session row is not in the panel to borrow a title from.
-    private var agentAndSession: String {
-        let agent = LocalAgentRegistry.descriptor(for: request.source)?.displayName
+    private var agentName: String {
+        LocalAgentRegistry.descriptor(for: request.source)?.displayName
             ?? request.source.capitalized
+    }
+
+    /// The session in words the user already knows: its own title. A short
+    /// fingerprint stands in only when the request's session row is not in
+    /// the panel to borrow a title from.
+    private var sessionContext: String {
         if let contextTitle, !contextTitle.isEmpty {
-            return "\(agent) · \(contextTitle)"
+            return contextTitle
         }
-        let reference = ActionRequestPresentationPolicy.sessionReference(
+        return ActionRequestPresentationPolicy.sessionReference(
             for: request.sessionId,
             language: language
         )
-        return "\(agent) · \(reference)"
+    }
+
+    /// Who is asking: the Agent, then the session.
+    private var agentAndSession: String {
+        "\(agentName) · \(sessionContext)"
     }
 
 }
@@ -833,7 +863,7 @@ private struct PlanMarkdownView: View {
             }
             .background {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.white.opacity(usesIncreasedContrast ? 0.075 : 0.035))
+                    .fill(Palette.warmWhite.opacity(usesIncreasedContrast ? 0.075 : 0.035))
             }
         }
     }
@@ -867,6 +897,7 @@ private struct PlanMarkdownView: View {
 private struct ActionDecisionLabel: View {
     let title: String
     let shortcut: String?
+    var isPrimary = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -874,7 +905,7 @@ private struct ActionDecisionLabel: View {
             if let shortcut {
                 Text(verbatim: shortcut)
                     .font(Typo.islandNumeric)
-                    .opacity(0.62)
+                    .foregroundStyle(isPrimary ? Palette.islandActionShortcut : Palette.textTertiary)
                     .accessibilityHidden(true)
             }
         }
@@ -886,7 +917,7 @@ private struct IslandWell: ViewModifier {
     let increasedContrast: Bool
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: NotchMetrics.panelWellRadius, style: .continuous)
         content
             .background { shape.fill(Palette.islandWell) }
             .overlay {
@@ -947,7 +978,6 @@ private struct ActionDecisionButtonBody: View {
                     reduceMotion: reduceMotion
                 )
             )
-            .opacity(isEnabled ? 1 : 0.38)
             .animation(Motion.press, value: configuration.isPressed)
             .animation(
                 Motion.respectingReducedMotion(
@@ -962,6 +992,7 @@ private struct ActionDecisionButtonBody: View {
     }
 
     private var foreground: Color {
+        guard isEnabled else { return Palette.textTertiary }
         switch role {
         case .primary:
             return Palette.islandTop
@@ -975,8 +1006,9 @@ private struct ActionDecisionButtonBody: View {
     private var background: Color {
         switch role {
         case .primary:
-            if configuration.isPressed { return Sand.s200.color }
-            return isHovering ? Sand.s0.color : Palette.warmWhite
+            guard isEnabled else { return Palette.warmWhite.opacity(0.10) }
+            if configuration.isPressed { return Palette.islandActionPressed }
+            return isHovering ? Palette.islandActionHover : Palette.warmWhite
         case .secondary:
             if configuration.isPressed { return Palette.warmWhite.opacity(0.12) }
             return Palette.warmWhite.opacity(isHovering ? 0.08 : (increasedContrast ? 0.06 : 0))
@@ -1115,7 +1147,7 @@ private struct QuestionOptionButtonBody: View {
                                     ? (configuration.isPressed ? 0.22 : (isHovering ? 0.19 : 0.16))
                                     : (configuration.isPressed ? 0.14 : (isHovering ? 0.12 : 0.085))
                             )
-                            : Color.white.opacity(
+                            : Palette.warmWhite.opacity(
                                 increasedContrast
                                     ? (configuration.isPressed ? 0.12 : (isHovering ? 0.1 : 0.07))
                                     : (configuration.isPressed ? 0.065 : (isHovering ? 0.055 : 0.032))
@@ -1129,7 +1161,7 @@ private struct QuestionOptionButtonBody: View {
                             ? Palette.stateWaiting.opacity(
                                 increasedContrast ? (isHovering ? 0.72 : 0.62) : (isHovering ? 0.48 : 0.34)
                             )
-                            : Color.white.opacity(
+                            : Palette.warmWhite.opacity(
                                 increasedContrast ? (isHovering ? 0.3 : 0.22) : (isHovering ? 0.13 : 0.065)
                             ),
                         lineWidth: increasedContrast ? 1 : 0.6

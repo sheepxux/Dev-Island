@@ -37,7 +37,7 @@ final class VisualSnapshotTests: XCTestCase {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.tourCanvas)
+        .background(Palette.islandWell)
         .preferredColorScheme(.dark)
 
         try render(
@@ -849,13 +849,278 @@ final class VisualSnapshotTests: XCTestCase {
         let view = LaunchHealthNotice(consecutiveStartupInterruptions: 2)
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.tourCanvas)
+            .background(Palette.islandWell)
             .preferredColorScheme(.dark)
 
         try render(
             view,
             size: NSSize(width: 560, height: 160),
             to: outputDirectory.appendingPathComponent("32-launch-health-notice.png")
+        )
+    }
+
+    /// The panel header beside a hardware notch, at the notch widths MacBooks
+    /// ship with, in both languages: the header must choose a variant that
+    /// fits rather than truncate the state word.
+    func testCaptureNotchedPanelHeaders() throws {
+        guard let outputDirectory = try snapshotDirectory() else { return }
+        configureApplicationIconForPackageTests()
+
+        let now = Date.now
+        let tasks = [
+            AgentTask(
+                id: "waiting",
+                source: "claude-code",
+                title: "Review deployment permissions",
+                status: .waiting,
+                currentPhase: "Waiting for approval",
+                createdAt: now.addingTimeInterval(-82),
+                updatedAt: now,
+                taskURL: "file:///tmp/waiting"
+            ),
+            AgentTask(
+                id: "running",
+                source: "codex",
+                title: "Refine the release notes",
+                status: .running,
+                currentPhase: "Editing files",
+                createdAt: now.addingTimeInterval(-300),
+                updatedAt: now,
+                taskURL: "file:///tmp/running"
+            ),
+        ]
+        for (language, languageName) in [
+            (DevIslandLanguage.english, "en"),
+            (.simplifiedChinese, "zh-hans"),
+        ] {
+            for notchWidth in [185, 200, 220] {
+                let layout = NotchMetrics.Layout(
+                    hasNotch: true,
+                    barHeight: 37,
+                    notchHeight: 32,
+                    menuBarHeight: 37,
+                    notchWidth: CGFloat(notchWidth),
+                    topMargin: 0
+                )
+                let view = NotchPanelView(
+                    tasks: TaskPresentationPolicy.ordered(tasks),
+                    manusConnectionStatus: .connected,
+                    localAgentStatus: .listening,
+                    apiKeyStatus: .valid,
+                    layout: layout,
+                    highlightedTask: nil,
+                    onTaskTap: { _ in },
+                    onSettingsTap: {},
+                    onConnectTap: {},
+                    isLive: false
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(Color(white: 0.16))
+                .preferredColorScheme(.dark)
+
+                try render(
+                    view,
+                    language: language,
+                    size: NSSize(width: 460, height: 190),
+                    to: outputDirectory.appendingPathComponent(
+                        "71-notched-header-\(languageName)-\(notchWidth).png"
+                    )
+                )
+            }
+        }
+    }
+
+    /// Frames for the README's six-second demo: running → needs you →
+    /// expanded with the request. Real views on the window ground; the GIF
+    /// is assembled from these outside the test.
+    func testCaptureReadmeDemoFrames() throws {
+        guard let outputDirectory = try snapshotDirectory() else { return }
+        configureApplicationIconForPackageTests()
+
+        let now = Date.now
+        let layout = NotchMetrics.Layout(
+            hasNotch: false,
+            barHeight: 30,
+            notchHeight: 0,
+            menuBarHeight: 30,
+            notchWidth: NotchMetrics.defaultNotchWidth,
+            topMargin: 0
+        )
+        let canvasSize = NSSize(width: 800, height: 450)
+
+        func compact(_ state: BarState, _ title: String, _ summary: TaskStatusSummary) -> some View {
+            ZStack(alignment: .top) {
+                Palette.Window.canvas
+                NotchBarView(state: state, summary: summary, title: title, layout: layout)
+                    .compositingGroup()
+                    .shadow(color: Color(white: 0, opacity: 0.14), radius: 18, y: 10)
+            }
+        }
+
+        try render(
+            compact(.running, "Refactor the session store", .init(running: 3)),
+            size: canvasSize,
+            to: outputDirectory.appendingPathComponent("72-demo-frame-1.png")
+        )
+        try render(
+            compact(.waiting, "Approval required", .init(running: 2, waiting: 1)),
+            size: canvasSize,
+            to: outputDirectory.appendingPathComponent("72-demo-frame-2.png")
+        )
+
+        let tasks = [
+            AgentTask(
+                id: "permission-session",
+                source: "codex",
+                title: "Prepare signed release",
+                status: .waiting,
+                currentPhase: "Waiting for approval",
+                createdAt: now.addingTimeInterval(-38),
+                updatedAt: now,
+                taskURL: "file:///tmp/permission-session"
+            ),
+            AgentTask(
+                id: "store-refactor",
+                source: "claude-code",
+                title: "Refactor the session store",
+                status: .running,
+                currentPhase: "Editing files",
+                createdAt: now.addingTimeInterval(-312),
+                updatedAt: now,
+                taskURL: "file:///tmp/store-refactor"
+            ),
+            AgentTask(
+                id: "welcome-polish",
+                source: "cursor",
+                title: "Polish the welcome flow",
+                status: .completed,
+                currentPhase: "Changes ready",
+                createdAt: now.addingTimeInterval(-640),
+                updatedAt: now,
+                taskURL: "file:///tmp/welcome-polish"
+            ),
+        ]
+        let request = AgentActionRequest(
+            source: "codex",
+            sessionId: "permission-session",
+            kind: .permission,
+            title: "Allow shell command?",
+            message: "Codex wants to verify the signed app bundle.",
+            detail: "codesign --verify --deep --strict 'Dev Island.app'",
+            createdAt: now,
+            timeout: 90
+        )
+        let expanded = ZStack(alignment: .top) {
+            Palette.Window.canvas
+            NotchPanelView(
+                tasks: TaskPresentationPolicy.ordered(tasks),
+                manusConnectionStatus: .connected,
+                localAgentStatus: .listening,
+                apiKeyStatus: .valid,
+                layout: layout,
+                highlightedTask: nil,
+                pendingActionRequests: [request],
+                onTaskTap: { _ in },
+                onSettingsTap: {},
+                onConnectTap: {},
+                isLive: false
+            )
+            .compositingGroup()
+            .shadow(color: Color(white: 0, opacity: 0.18), radius: 32, y: 20)
+        }
+        try render(
+            expanded,
+            size: canvasSize,
+            to: outputDirectory.appendingPathComponent("72-demo-frame-3.png")
+        )
+    }
+
+    /// README hero: the real expanded island hanging from a notch on the cream
+    /// window ground, one approval card above two ordinary sessions. Rendered
+    /// from production views so the page shows the product, not an
+    /// illustration of it.
+    func testCaptureReadmeHero() throws {
+        guard let outputDirectory = try snapshotDirectory() else { return }
+        configureApplicationIconForPackageTests()
+
+        let now = Date.now
+        let tasks = [
+            AgentTask(
+                id: "permission-session",
+                source: "codex",
+                title: "Prepare signed release",
+                status: .waiting,
+                currentPhase: "Waiting for approval",
+                createdAt: now.addingTimeInterval(-38),
+                updatedAt: now,
+                taskURL: "file:///tmp/permission-session"
+            ),
+            AgentTask(
+                id: "store-refactor",
+                source: "claude-code",
+                title: "Refactor the session store",
+                status: .running,
+                currentPhase: "Editing files",
+                createdAt: now.addingTimeInterval(-312),
+                updatedAt: now,
+                taskURL: "file:///tmp/store-refactor"
+            ),
+            AgentTask(
+                id: "welcome-polish",
+                source: "cursor",
+                title: "Polish the welcome flow",
+                status: .completed,
+                currentPhase: "Changes ready",
+                createdAt: now.addingTimeInterval(-640),
+                updatedAt: now,
+                taskURL: "file:///tmp/welcome-polish"
+            ),
+        ]
+        let request = AgentActionRequest(
+            source: "codex",
+            sessionId: "permission-session",
+            kind: .permission,
+            title: "Allow shell command?",
+            message: "Codex wants to verify the signed app bundle.",
+            detail: "codesign --verify --deep --strict 'Dev Island.app'",
+            createdAt: now,
+            timeout: 90
+        )
+        let layout = NotchMetrics.Layout(
+            hasNotch: true,
+            barHeight: 37,
+            notchHeight: 32,
+            menuBarHeight: 37,
+            notchWidth: 190,
+            topMargin: 0
+        )
+
+        let panel = NotchPanelView(
+            tasks: TaskPresentationPolicy.ordered(tasks),
+            manusConnectionStatus: .connected,
+            localAgentStatus: .listening,
+            apiKeyStatus: .valid,
+            layout: layout,
+            highlightedTask: nil,
+            pendingActionRequests: [request],
+            onTaskTap: { _ in },
+            onSettingsTap: {},
+            onConnectTap: {},
+            isLive: false
+        )
+
+        let view = ZStack(alignment: .top) {
+            Palette.Window.canvas
+            panel
+                .compositingGroup()
+                .shadow(color: Color(white: 0, opacity: 0.10), radius: 2, y: 1)
+                .shadow(color: Color(white: 0, opacity: 0.18), radius: 32, y: 20)
+        }
+
+        try render(
+            view,
+            size: NSSize(width: 800, height: 450),
+            to: outputDirectory.appendingPathComponent("70-readme-hero.png")
         )
     }
 

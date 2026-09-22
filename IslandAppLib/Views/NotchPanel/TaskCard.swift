@@ -108,6 +108,13 @@ struct TaskCard: View {
                     .fill(cardBackground)
                     .animation(Motion.hoverHighlight, value: isHovering)
             }
+            .overlay {
+                if isHighlighted {
+                    RoundedRectangle(cornerRadius: NotchMetrics.panelRowRadius, style: .continuous)
+                        .strokeBorder(Palette.hairline, lineWidth: 0.75)
+                        .allowsHitTesting(false)
+                }
+            }
         }
         .buttonStyle(PressableButtonStyle())
         .onHover { isHovering = $0 }
@@ -143,11 +150,12 @@ struct TaskCard: View {
         )
     }
 
-    /// One depth cue: the highlighted row (the one the island opened for)
-    /// gets a tint; hover gets a lighter one. No rail, no border.
+    /// The row the island opened for carries a ring as well as a tint, so
+    /// it stays distinct from the row under the pointer (a tint alone was
+    /// 1.06:1 against a hovered row).
     private var cardBackground: Color {
         if isHighlighted {
-            return Palette.warmWhite.opacity(0.07)
+            return Palette.warmWhite.opacity(0.06)
         }
         return isHovering ? Palette.warmWhite.opacity(0.045) : .clear
     }

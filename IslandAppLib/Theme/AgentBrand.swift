@@ -71,9 +71,9 @@ struct AgentLogoBadge: View {
     /// so dense silhouettes stay legible at menu-bar scale.
     var size: CGFloat = 26
     /// Ink color for the template logo / monogram text.
-    var ink: Color = .white.opacity(0.85)
+    var ink: Color = Palette.textSecondary
     /// Badge background. Pass `nil` to render the bare glyph.
-    var badge: Color? = Color.white.opacity(0.08)
+    var badge: Color? = Palette.warmWhite.opacity(0.08)
 
     var body: some View {
         ZStack {
@@ -101,9 +101,7 @@ struct AgentLogoBadge: View {
 
     /// The supplied Codex mark has a dense 24×24 outline and an internal
     /// prompt glyph. At the generic 62% scale both details collapse into a
-    /// soft blob, so it gets a restrained optical enlargement. The warm sand
-    /// ink is the same accent used throughout Dev Island's tour and keeps the
-    /// monochrome mark inside the product palette.
+    /// soft blob, so it gets a restrained optical enlargement.
     private var glyphScale: CGFloat {
         switch source {
         case "codex":    return 0.72
@@ -112,9 +110,9 @@ struct AgentLogoBadge: View {
         }
     }
 
-    private var resolvedInk: Color {
-        source == "codex" ? Palette.tourAccent.opacity(0.96) : ink
-    }
+    /// Every mark, Codex included, takes the caller's ink: a fixed light
+    /// tint vanished on the light History rows.
+    private var resolvedInk: Color { ink }
 }
 
 #if PREVIEWS && DEBUG

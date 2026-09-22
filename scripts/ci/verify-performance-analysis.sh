@@ -804,10 +804,14 @@ fi
 if rg -n 'now: (context\.date|now)' "$NOTCH_PANEL"; then
   fail "The expanded panel must not inject one shared clock through every row"
 fi
+# Rows format time through `taskTimingLabel`, which keeps the m:ss duration
+# for per-turn Agents and switches Codex (whose task spans a whole
+# conversation) to a minute-granularity session age. The row still owns its
+# own clock; only the formatter entry point moved.
 for invariant in \
   'TimelineView\(' \
   'PanelClockPresentation\.taskNeedsLiveTick' \
-  'PanelClockPresentation\.taskDuration'; do
+  'PanelClockPresentation\.taskTimingLabel'; do
   rg -q "$invariant" "$TASK_CARD" \
     || fail "Task-row-local clock invariant missing: $invariant"
 done
@@ -823,7 +827,8 @@ for regression in \
   'testLiveDurationUsesNowAndFormatsHourBoundary' \
   'testTerminalDurationFreezesAtTaskUpdateTime' \
   'testDurationNeverBecomesNegativeForClockSkew' \
-  'testCountdownRoundsUpAndClampsAtZero'; do
+  'testCountdownRoundsUpAndClampsAtZero' \
+  'testLongRunningCodexConversationShowsSessionAgeInsteadOfExecutionStopwatch'; do
   rg -q "$regression" "$PANEL_CLOCK_TESTS" \
     || fail "Panel clock regression missing: $regression"
 done

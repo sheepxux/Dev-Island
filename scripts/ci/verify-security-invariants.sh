@@ -4524,8 +4524,8 @@ done
 for regression in \
   'testEveryDiagnosticStateLandsInExactlyOneGroupWithOneAction' \
   'testGroupsKeepRegistryOrderInsideAndReadingOrderBetween' \
-  'testIncompleteSnapshotKeepsEveryRowInOneUngroupedList' \
-  'testStatusLinesNeverMentionVendorMechanicsAndAreLocalized'; do
+  'testIncompleteSnapshotKeepsPreviewSeparateWhileStableRowsLoad' \
+  'testStatusLinesDescribeInstalledCapabilityWithoutLeakingTrustInternals'; do
   rg -q "$regression" IslandAppLibTests/Sources/IslandAppLibTests/LocalAgentConnectionRowsPresentationTests.swift \
     || fail "Settings grouped Agent rows regression missing: $regression"
 done

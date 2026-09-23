@@ -628,7 +628,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindow?.orderOut(nil)
         }
 
-        let window = OnboardingWindow(screen: islandWindow?.screen) { [weak self] requestsAuthorization in
+        // The tour covers the island's screen and points at the real island
+        // and menu-bar item, following the island as it opens and closes.
+        guard let screen = islandWindow?.screen ?? NSScreen.main else { return }
+        let anchors = WelcomeTutorialAnchors(
+            screen: screen,
+            islandRect: islandWindow?.silhouetteScreenRect,
+            statusItemRect: statusItemController?.buttonScreenFrame
+        )
+        islandWindow?.onSilhouetteScreenRectChanged = { [weak anchors] rect in
+            anchors?.islandRect = rect
+        }
+
+        let window = OnboardingWindow(screen: screen, anchors: anchors) { [weak self] requestsAuthorization in
             UserDefaults.standard.set(true, forKey: OnboardingWindow.completionKey)
             guard let self else { return }
             self.onboardingIsFinishing = true
@@ -665,6 +677,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let destination = onboardingExitDestination
         let shouldReopen = reopenOnboardingAfterCurrentFlow
 
+        islandWindow?.onSilhouetteScreenRectChanged = nil
         onboardingWindow = nil
         onboardingDockLease = nil
         onboardingIsFinishing = false

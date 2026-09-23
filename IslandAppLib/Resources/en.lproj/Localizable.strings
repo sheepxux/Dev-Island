@@ -572,3 +572,14 @@
 "Plus finished responses" = "Plus finished responses";
 "Island only" = "Island only";
 "No system notifications" = "No system notifications";
+
+/* Welcome Tutorial (full screen, 2026-09-23) */
+"The panel" = "The panel";
+"The menu bar" = "The menu bar";
+"This is your island." = "This is your island.";
+"Every session, in one place." = "Every session, in one place.";
+"Always one click away." = "Always one click away.";
+"It stays at the top of your screen. While an Agent works, its progress lives here; when it needs you, it speaks up. Click it to open." = "It stays at the top of your screen. While an Agent works, its progress lives here; when it needs you, it speaks up. Click it to open.";
+"Each row is a session. The clock opens your history, the gear opens Settings, and Esc or a click outside closes the panel." = "Each row is a session. The clock opens your history, the gear opens Settings, and Esc or a click outside closes the panel.";
+"The menu-bar item opens the island, Settings and this tour, and quits Dev Island." = "The menu-bar item opens the island, Settings and this tour, and quits Dev Island.";
+"Open it for me" = "Open it for me";

@@ -54,6 +54,10 @@ struct OnboardingView: View {
     private var completions = false
 
     private let stepCount = 4
+    /// The full-screen tutorial's coaching steps precede these four; the
+    /// footer track counts them so the tour reads as one sequence.
+    private let trackOffset: Int
+    private let trackTotal: Int
 
     /// `liveSignalStore` exists so previews and offscreen snapshots can bind
     /// the final step to an inert fixture instead of the bootstrapping
@@ -63,9 +67,13 @@ struct OnboardingView: View {
         initialStep: Int = 0,
         initialHookSnapshot: LocalAgentHookHealthSnapshot? = nil,
         liveSignalStore: TaskStore? = nil,
-        initialDemo: WelcomeDemoPhase = .working
+        initialDemo: WelcomeDemoPhase = .working,
+        trackOffset: Int = 0,
+        trackTotal: Int? = nil
     ) {
         self.onFinish = onFinish
+        self.trackOffset = max(0, trackOffset)
+        self.trackTotal = max(trackTotal ?? 0, self.trackOffset + 4)
         _demo = State(initialValue: initialDemo)
         _store = State(initialValue: liveSignalStore ?? TaskStore.shared)
         _step = State(initialValue: min(max(initialStep, 0), stepCount - 1))
@@ -208,10 +216,10 @@ struct OnboardingView: View {
 
     private var stepTrack: some View {
         HStack(spacing: 6) {
-            ForEach(0..<stepCount, id: \.self) { index in
+            ForEach(0..<trackTotal, id: \.self) { index in
                 Capsule()
-                    .fill(index == step ? Palette.Window.ink : Palette.Window.hairlineStrong)
-                    .frame(width: index == step ? 18 : 5, height: 5)
+                    .fill(index == trackOffset + step ? Palette.Window.ink : Palette.Window.hairlineStrong)
+                    .frame(width: index == trackOffset + step ? 18 : 5, height: 5)
             }
         }
         .animation(reduceMotion ? nil : Motion.tourStep, value: step)
@@ -220,8 +228,8 @@ struct OnboardingView: View {
             L10n.format(
                 "Step %lld of %lld",
                 language: language,
-                Int64(step + 1),
-                Int64(stepCount)
+                Int64(trackOffset + step + 1),
+                Int64(trackTotal)
             )
         )
     }

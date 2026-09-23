@@ -57,10 +57,15 @@ Increase Contrast, which only adapts role tokens.
 
 ## Where decisions are recorded
 
-- Welcome follows the owner-approved "float" direction (2026-09-20): one
-  central column under a floating island specimen. Contract:
-  `docs/INTERFACE_CONTRACT.md`, section "Welcome 悬浮单轴几何".
-- Rejected for Welcome, do not reintroduce: split editorial columns, giant
-  step numbers, poster slogans, page cards inside the window.
+- Welcome is a full-screen tutorial over the real desktop (owner decision,
+  2026-09-23): a scrim below the menu bar and the island, three coaching
+  steps that point at the real island, its panel and the menu-bar item,
+  then the setup card. Contract: `docs/INTERFACE_CONTRACT.md`, section
+  "Welcome 全屏分步教程".
+- The setup card keeps the owner-approved "float" direction (2026-09-20):
+  one central column under a floating island specimen. Contract: section
+  "Welcome 悬浮单轴几何".
+- Rejected for the setup card, do not reintroduce: split editorial columns,
+  giant step numbers, poster slogans.
 - Token values are pinned by tests: `OKLCHPaletteTests`,
   `WindowPaletteTests`, `InterfaceContrastPolicyTests`.

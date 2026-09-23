@@ -572,3 +572,14 @@
 "Plus finished responses" = "另加回复完成时";
 "Island only" = "只在岛上显示";
 "No system notifications" = "不发送系统通知";
+
+/* Welcome Tutorial (full screen, 2026-09-23) */
+"The panel" = "面板";
+"The menu bar" = "菜单栏";
+"This is your island." = "这就是你的岛。";
+"Every session, in one place." = "每个会话，都在这一处。";
+"Always one click away." = "永远只差一次点击。";
+"It stays at the top of your screen. While an Agent works, its progress lives here; when it needs you, it speaks up. Click it to open." = "它一直待在屏幕顶端。Agent 工作时，进度就在这里；需要你时，它会开口。点一下把它打开。";
+"Each row is a session. The clock opens your history, the gear opens Settings, and Esc or a click outside closes the panel." = "每一行是一个会话。时钟打开会话历史，齿轮打开设置；按 Esc 或点外部即可收起。";
+"The menu-bar item opens the island, Settings and this tour, and quits Dev Island." = "菜单栏图标可以打开岛、设置和这份引导，也能退出 Dev Island。";
+"Open it for me" = "帮我打开";

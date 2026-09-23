@@ -47,7 +47,7 @@ final class IslandWindowKeyboardFocusPolicyTests: XCTestCase {
         XCTAssertTrue(IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
             islandIsKey: true,
             activatedByDirectEngagement: false,
-            conventionalSurfaceIsKey: false
+            conventionalSurfaceIsOpen: false
         ))
     }
 
@@ -55,23 +55,25 @@ final class IslandWindowKeyboardFocusPolicyTests: XCTestCase {
         XCTAssertTrue(IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
             islandIsKey: false,
             activatedByDirectEngagement: true,
-            conventionalSurfaceIsKey: false
+            conventionalSurfaceIsOpen: false
         ))
     }
 
-    func testCollapseLeavesASettingsOrTourWindowInCharge() {
-        XCTAssertFalse(IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
-            islandIsKey: false,
-            activatedByDirectEngagement: true,
-            conventionalSurfaceIsKey: true
-        ))
+    func testCollapseLeavesAnOpenSettingsOrTourWindowInCharge() {
+        for islandIsKey in [true, false] {
+            XCTAssertFalse(IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
+                islandIsKey: islandIsKey,
+                activatedByDirectEngagement: true,
+                conventionalSurfaceIsOpen: true
+            ))
+        }
     }
 
     func testCollapseNeverDeactivatesAnAppTheIslandDidNotActivate() {
         XCTAssertFalse(IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
             islandIsKey: false,
             activatedByDirectEngagement: false,
-            conventionalSurfaceIsKey: false
+            conventionalSurfaceIsOpen: false
         ))
     }
 

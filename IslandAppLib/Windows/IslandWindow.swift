@@ -54,8 +54,18 @@ public final class IslandWindow: NSWindow {
     /// Cached silhouette rect in absolute screen coordinates. Updated
     /// whenever the SwiftUI side reports a new silhouette (mode flip /
     /// hover widen) or whenever the window is repositioned. The
-    /// mouse-tracking timer reads this every tick.
-    private var silhouetteScreenRect: CGRect = .zero
+    /// mouse-tracking timer reads this every tick; the Welcome tutorial
+    /// points at it.
+    public private(set) var silhouetteScreenRect: CGRect = .zero {
+        didSet {
+            guard silhouetteScreenRect != oldValue else { return }
+            onSilhouetteScreenRectChanged?(silhouetteScreenRect)
+        }
+    }
+
+    /// Observers of the visible silhouette (the Welcome tutorial follows the
+    /// island as it opens and closes). Called on the main thread.
+    public var onSilhouetteScreenRectChanged: ((CGRect) -> Void)?
 
     private var mouseTrackingTimer: Timer?
     private var mouseMoveMonitors: [Any] = []
@@ -158,11 +168,19 @@ public final class IslandWindow: NSWindow {
     /// may keep the app active.
     public func releaseKeyboardInteraction() {
         let keyWindow = NSApp.keyWindow
+        let conventionalSurface = Self.visibleConventionalSurface()
         guard IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
             islandIsKey: keyWindow === self,
             activatedByDirectEngagement: activatedByDirectEngagement,
-            conventionalSurfaceIsKey: Self.isConventionalSurface(keyWindow)
-        ) else { return }
+            conventionalSurfaceIsOpen: conventionalSurface != nil
+        ) else {
+            // Settings, the tour or the sandbox stays in charge; if the island
+            // borrowed the keyboard for the panel, hand it straight back.
+            if keyWindow === self, let conventionalSurface {
+                conventionalSurface.makeKey()
+            }
+            return
+        }
 
         if keyWindow === self {
             resignKey()
@@ -188,6 +206,10 @@ public final class IslandWindow: NSWindow {
         if window is DebugSandboxWindow { return true }
         #endif
         return window is SettingsWindow || window is OnboardingWindow
+    }
+
+    private static func visibleConventionalSurface() -> NSWindow? {
+        NSApp.windows.first { $0.isVisible && isConventionalSurface($0) }
     }
 
     public override func sendEvent(_ event: NSEvent) {
@@ -464,17 +486,17 @@ enum IslandWindowKeyboardFocusPolicy {
     }
 
     /// Whether collapsing the panel must give activation back to the user's
-    /// app. The island always releases when it is key. When a consenting
-    /// click took activation but AppKit keyed no window of ours (or an
-    /// incidental one), the editor is still owed its focus; only a
-    /// conventional surface the user moved on to (Settings, the tour, the
-    /// DEBUG sandbox) may keep the app active.
+    /// app. An open conventional surface (Settings, the tour, the DEBUG
+    /// sandbox) keeps the app active and takes the keyboard back instead.
+    /// Otherwise the island releases when it is key, and also when a
+    /// consenting click took activation but AppKit keyed no window of ours
+    /// (or an incidental one): the editor is still owed its focus.
     static func shouldReleaseActivation(
         islandIsKey: Bool,
         activatedByDirectEngagement: Bool,
-        conventionalSurfaceIsKey: Bool
+        conventionalSurfaceIsOpen: Bool
     ) -> Bool {
-        islandIsKey || (activatedByDirectEngagement && !conventionalSurfaceIsKey)
+        !conventionalSurfaceIsOpen && (islandIsKey || activatedByDirectEngagement)
     }
 }
 

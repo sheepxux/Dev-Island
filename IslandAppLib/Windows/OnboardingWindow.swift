@@ -5,8 +5,15 @@ public extension Notification.Name {
     static let islandOpenOnboardingRequested = Notification.Name("island.openOnboardingRequested")
 }
 
+/// The Welcome tour's window: since 2026-09-23 a borderless sheet over the
+/// whole screen the island lives on. It floats above ordinary windows but
+/// below the menu bar and the island, so the tutorial can point at the real
+/// island and the real menu-bar item while everything else is dimmed.
 public final class OnboardingWindow: NSWindow {
     public static let completionKey = "island.didCompleteFirstLaunch"
+
+    /// Live anchors the canvas follows; AppDelegate keeps them current.
+    public let anchors: WelcomeTutorialAnchors
 
     private let finishHandler: (_ requestsNotificationAuthorization: Bool) -> Void
     private var hasRequestedFinish = false
@@ -17,17 +24,14 @@ public final class OnboardingWindow: NSWindow {
     public override var canBecomeMain: Bool { true }
 
     public init(
-        screen: NSScreen? = nil,
+        screen: NSScreen,
+        anchors: WelcomeTutorialAnchors,
         onFinish: @escaping (_ requestsNotificationAuthorization: Bool) -> Void
     ) {
+        self.anchors = anchors
         self.finishHandler = onFinish
         super.init(
-            contentRect: NSRect(
-                x: 0,
-                y: 0,
-                width: OnboardingMetrics.width,
-                height: OnboardingMetrics.height
-            ),
+            contentRect: screen.frame,
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -35,26 +39,25 @@ public final class OnboardingWindow: NSWindow {
 
         title = L10n.string("Welcome to Dev Island")
         appearance = NSAppearance(named: .aqua)
-        isMovable = true
-        isMovableByWindowBackground = true
+        isMovable = false
         backgroundColor = .clear
         isOpaque = false
-        hasShadow = true
+        hasShadow = false
         isReleasedWhenClosed = false
-        level = .normal
-        collectionBehavior = [.fullScreenAuxiliary]
+        // Above the user's windows, below the menu bar (`.mainMenu`) and the
+        // island (`.statusBar`), which stay visible and clickable.
+        level = .floating
+        collectionBehavior = [.fullScreenAuxiliary, .stationary]
         contentView = NSHostingView(
             rootView: LocalizedAppRoot {
-                OnboardingView { [weak self] requestsAuthorization in
+                WelcomeTutorialCanvas(anchors: anchors) { [weak self] requestsAuthorization in
                     self?.requestFinish(
                         requestsNotificationAuthorization: requestsAuthorization
                     )
                 }
             }
         )
-        minSize = NSSize(width: OnboardingMetrics.width, height: OnboardingMetrics.height)
-        maxSize = NSSize(width: OnboardingMetrics.width, height: OnboardingMetrics.height)
-        center(on: screen)
+        setFrame(screen.frame, display: false)
     }
 
     /// Route Command-W through the same semantic close path as the custom X
@@ -62,22 +65,6 @@ public final class OnboardingWindow: NSWindow {
     /// like a conventional key window once the app is in regular mode.
     public override func performClose(_ sender: Any?) {
         requestFinish(requestsNotificationAuthorization: false)
-    }
-
-    /// Keep the tour on the same display as the island. `NSWindow.center()`
-    /// always favors the main display, which feels like a focus jump when the
-    /// menu-bar utility is being used on a secondary screen.
-    private func center(on preferredScreen: NSScreen?) {
-        guard let targetScreen = preferredScreen ?? NSScreen.main else {
-            center()
-            return
-        }
-        let visibleFrame = targetScreen.visibleFrame
-        let origin = NSPoint(
-            x: visibleFrame.midX - frame.width / 2,
-            y: visibleFrame.midY - frame.height / 2
-        )
-        setFrameOrigin(origin)
     }
 
     public func bringToFront() {

@@ -19,6 +19,13 @@ public final class StatusItemController: NSObject, NSMenuDelegate {
     private var languageObserver: NSObjectProtocol?
     private var expiryRefreshWorkItem: DispatchWorkItem?
 
+    /// Screen frame of the menu-bar button, for surfaces that point at it
+    /// (the Welcome tutorial). `nil` while the item is not in the menu bar.
+    public var buttonScreenFrame: CGRect? {
+        guard let button = statusItem?.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
+
     public override init() {
         super.init()
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)

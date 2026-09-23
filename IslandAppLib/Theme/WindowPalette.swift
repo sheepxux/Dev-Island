@@ -50,6 +50,9 @@ extension Palette {
         /// The one painted element on the Welcome canvas: the glow centered
         /// on the island specimen.
         static let glow = Sand.s150.color
+        /// Full-screen Welcome tutorial backdrop over the user's desktop
+        /// (`WelcomeTutorialCanvas`); the real island and menu bar sit above it.
+        static let scrim = Sand.s1000.opacity(0.58).color
 
         // Signals on the light ground
         static let attention = Signal.attentionFill.color

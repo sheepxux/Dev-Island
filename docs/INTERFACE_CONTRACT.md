@@ -2526,7 +2526,31 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 
 ---
 
-## Welcome 悬浮单轴几何（2026-09-22，取代 v6.36.0 编辑栏几何）
+## Welcome 全屏分步教程（2026-09-23）
+
+- 用户于 2026-09-23 选定：Welcome 不再是一扇悬浮小窗，而是覆盖岛所在整块屏幕的分步教程。
+  `OnboardingWindow` 的 frame 等于 `screen.frame`，`level = .floating`：在用户的普通窗口之上、
+  菜单栏（`.mainMenu`）与岛（`.statusBar`）之下，所以真实的岛和菜单栏图标始终可见、可点。
+  窗口不可移动、无阴影、背景为 `Palette.Window.scrim`（Sand s1000 · 0.58）。
+- 三个教学步骤在原有四个设置步骤之前，步骤轨道合计七格：**认识你的岛**（指向真实岛，
+  主动作 `IslandCoordinator.expand()` 被动展开、不抢焦点；用户亲手点岛展开同样推进）、
+  **面板**（聚光灯跟随展开面板；下一步收起岛）、**菜单栏**（指示线指向状态栏按钮）。
+  「跳过演示，直接接入」收起岛并直接进入设置卡第 2 步。教学步骤不读写任何配置、不执行
+  任何 Agent。
+- 锚点由 `WelcomeTutorialAnchors` 承载（屏幕 frame、菜单栏高度、岛轮廓 screen rect、
+  状态栏按钮 frame）：`AppDelegate.beginOnboarding` 注入并通过
+  `IslandWindow.onSilhouetteScreenRectChanged` 实时更新，`completeOnboardingFlow` 解除订阅。
+  屏幕坐标换算与聚光灯/卡片/连接线放置是纯函数 `WelcomeTutorialLayout`，由
+  `WelcomeTutorialLayoutTests` 固定：卡片居中于目标之下并夹在画布边距内、贴右边时连接线
+  避开卡片圆角、卡片超高时贴底且不画连接线、无目标时居中且无聚光灯。
+- 菜单栏带内的任何绘制都被菜单栏和岛盖住，指示线止于菜单栏下缘；只有面板延伸到菜单栏
+  以下时聚光灯与描边才可见。
+- 设置卡片沿用下一节的 760×530 单轴几何，只是放在同一画布上居中显示；其步骤轨道通过
+  `trackOffset`/`trackTotal` 接续教学步骤。
+- 岛收起时若有 Settings、Welcome 或 DEBUG sandbox 窗口可见，App 保持激活并把键盘交还该
+  窗口，而不是把激活让回用户的编辑器（`IslandWindowKeyboardFocusPolicy.shouldReleaseActivation`）。
+
+## Welcome 悬浮单轴几何（2026-09-22，取代 v6.36.0 编辑栏几何；自 2026-09-23 起描述全屏教程画布上的设置卡片）
 
 - Welcome 采用 2026-09-20 用户选定的「悬浮」方向：奶油单层画布，炭黑岛标本悬浮在
   中央纵轴上，每步一个标题、一句说明、该步必要的选项和一个主操作。
@@ -3147,3 +3171,4 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-09-11 | v6.93.0 | **Codex 会话监控事件驱动化**:`CodexSessionLogWatcher` 单条 FSEvents 目录级订阅（1 秒合并、不读路径、根缺失盯父目录）、`CodexSessionChangeSignal` 折叠唤醒、`CodexSessionMonitorSchedule` 仅按到期/补读设截止；TaskStore 移除 1 秒 / 3 秒轮询，Hook 快照可唤醒 `.notFound` 监控 | `[S][contract] perf(core): drive Codex session monitoring by filesystem events` |
 | 2026-09-12 | v6.95.0 | **Codex 监控合并前评审修正**:`CodexSessionPhase` 稳定标记替代英文短语、岛条/通知本地化映射、用户中断不通知、快速扫描覆盖本地日期目录、历史写入去重、`.utility` 监控循环、`unsupportedHome` 错误、授权表单说明/Esc/后台定位 CLI、readiness 版本钉 `0.153.4`、`Package.resolved` 恢复 CI 解析 | `[S][contract] fix(codex): apply the pre-merge review to Codex monitoring` |
 | 2026-09-23 | v6.96.0 | **被放弃的退出后再次可退**:`AppTerminationCoordinator` 在一个 flight 已 reply 而 AppKit 再次询问时释放旧 token 并重新起一轮 cleanup/timeout/reply（进行中的 flight 仍共享同一 pending reply，迟到回调继续被 token 拒绝）；此前被取消的 Apple event Quit 会让之后每次菜单退出永久无响应 | `[S][contract] reliability: answer a repeated Quit after an abandoned termination` |
+| 2026-09-23 | v6.97.0 | **全屏分步 Welcome 教程**:`OnboardingWindow` 覆盖岛所在整块屏幕并置于菜单栏与岛之下（`.floating`），三个指向真实岛/面板/菜单栏图标的教学步骤先于原有四步，`WelcomeTutorialAnchors` 实时跟随岛轮廓，`WelcomeTutorialLayout` 纯函数放置聚光灯/卡片/连接线并有回归；岛收起时可见的 Settings/Welcome 窗口保留激活并取回键盘 | `[C][contract] feat(app): coach the real island in a full-screen Welcome` |

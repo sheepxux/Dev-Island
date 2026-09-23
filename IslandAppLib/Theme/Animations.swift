@@ -48,6 +48,10 @@ enum Motion {
     /// the fixed instrument should feel as though its content is refocusing,
     /// not as though an entire web carousel is sliding through the window.
     static let tourStep = Animation.smooth(duration: 0.24, extraBounce: 0)
+    /// Lines of a Welcome coaching card follow the card in, one after the
+    /// other, so the eye lands on the title first.
+    static let stagedReveal = Animation.easeOut(duration: 0.22)
+    static let stagedRevealStep: TimeInterval = 0.06
     /// Press acknowledgement. Short enough to feel immediate, long enough
     /// that the 0.96 press scale reads as a press rather than a jump.
     static let press = Animation.easeOut(duration: 0.12)
@@ -67,6 +71,11 @@ enum Motion {
 
     static let runningOrbitPeriod: TimeInterval = 1.8
     static let waitingBreathPeriod: TimeInterval = 1.4
+    /// Welcome guidance: the ring around what the tour points at breathes,
+    /// and a point travels the connector toward the card. Opacity and
+    /// position of one small mark only; both rest under Reduce Motion.
+    static let guideBreathPeriod: TimeInterval = 2.4
+    static let guideTravelPeriod: TimeInterval = 1.6
 
     // MARK: - Accessibility
 

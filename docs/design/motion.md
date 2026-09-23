@@ -8,7 +8,9 @@ Source: `IslandAppLib/Theme/Animations.swift`. Anything that animates names a
 | `islandMorph` | smooth 0.30s, no bounce | Bar → panel expand |
 | `islandCollapse` | smooth 0.22s, no bounce | Panel → bar collapse (exit runs ~25% faster) |
 | `layout` | smooth 0.24s | Task-list and row height changes |
-| `tourStep` | smooth 0.24s | Welcome step change |
+| `tourStep` | smooth 0.24s | Welcome step change (card, bloom, ring) |
+| `stagedReveal` + `stagedRevealStep` | easeOut 0.22s, +0.06s per line | Welcome card lines following the card in |
+| `guideBreathPeriod` / `guideTravelPeriod` | 2.4s / 1.6s | Welcome ring breathing / the point travelling the connector (TimelineView; both rest under Reduce Motion) |
 | `contentReveal` | easeOut 0.18s | Content fading in after its surface settles |
 | `questionPageReveal` | easeOut 0.14s | The next question page |
 | `colorTransition` | easeInOut 0.18s | State color cross-fade |

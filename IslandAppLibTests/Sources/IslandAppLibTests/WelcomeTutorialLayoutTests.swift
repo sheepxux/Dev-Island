@@ -80,6 +80,45 @@ final class WelcomeTutorialLayoutTests: XCTestCase {
         XCTAssertEqual(placement.card.midY, canvas.midY, accuracy: 0.5)
     }
 
+    func testBloomFollowsTheSpotlightAndFallsBackToTheCard() {
+        let target = CGRect(x: 830, y: 0, width: 260, height: 28)
+        let pointed = WelcomeTutorialLayout.placement(target: target, cardSize: cardSize, canvas: canvas)
+        let centered = WelcomeTutorialLayout.placement(target: nil, cardSize: cardSize, canvas: canvas)
+
+        XCTAssertEqual(
+            WelcomeTutorialLayout.bloomCenter(of: pointed),
+            CGPoint(x: pointed.spotlight!.midX, y: pointed.spotlight!.midY)
+        )
+        XCTAssertEqual(
+            WelcomeTutorialLayout.bloomCenter(of: centered),
+            CGPoint(x: centered.card.midX, y: centered.card.midY)
+        )
+    }
+
+    func testBreathingRingRestsAtItsQuietOpacityAndPeaksMidCycle() {
+        XCTAssertEqual(WelcomeTutorialLayout.breathOpacity(phase: 0), WelcomeTutorialLayout.restOpacity, accuracy: 0.0001)
+        XCTAssertEqual(WelcomeTutorialLayout.breathOpacity(phase: 1), WelcomeTutorialLayout.restOpacity, accuracy: 0.0001)
+        XCTAssertEqual(WelcomeTutorialLayout.breathOpacity(phase: 0.5), 1, accuracy: 0.0001)
+        for phase in stride(from: 0.0, through: 1.0, by: 0.05) {
+            let opacity = WelcomeTutorialLayout.breathOpacity(phase: phase)
+            XCTAssertGreaterThanOrEqual(opacity, WelcomeTutorialLayout.restOpacity)
+            XCTAssertLessThanOrEqual(opacity, 1)
+        }
+    }
+
+    func testTravellingPointStartsAtTheSpotlightAndArrivesAtTheCard() {
+        let connector = WelcomeTutorialLayout.Connector(
+            start: CGPoint(x: 960, y: 38),
+            end: CGPoint(x: 960, y: 200)
+        )
+
+        XCTAssertEqual(WelcomeTutorialLayout.travelPoint(on: connector, phase: 0), connector.start)
+        XCTAssertEqual(WelcomeTutorialLayout.travelPoint(on: connector, phase: 1), connector.end)
+        XCTAssertEqual(WelcomeTutorialLayout.travelPoint(on: connector, phase: 0.5).y, 119, accuracy: 0.5)
+        XCTAssertEqual(WelcomeTutorialLayout.travelPoint(on: connector, phase: 2), connector.end)
+        XCTAssertEqual(WelcomeTutorialLayout.travelPoint(on: connector, phase: -1), connector.start)
+    }
+
     func testCardTooTallForTheSpaceBelowIsPinnedToTheBottomMarginWithoutAConnector() {
         let panel = CGRect(x: 751, y: 0, width: 418, height: 420)
         let tallCard = CGSize(width: OnboardingMetrics.width, height: 700)

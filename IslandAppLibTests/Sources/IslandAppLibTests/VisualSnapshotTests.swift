@@ -103,16 +103,16 @@ final class VisualSnapshotTests: XCTestCase {
         )
         let hookSnapshot = LocalAgentHookDiagnostics.snapshot()
 
-        for step in 0..<4 {
+        for (index, step) in OnboardingView.Step.allCases.enumerated() {
             let view = OnboardingView(
+                step: step,
                 onFinish: { _ in },
-                initialStep: step,
                 initialHookSnapshot: hookSnapshot,
                 liveSignalStore: TaskStore.presentationFixture()
             )
 
             let destination = outputDirectory.appendingPathComponent(
-                String(format: "%02d-welcome-step.png", step + 1)
+                String(format: "%02d-welcome-step.png", index + 1)
             )
             try render(
                 view,
@@ -124,16 +124,36 @@ final class VisualSnapshotTests: XCTestCase {
             )
         }
 
-        // The first step's example request, the moment the product exists for.
+        // The tour's example request, rendered by the real panel the way the
+        // island shows it (the tour never draws a lookalike).
+        let demo = WelcomeDemoContent.demo(beat: .askingPermission, language: .english)
+        let demoLayout = NotchMetrics.Layout(
+            hasNotch: false,
+            barHeight: 28,
+            notchHeight: 0,
+            menuBarHeight: 28,
+            notchWidth: NotchMetrics.defaultNotchWidth,
+            topMargin: 0
+        )
+        let demoPanel = NotchPanelView(
+            tasks: TaskPresentationPolicy.ordered(demo.tasks),
+            manusConnectionStatus: .disconnected,
+            localAgentStatus: .listening,
+            apiKeyStatus: .notConfigured,
+            layout: demoLayout,
+            highlightedTask: IslandTutorialDemo.primaryIdentity,
+            pendingActionRequests: demo.requests,
+            onTaskTap: { _ in },
+            onSettingsTap: {},
+            onConnectTap: {},
+            isLive: false
+        )
+        .padding(22)
+        .background(Color(white: 0.16))
+        .preferredColorScheme(.dark)
         try render(
-            OnboardingView(
-                onFinish: { _ in },
-                initialStep: 0,
-                initialHookSnapshot: hookSnapshot,
-                liveSignalStore: TaskStore.presentationFixture(),
-                initialDemo: .asking
-            ),
-            size: NSSize(width: OnboardingMetrics.width, height: OnboardingMetrics.height),
+            demoPanel,
+            size: NSSize(width: 520, height: 420),
             to: outputDirectory.appendingPathComponent("05-welcome-example-request.png")
         )
     }
@@ -143,10 +163,10 @@ final class VisualSnapshotTests: XCTestCase {
         configureApplicationIconForPackageTests()
 
         let hookSnapshot = LocalAgentHookDiagnostics.snapshot()
-        for step in 0..<4 {
+        for (index, step) in OnboardingView.Step.allCases.enumerated() {
             let view = OnboardingView(
+                step: step,
                 onFinish: { _ in },
-                initialStep: step,
                 initialHookSnapshot: hookSnapshot,
                 liveSignalStore: TaskStore.presentationFixture()
             )
@@ -158,7 +178,7 @@ final class VisualSnapshotTests: XCTestCase {
                     height: OnboardingMetrics.height
                 ),
                 to: outputDirectory.appendingPathComponent(
-                    String(format: "40-zh-hans-welcome-step-%02d.png", step + 1)
+                    String(format: "40-zh-hans-welcome-step-%02d.png", index + 1)
                 )
             )
         }

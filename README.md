@@ -152,7 +152,8 @@ notarized in GitHub Actions.
 
 ### First run
 
-The three-step Welcome Tour explains the island, connects the local tools you
+The full-screen Welcome tour coaches the real island — an example approval
+and an example question are answered on it — connects the local tools you
 choose, and asks which events deserve notifications. Waiting, failure and
 completion use distinct, restrained signal sounds delivered through macOS
 Notification Center, so system Focus rules still apply. Sounds can be previewed

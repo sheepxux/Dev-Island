@@ -3,9 +3,11 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 
-/// The Welcome window's fixed geometry. Every step lays out along one central
-/// axis under a floating island specimen, so moving through the tour reads as
-/// the same object changing modes rather than a new screen loading.
+/// The Welcome coaching card's fixed geometry (`WelcomeTutorialCanvas`): one
+/// central column for copy, choices and the primary action. `height` and the
+/// island specimen widths stay for the layout tests and offscreen captures
+/// that pin them; the specimen itself retired on 2026-09-23 when the tour
+/// began showing its example on the real island.
 enum OnboardingMetrics {
     static let width: CGFloat = 760
     static let height: CGFloat = 530
@@ -22,22 +24,27 @@ enum OnboardingMetrics {
     static let islandRequestRadius: CGFloat = 22
 }
 
-/// Welcome, built on the 2026-09-20 "float" direction: one cream canvas, the
-/// charcoal island floating on the central axis, one title, one sentence, the
-/// choices that step needs and one primary action.
-///
-/// Step 1 is an honest example (labelled as one). Steps 2–4 are live: the
-/// connection grid reads and writes real Hook configuration through the
-/// shared off-main executor, and the final step reads its answer straight
-/// from `TaskStore`, so the first signal a new user sees is never simulated.
+/// The setup half of the Welcome tutorial. `WelcomeTutorialCanvas` owns the
+/// full-screen stage, the card chrome and the step track; this view carries
+/// one setup step's content in the card's 520pt column and keeps its live
+/// state across the three steps: the connection grid reads and writes real
+/// Hook configuration through the shared off-main executor, and the final
+/// step reads its answer straight from `TaskStore`, so the first signal a
+/// new user sees is never simulated.
 struct OnboardingView: View {
+    enum Step: Int, CaseIterable, Equatable {
+        case connect
+        case reminders
+        case firstSignal
+    }
+
+    let step: Step
+    let onContinue: () -> Void
     let onFinish: (_ requestsNotificationAuthorization: Bool) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.devIslandLanguage) private var language
     @State private var store: TaskStore
-    @State private var step: Int
-    @State private var demo = WelcomeDemoPhase.working
     @State private var connectionStates: [String: LocalAgentHookConnectionState]
     @State private var hasLoadedConnectionStates: Bool
     @State private var connectionErrors: [String: String] = [:]
@@ -53,30 +60,20 @@ struct OnboardingView: View {
     @AppStorage(TaskNotificationPreferences.completionsKey)
     private var completions = false
 
-    private let stepCount = 4
-    /// The full-screen tutorial's coaching steps precede these four; the
-    /// footer track counts them so the tour reads as one sequence.
-    private let trackOffset: Int
-    private let trackTotal: Int
-
     /// `liveSignalStore` exists so previews and offscreen snapshots can bind
     /// the final step to an inert fixture instead of the bootstrapping
     /// shared store. The App always passes nothing and observes the live one.
     init(
+        step: Step = .connect,
+        onContinue: @escaping () -> Void = {},
         onFinish: @escaping (_ requestsNotificationAuthorization: Bool) -> Void,
-        initialStep: Int = 0,
         initialHookSnapshot: LocalAgentHookHealthSnapshot? = nil,
-        liveSignalStore: TaskStore? = nil,
-        initialDemo: WelcomeDemoPhase = .working,
-        trackOffset: Int = 0,
-        trackTotal: Int? = nil
+        liveSignalStore: TaskStore? = nil
     ) {
+        self.step = step
+        self.onContinue = onContinue
         self.onFinish = onFinish
-        self.trackOffset = max(0, trackOffset)
-        self.trackTotal = max(trackTotal ?? 0, self.trackOffset + 4)
-        _demo = State(initialValue: initialDemo)
         _store = State(initialValue: liveSignalStore ?? TaskStore.shared)
-        _step = State(initialValue: min(max(initialStep, 0), stepCount - 1))
         _connectionStates = State(initialValue: Dictionary(
             uniqueKeysWithValues: initialHookSnapshot?.agents.map {
                 ($0.source, $0.state)
@@ -86,41 +83,19 @@ struct OnboardingView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-
-            // The stage takes its natural height, so when the example island
-            // opens into a request the copy below moves down with it.
-            stage
-
-            ZStack {
-                stepContent
-                    .id(step)
-                    .transition(stepTransition)
-            }
-            .frame(width: OnboardingMetrics.columnWidth)
-            .frame(maxHeight: .infinity, alignment: .top)
-
-            footer
+        // The host keeps this view's identity across steps so connection
+        // state survives; only the content swaps.
+        ZStack {
+            stepContent
+                .id(step)
+                .transition(stepTransition)
         }
-        .frame(width: OnboardingMetrics.width, height: OnboardingMetrics.height)
-        .background(WindowCanvas())
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: OnboardingMetrics.windowRadius,
-                style: .continuous
-            )
-        )
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: OnboardingMetrics.windowRadius,
-                style: .continuous
-            )
-            .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
-        }
+        .frame(width: OnboardingMetrics.columnWidth)
+        // The column keeps the card's header/footer insets on both sides so
+        // the card reads as one composition (see `WelcomeTutorialCanvas`).
+        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
         .foregroundStyle(Palette.Window.ink)
         .tint(Palette.Window.ink)
-        .preferredColorScheme(.light)
         .onAppear(perform: loadInstalledSources)
         .onChange(of: observedLiveSignal, initial: true) { _, latched in
             guard latched != liveSignal else { return }
@@ -141,234 +116,14 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Window chrome
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(nsImage: NSApplication.shared.applicationIconImage)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(width: 26, height: 26)
-                .accessibilityHidden(true)
-
-            Text("Dev Island")
-                .font(Typo.bodyStrong)
-                .foregroundStyle(Palette.Window.ink)
-
-            Spacer()
-
-            Button {
-                onFinish(false)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Palette.Window.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
-            .pointingHandCursor()
-            .keyboardShortcut(.cancelAction)
-            .help(L10n.string("Close welcome tour", language: language))
-            .accessibilityLabel(L10n.string("Close welcome tour", language: language))
-        }
-        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding - 8)
-        .padding(.leading, 8)
-        .frame(height: 56)
-    }
-
-    private var footer: some View {
-        HStack(spacing: 10) {
-            stepTrack
-
-            Text(L10n.string(stepName, language: language))
-                .font(Typo.callout)
-                .foregroundStyle(Palette.Window.textSecondary)
-                .padding(.leading, 4)
-
-            Spacer()
-
-            if step == 0 {
-                Button(L10n.string("Skip to setup", language: language)) {
-                    move(to: 1)
-                }
-                .buttonStyle(.window(.quiet))
-            } else {
-                Button(L10n.string("Back", language: language)) {
-                    move(to: step - 1)
-                }
-                .buttonStyle(.window(.quiet))
-            }
-        }
-        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .frame(height: 56)
-    }
-
-    private var stepName: String {
-        switch step {
-        case 0: return "See it first"
-        case 1: return "Connect"
-        case 2: return "Reminders"
-        default: return "First signal"
-        }
-    }
-
-    private var stepTrack: some View {
-        HStack(spacing: 6) {
-            ForEach(0..<trackTotal, id: \.self) { index in
-                Capsule()
-                    .fill(index == trackOffset + step ? Palette.Window.ink : Palette.Window.hairlineStrong)
-                    .frame(width: index == trackOffset + step ? 18 : 5, height: 5)
-            }
-        }
-        .animation(reduceMotion ? nil : Motion.tourStep, value: step)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            L10n.format(
-                "Step %lld of %lld",
-                language: language,
-                Int64(trackOffset + step + 1),
-                Int64(trackTotal)
-            )
-        )
-    }
-
-    // MARK: - Stage
-
-    /// The island floats on the window's axis above a soft shadow of itself.
-    /// The label above it says, in every step, whether what it shows is an
-    /// example or live.
-    private var stage: some View {
-        VStack(spacing: 14) {
-            stageCaption
-                // Drawn above the island's glow, which reaches up behind it.
-                .zIndex(1)
-
-            WelcomeIslandSpecimen(
-                content: islandContent,
-                allowsDefaultAction: step == 0 && demo == .asking,
-                onAllow: { resolveDemo() },
-                onDeny: { resolveDemo() }
-            )
-            .background { halo }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(L10n.string(
-                stageIsExample ? "Example island" : "Your island",
-                language: language
-            ))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 24)
-        .padding(.bottom, 28)
-    }
-
-    /// A soft warm glow centered on the floating island, the one thing
-    /// painted on the canvas. It sits only behind the island.
-    private var halo: some View {
-        Rectangle()
-            .fill(
-                EllipticalGradient(
-                    stops: [
-                        .init(color: Palette.Window.glow.opacity(0.85), location: 0),
-                        .init(color: Palette.Window.glow.opacity(0.35), location: 0.55),
-                        .init(color: Palette.Window.glow.opacity(0), location: 1),
-                    ],
-                    center: .center,
-                    startRadiusFraction: 0,
-                    endRadiusFraction: 0.5
-                )
-            )
-            .frame(width: 640, height: 200)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-
-    /// Steps 1 and 3 show an example and say so; steps 2 and 4 are live.
-    private var stageCaption: some View {
-        HStack(spacing: 6) {
-            Text(L10n.string(stageLabel, language: language))
-            Text(verbatim: "·")
-            Text(L10n.string(stageIsExample ? "Example" : "Live", language: language))
-                .fontWeight(.semibold)
-        }
-        .font(Typo.caption.weight(.medium))
-        .foregroundStyle(Palette.Window.textTertiary)
-    }
-
-    private var stageIsExample: Bool {
-        step == 0 || step == 2
-    }
-
-    private var stageLabel: String {
-        switch step {
-        case 0: return "A small space at the top of your screen"
-        case 1: return "Connection status"
-        case 2: return "How the island calls you"
-        default: return "Your island"
-        }
-    }
-
-    private var islandContent: WelcomeIslandSpecimen.Content {
-        switch step {
-        case 0:
-            switch demo {
-            case .working:
-                return .compact(
-                    state: .running,
-                    title: L10n.string("Prepare release build", language: language),
-                    trailing: L10n.sessionCount(3, language: language)
-                )
-            case .asking:
-                return .request(
-                    label: L10n.string("Approval", language: language),
-                    context: L10n.string("Claude Code · Prepare release build", language: language),
-                    title: L10n.string("Allow shell command?", language: language),
-                    command: "npm run build"
-                )
-            case .resumed:
-                return .compact(
-                    state: .running,
-                    title: L10n.string("Back to work", language: language),
-                    trailing: L10n.sessionCount(3, language: language)
-                )
-            }
-        case 1:
-            return .compact(
-                state: connectionIslandState,
-                title: connectionSummary,
-                trailing: nil
-            )
-        case 2:
-            return completions
-                ? .compact(
-                    state: .completed,
-                    title: L10n.string("Response finished", language: language),
-                    trailing: nil
-                )
-                : .compact(
-                    state: .waiting,
-                    title: L10n.string("Allow shell command?", language: language),
-                    trailing: nil
-                )
-        default:
-            return .compact(
-                state: liveSignalBarState,
-                title: liveSignalIslandTitle,
-                trailing: nil
-            )
-        }
-    }
-
     // MARK: - Steps
 
     @ViewBuilder
     private var stepContent: some View {
         switch step {
-        case 0: overviewStep
-        case 1: connectionsStep
-        case 2: remindersStep
-        default: firstSignalStep
+        case .connect: connectionsStep
+        case .reminders: remindersStep
+        case .firstSignal: firstSignalStep
         }
     }
 
@@ -391,85 +146,6 @@ struct OnboardingView: View {
                 .frame(maxWidth: 430)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    // Step 1 — an example of the one moment the product exists for.
-
-    private var overviewStep: some View {
-        VStack(spacing: 24) {
-            stepCopy(title: overviewTitle, detail: overviewDetail)
-
-            // While the example asks, the island's own Allow button is the
-            // step's one primary action (and owns Return).
-            if demo != .asking {
-                Button {
-                    advanceDemo()
-                } label: {
-                    Text(L10n.string(overviewAction, language: language))
-                }
-                .buttonStyle(.window(.primary, size: .large))
-                .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(.top, 8)
-    }
-
-    private var overviewTitle: String {
-        switch demo {
-        case .working: return L10n.string("It works. You focus.", language: language)
-        case .asking: return L10n.string("When it needs you, it asks.", language: language)
-        case .resumed: return L10n.string("One answer, and it keeps going.", language: language)
-        }
-    }
-
-    private var overviewDetail: String {
-        switch demo {
-        case .working:
-            return L10n.string(
-                "Agent progress stays at the top of your screen. When a session needs you, the island says so.",
-                language: language
-            )
-        case .asking:
-            return L10n.string(
-                "Answer it right on the island. No hunting through terminal windows.",
-                language: language
-            )
-        case .resumed:
-            return L10n.string(
-                "The island folds back and stays quiet until the next time you are needed.",
-                language: language
-            )
-        }
-    }
-
-    private var overviewAction: String {
-        demo == .working ? "Show me a request" : "Choose my agents"
-    }
-
-    /// The step's CTA: show the request, or move on once it is answered.
-    /// While the example asks, the island's own buttons answer it.
-    private func advanceDemo() {
-        if demo == .working {
-            setDemo(.asking)
-        } else {
-            move(to: 1)
-        }
-    }
-
-    private func resolveDemo() {
-        guard demo == .asking else { return }
-        setDemo(.resumed)
-    }
-
-    /// Opening the example request resizes the island and moves the copy
-    /// below it, so both ride the island's morph together, and under Reduce
-    /// Motion the change snaps rather than sliding.
-    private func setDemo(_ phase: WelcomeDemoPhase) {
-        withAnimation(
-            Motion.allowsSpatialFeedback(reduceMotion) ? Motion.islandMorph : nil
-        ) {
-            demo = phase
-        }
     }
 
     // Step 2 — real connections.
@@ -508,9 +184,7 @@ struct OnboardingView: View {
                 ))
             }
 
-            Button {
-                move(to: 2)
-            } label: {
+            Button(action: onContinue) {
                 Text(L10n.string("Continue", language: language))
             }
             .buttonStyle(.window(.primary, size: .large))
@@ -573,40 +247,11 @@ struct OnboardingView: View {
         OnboardingAgentSelection.descriptors(from: LocalAgentRegistry.all)
     }
 
-    private var connectedSourceCount: Int {
-        onboardingAgents.count { connectionStates[$0.source] == .connected }
-    }
-
-    private var needsActionSourceCount: Int {
-        onboardingAgents.count {
-            connectionStates[$0.source] == .updateRequired
-                || connectionStates[$0.source] == .configured
-        }
-    }
-
-    private var connectionSummary: String {
-        guard hasLoadedConnectionStates else {
-            return L10n.string("Checking…", language: language)
-        }
-        return LocalAgentRowPresentation.summary(
-            connected: connectedSourceCount,
-            needsAttention: needsActionSourceCount,
-            notConnected: onboardingAgents.count - connectedSourceCount - needsActionSourceCount,
-            language: language
-        )
-    }
-
     private var updateRequiredAgents: [LocalAgentDescriptor] {
         OnboardingAgentSelection.descriptorsNeedingUpdate(
             from: onboardingAgents,
             states: connectionStates
         )
-    }
-
-    private var connectionIslandState: BarState {
-        guard hasLoadedConnectionStates else { return .idle }
-        if needsActionSourceCount > 0 { return .waiting }
-        return connectedSourceCount > 0 ? .completed : .idle
     }
 
     // Step 3 — what may interrupt.
@@ -653,9 +298,7 @@ struct OnboardingView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                move(to: 3)
-            } label: {
+            Button(action: onContinue) {
                 Text(L10n.string("Continue", language: language))
             }
             .buttonStyle(.window(.primary, size: .large))
@@ -725,35 +368,6 @@ struct OnboardingView: View {
     /// re-animates the stage and a removed session never resets it.
     private var observedLiveSignal: OnboardingLiveSignalState {
         liveSignal.advanced(with: store.tasks, sources: liveSignalSources)
-    }
-
-    private var liveSignalBarState: BarState {
-        switch liveSignal {
-        case .waiting: return .idle
-        case .seen: return .running
-        case .completed: return .completed
-        }
-    }
-
-    private var liveSignalIslandTitle: String {
-        switch liveSignal {
-        case .waiting:
-            return store.localHookServiceStatus == .listening
-                ? L10n.string("Waiting for a real task", language: language)
-                : L10n.string("The local listener is starting…", language: language)
-        case .seen(let source):
-            return L10n.format(
-                "%@ is running",
-                language: language,
-                agentDisplayName(for: source)
-            )
-        case .completed(let source):
-            return L10n.format(
-                "%@ finished",
-                language: language,
-                agentDisplayName(for: source)
-            )
-        }
     }
 
     @ViewBuilder
@@ -928,15 +542,6 @@ struct OnboardingView: View {
         )
     }
 
-    private func move(to newStep: Int) {
-        guard (0..<stepCount).contains(newStep) else { return }
-        withAnimation(
-            Motion.respectingReducedMotion(reduceMotion, preferred: Motion.tourStep)
-        ) {
-            step = newStep
-        }
-    }
-
     private func finishTour() {
         // Authorization is requested by the window owner only after its exit
         // animation completes, so the system sheet never overlaps the tour.
@@ -1035,193 +640,6 @@ struct OnboardingView: View {
     }
 }
 
-/// The first step's example: working, then asking, then back to work.
-enum WelcomeDemoPhase: Equatable {
-    case working
-    case asking
-    case resumed
-}
-
-// MARK: - Island specimen
-
-/// The island as it looks at the top of the screen, floating on the Welcome
-/// canvas: the compact capsule, or the request card it opens into. Built from
-/// the island's own palette, type roles and status matrix, not a second style.
-private struct WelcomeIslandSpecimen: View {
-    enum Content: Equatable {
-        case compact(state: BarState, title: String, trailing: String?)
-        case request(label: String, context: String, title: String, command: String)
-
-        var isRequest: Bool {
-            if case .request = self { return true }
-            return false
-        }
-    }
-
-    let content: Content
-    var allowsDefaultAction = false
-    let onAllow: () -> Void
-    let onDeny: () -> Void
-
-    @Environment(\.devIslandLanguage) private var language
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        Group {
-            switch content {
-            case let .compact(state, title, trailing):
-                compact(state: state, title: title, trailing: trailing)
-            case let .request(label, context, title, command):
-                request(label: label, context: context, title: title, command: command)
-            }
-        }
-        .frame(width: width)
-        .background { shape.fill(Palette.islandTop) }
-        .overlay { shape.strokeBorder(Palette.islandBorder, lineWidth: 0.75) }
-        .compositingGroup()
-        .shadow(color: Palette.Window.shadow.opacity(0.12), radius: 1, y: 1)
-        .shadow(color: Palette.Window.shadow.opacity(0.18), radius: 18, y: 12)
-        .accessibilityElement(children: .contain)
-    }
-
-    private var width: CGFloat {
-        content.isRequest ? OnboardingMetrics.islandRequestWidth : OnboardingMetrics.islandCompactWidth
-    }
-
-    private var radius: CGFloat {
-        content.isRequest
-            ? OnboardingMetrics.islandRequestRadius
-            : OnboardingMetrics.islandCompactHeight / 2
-    }
-
-    private func compact(state: BarState, title: String, trailing: String?) -> some View {
-        HStack(spacing: 10) {
-            StatusDot(state: state, size: 16)
-                .frame(width: 16, height: 16)
-
-            Text(title)
-                .font(Typo.barTitle)
-                .foregroundStyle(state == .waiting || state == .failed ? Palette.warmWhite : Palette.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let trailing {
-                Text(trailing)
-                    .font(Typo.barCount)
-                    .foregroundStyle(Palette.textTertiary)
-                    .monospacedDigit()
-                    .fixedSize()
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: OnboardingMetrics.islandCompactHeight)
-    }
-
-    private func request(label: String, context: String, title: String, command: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                DotMatrixMark(color: Palette.stateWaiting, size: 12, pattern: .ring)
-                    .padding(.trailing, 3)
-                Text(label)
-                    .font(Typo.islandLabel)
-                    .foregroundStyle(Palette.stateWaiting)
-                Text(verbatim: "·")
-                    .font(Typo.islandMeta)
-                    .foregroundStyle(Palette.textTertiary)
-                Text(context)
-                    .font(Typo.islandMeta)
-                    .foregroundStyle(Palette.textSecondary)
-                    .lineLimit(1)
-            }
-
-            Text(title)
-                .font(Typo.islandHeadline)
-                .foregroundStyle(Palette.warmWhite)
-
-            Text(verbatim: command)
-                .font(Typo.islandCode)
-                .foregroundStyle(Palette.warmWhite)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Palette.islandWell)
-                }
-
-            HStack(spacing: 8) {
-                Spacer()
-                Button(L10n.string("Deny", language: language), action: onDeny)
-                    .buttonStyle(WelcomeIslandButtonStyle(isPrimary: false))
-                Button(L10n.string("Allow once", language: language), action: onAllow)
-                    .buttonStyle(WelcomeIslandButtonStyle(isPrimary: true))
-                    .keyboardShortcut(allowsDefaultAction ? .defaultAction : nil)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-    }
-}
-
-/// The island's decision buttons at the real island's size.
-private struct WelcomeIslandButtonStyle: ButtonStyle {
-    let isPrimary: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        WelcomeIslandButtonBody(configuration: configuration, isPrimary: isPrimary)
-    }
-}
-
-private struct WelcomeIslandButtonBody: View {
-    let configuration: ButtonStyle.Configuration
-    let isPrimary: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovering = false
-
-    var body: some View {
-        configuration.label
-            .font(Typo.islandControl)
-            .foregroundStyle(foreground)
-            .padding(.horizontal, 13)
-            .frame(height: 28)
-            .background { Capsule().fill(background) }
-            .contentShape(Capsule())
-            .scaleEffect(
-                InteractionFeedbackPolicy.pressScale(
-                    isPressed: configuration.isPressed,
-                    pressedScale: 0.96,
-                    reduceMotion: reduceMotion
-                )
-            )
-            .animation(Motion.press, value: configuration.isPressed)
-            .animation(
-                Motion.respectingReducedMotion(reduceMotion, preferred: Motion.hoverHighlight),
-                value: isHovering
-            )
-            .onHover { isHovering = $0 }
-            .pointingHandCursor()
-    }
-
-    private var foreground: Color {
-        if isPrimary { return Palette.islandTop }
-        return isHovering ? Palette.warmWhite : Palette.textSecondary
-    }
-
-    private var background: Color {
-        if isPrimary {
-            if configuration.isPressed { return Palette.islandActionPressed }
-            return isHovering ? Palette.islandActionHover : Palette.warmWhite
-        }
-        return Palette.warmWhite.opacity(isHovering ? 0.08 : 0)
-    }
-}
-
-// MARK: - Choices
-
-/// One of two mutually exclusive options, shown as a quiet tile whose paper
-/// lifts when selected.
 private struct WelcomeChoice: View {
     let title: String
     let detail: String

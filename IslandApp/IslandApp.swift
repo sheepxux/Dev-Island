@@ -678,6 +678,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let shouldReopen = reopenOnboardingAfterCurrentFlow
 
         islandWindow?.onSilhouetteScreenRectChanged = nil
+        // Whatever example the tour still had on the island ends with it.
+        IslandCoordinator.shared.endTutorialDemo()
         onboardingWindow = nil
         onboardingDockLease = nil
         onboardingIsFinishing = false

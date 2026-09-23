@@ -58,14 +58,17 @@ Increase Contrast, which only adapts role tokens.
 ## Where decisions are recorded
 
 - Welcome is a full-screen tutorial over the real desktop (owner decision,
-  2026-09-23): a scrim below the menu bar and the island, three coaching
-  steps that point at the real island, its panel and the menu-bar item,
-  then the setup card. Contract: `docs/INTERFACE_CONTRACT.md`, section
-  "Welcome 全屏分步教程".
-- The setup card keeps the owner-approved "float" direction (2026-09-20):
-  one central column under a floating island specimen. Contract: section
+  2026-09-23): a light wash (`stage` → `stageDeep`) with one bloom below
+  the menu bar and the island; the example sessions, approval and question
+  are shown on the real island (`IslandCoordinator.tutorialDemo`) and
+  answered there; one coaching card carries all seven steps with a
+  breathing ring, a travelling connector point and staged text. Contract:
+  `docs/INTERFACE_CONTRACT.md`, section "Welcome 全屏分步教程".
+- The setup steps keep the owner-approved "float" column (2026-09-20): one
+  central 520pt column, one title, one sentence, one primary action. The
+  island specimen retired on 2026-09-23. Contract: section
   "Welcome 悬浮单轴几何".
-- Rejected for the setup card, do not reintroduce: split editorial columns,
-  giant step numbers, poster slogans.
+- Rejected for Welcome, do not reintroduce: split editorial columns, giant
+  step numbers, poster slogans, a floating window, a lookalike island.
 - Token values are pinned by tests: `OKLCHPaletteTests`,
   `WindowPaletteTests`, `InterfaceContrastPolicyTests`.

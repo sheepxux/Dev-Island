@@ -26,6 +26,18 @@ final class WindowPaletteTests: XCTestCase {
         )
     }
 
+    func testTutorialStageKeepsInkLegibleAtEveryStop() {
+        for ground in [C.stage, C.stageDeep] {
+            XCTAssertGreaterThanOrEqual(C.ratio(C.ink, on: ground), 7)
+            XCTAssertGreaterThanOrEqual(C.ratio(C.textSecondary, on: ground), 4.5)
+        }
+        XCTAssertLessThan(
+            C.relativeLuminance(hex: C.stageDeep),
+            C.relativeLuminance(hex: C.stage),
+            "the wash darkens toward the bottom, never toward the island"
+        )
+    }
+
     func testTertiaryInkSupportsSmallStatusAndAuthorizationText() {
         for ground in [C.canvas, C.canvasDeep, 0xFFFFFF] {
             XCTAssertGreaterThanOrEqual(C.ratio(C.textTertiary, on: ground), 4.5)

@@ -14,6 +14,7 @@ import SwiftUI
 /// - Panel hover OUT     → `scheduleCollapse()` (fires after `collapseDelay`)
 /// - Panel hover IN      → `cancelCollapse()`
 /// - Esc / click outside → `collapse()` (installed by AppDelegate)
+/// - Welcome demo active → hover OUT never collapses (`tutorialDemo`)
 ///
 /// `scheduleExpand` / `cancelExpand` are retained for symmetry / future
 /// hover-dwell experiments but are not called from production paths.
@@ -39,6 +40,18 @@ public final class IslandCoordinator {
     /// state) makes that event unable to dismiss notification/onboarding
     /// opens before they are readable.
     public private(set) var automaticCollapseArmed = false
+
+    /// Example sessions the Welcome tutorial shows on the real island instead
+    /// of TaskStore content; nil outside the tour. Orthogonal to `mode`:
+    /// expand()/collapse() never touch it. `IslandRootView` reads it inside
+    /// `body`, so assigning it re-renders the bar and panel like a store
+    /// change, and routes answers to demo requests back here.
+    private(set) var tutorialDemo: IslandTutorialDemo?
+
+    /// The latest answer the user gave on the island to demo content. The
+    /// tour observes it; it is never forwarded to TaskStore or an Agent.
+    private(set) var tutorialDemoResponse: IslandTutorialDemo.Response?
+    @ObservationIgnored private var tutorialDemoResponseSequence = 0
 
     /// Called on the main thread whenever `mode` actually changes. Kept for
     /// AppKit-side window plumbing (e.g. installing event monitors). SwiftUI
@@ -98,9 +111,14 @@ public final class IslandCoordinator {
 
     /// Open the panel on a specific task. Reassigning while already expanded
     /// is intentional: it lets two notification clicks retarget the panel.
+    /// A real session asking for attention always wins over the Welcome
+    /// demo: the island shows the real request at once.
     public func expand(highlighting task: TaskIdentity) {
         cancelAllTimers()
         automaticCollapseArmed = false
+        if let tutorialDemo, !tutorialDemo.owns(task) {
+            endTutorialDemo()
+        }
         highlightedTask = task
         setMode(.expanded)
     }
@@ -123,6 +141,40 @@ public final class IslandCoordinator {
         }
     }
 
+    // MARK: - Welcome tutorial demo
+
+    func beginTutorialDemo(_ demo: IslandTutorialDemo) {
+        tutorialDemo = demo
+    }
+
+    /// Replaces the demo content while a demo is running (the next beat, or
+    /// the same beat in another language). A demo that already ended stays
+    /// ended so a late beat cannot cover real content.
+    func updateTutorialDemo(_ demo: IslandTutorialDemo) {
+        guard tutorialDemo != nil else { return }
+        tutorialDemo = demo
+    }
+
+    public func endTutorialDemo() {
+        guard tutorialDemo != nil else { return }
+        if let highlightedTask, tutorialDemo?.owns(highlightedTask) == true {
+            self.highlightedTask = nil
+        }
+        tutorialDemo = nil
+        tutorialDemoResponse = nil
+    }
+
+    /// Records an answer given on the island. Returns true when the demo owned
+    /// the request or session, in which case the caller must not forward the
+    /// event to TaskStore.
+    @discardableResult
+    func recordTutorialDemoResponse(_ event: IslandTutorialDemo.Event) -> Bool {
+        guard let tutorialDemo, tutorialDemo.owns(event) else { return false }
+        tutorialDemoResponseSequence += 1
+        tutorialDemoResponse = .init(sequence: tutorialDemoResponseSequence, event: event)
+        return true
+    }
+
     // MARK: - Hover-driven scheduling
 
     public func scheduleExpand() {
@@ -143,7 +195,9 @@ public final class IslandCoordinator {
     }
 
     public func scheduleCollapse() {
-        guard mode == .expanded, automaticCollapseArmed else { return }
+        // While the Welcome demo owns the panel, a hover-out must not fold the
+        // island between its beats; the tour decides when it closes.
+        guard mode == .expanded, automaticCollapseArmed, tutorialDemo == nil else { return }
         expandTimer?.invalidate(); expandTimer = nil
         collapseTimer?.invalidate()
         collapseTimer = Timer.scheduledTimer(

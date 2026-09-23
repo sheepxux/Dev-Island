@@ -76,9 +76,12 @@ Text(headerLabel).font(Typo.islandLabel).foregroundStyle(Palette.stateWaiting)
 Text("APPROVAL").font(.system(size: 9.5, weight: .semibold, design: .monospaced)).tracking(0.8)
 ```
 
-## Welcome specimen
+## Welcome demo
 
-The Welcome island is the real island at specimen scale: compact capsule
-44pt tall, request state at the panel's 22pt radius, built from the same
-tokens and marks. The label above it always says whether it shows an
-example (steps 1 and 3) or live state (steps 2 and 4).
+The tour draws no lookalike island. Its example — three sessions, an
+approval and a question with two options (`WelcomeDemoContent`) — is shown
+by the real island through `IslandCoordinator.tutorialDemo`, so the compact
+bar, the rows and the request card above apply unchanged, and the user
+answers on the island itself. The coaching card's eyebrow says the island is
+showing an example; from the Connect step on the island shows only real
+sessions.

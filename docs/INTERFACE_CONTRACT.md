@@ -2531,55 +2531,74 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 - 用户于 2026-09-23 选定：Welcome 不再是一扇悬浮小窗，而是覆盖岛所在整块屏幕的分步教程。
   `OnboardingWindow` 的 frame 等于 `screen.frame`，`level = .floating`：在用户的普通窗口之上、
   菜单栏（`.mainMenu`）与岛（`.statusBar`）之下，所以真实的岛和菜单栏图标始终可见、可点。
-  窗口不可移动、无阴影、背景为 `Palette.Window.scrim`（Sand s1000 · 0.58）。
-- 三个教学步骤在原有四个设置步骤之前，步骤轨道合计七格：**认识你的岛**（指向真实岛，
-  主动作 `IslandCoordinator.expand()` 被动展开、不抢焦点；用户亲手点岛展开同样推进）、
-  **面板**（聚光灯跟随展开面板；下一步收起岛）、**菜单栏**（指示线指向状态栏按钮）。
-  「跳过演示，直接接入」收起岛并直接进入设置卡第 2 步。教学步骤不读写任何配置、不执行
-  任何 Agent。
+  窗口不可移动、无阴影。舞台是浅色渐变：`Palette.Window.stage`（Sand s50 · 0.96）自上而下到
+  `stageDeep`（Sand s150 · 0.97），近乎不透明、桌面只隐约透出；舞台上只画一层以当前指向目标为
+  中心的 `stageBloom`（Sand s0）光晕；引导描边与连接线用 `guide`（s900 · 0.55，Increase Contrast
+  0.85）。不用毛玻璃，不画其他渐变、色块或弧线。
+- 教程共七步，一张卡片贯穿（页眉/页脚/七格轨道由 `WelcomeTutorialCanvas` 持有）：
+  **认识你的岛**（真实岛的紧凑条显示三条示例会话；主动作 `expand(highlighting:)` 被动展开、不抢
+  焦点，用户亲手点岛展开同样推进）→ **面板**（示例三行；主动作"给我看一个请求"）→ **轮到你**
+  （示例审批请求出现在真实岛的面板里，用户在岛上点「仅允许一次」或「拒绝」；岛播放自己的回执后
+  出现带两个选项的示例提问，用户在岛上选择并提交；随后会话"已继续工作"，卡片给出下一步；岛被
+  Esc/点外部收起时卡片显示"帮我打开"）→ **菜单栏**（收起岛，指示线指向状态栏按钮）→
+  **接入**、**提醒方式**、**点亮你的岛**（设置三步；进入接入步即结束示例，真实岛此后只显示
+  `TaskStore` 的真实内容；最后一步聚光真实的岛）。「跳过演示，直接接入」结束示例、收起岛并进入
+  接入步。示例期间卡片眉标为「示例 · 正显示在你的岛上」。
+- 示例只存在于 `IslandCoordinator.tutorialDemo`（`IslandTutorialDemo`：`AgentTask` /
+  `AgentActionRequest` / `AgentQuestion` 等公开值类型，由 `WelcomeDemoContent` 按当前语言构建，
+  请求 id 固定、任务 URL 非 `file://`、`currentPhase` 为 nil），永不进入 `TaskStore`、不落库、
+  不通知、不执行任何 Agent，也不使用任何 DEBUG 夹具或 release 禁用标记（`IslandTutorialDemoTests`
+  固定）。`IslandRootView` 只在 presentation 接缝把示例替换为可见内容；对示例请求的
+  Allow/Deny/Submit/Defer 与行点击经 `recordTutorialDemoResponse` 记入 `tutorialDemoResponse`
+  并返回 true 让岛播放回执，绝不调用 `store.respond`/`jumpToTask`。示例期间面板不显示今日
+  汇总与 Hook 健康提示。真实会话的关注请求永远优先：`expand(highlighting:)` 遇到非示例身份即
+  `endTutorialDemo()`；示例进行中 hover 离开不自动收起（`scheduleCollapse` 守卫）。
+  引导结束（完成、关闭、Esc、Cmd-W）与画布消失都调用 `endTutorialDemo()`。
 - 锚点由 `WelcomeTutorialAnchors` 承载（屏幕 frame、菜单栏高度、岛轮廓 screen rect、
   状态栏按钮 frame）：`AppDelegate.beginOnboarding` 注入并通过
   `IslandWindow.onSilhouetteScreenRectChanged` 实时更新，`completeOnboardingFlow` 解除订阅。
-  屏幕坐标换算与聚光灯/卡片/连接线放置是纯函数 `WelcomeTutorialLayout`，由
+  屏幕坐标换算与聚光灯/卡片/连接线/光晕放置是纯函数 `WelcomeTutorialLayout`，由
   `WelcomeTutorialLayoutTests` 固定：卡片居中于目标之下并夹在画布边距内、贴右边时连接线
-  避开卡片圆角、卡片超高时贴底且不画连接线、无目标时居中且无聚光灯。
+  避开卡片圆角、卡片超高时贴底且不画连接线、无目标时居中、光晕跟随聚光灯否则落在卡片、
+  呼吸环在 `restOpacity` 与 1 之间、连接线上的点从聚光灯出发到卡片结束。
+- 引导动效：聚光环按 `Motion.guideBreathPeriod` 呼吸、连接线上的点按 `Motion.guideTravelPeriod`
+  行进（`TimelineView`，只改一个小标记的不透明度与位置），卡片文字按 `Motion.stagedReveal` +
+  `stagedRevealStep` 逐行进入；Reduce Motion 下环与点静止、文字只淡入、几何不位移。
 - 菜单栏带内的任何绘制都被菜单栏和岛盖住，指示线止于菜单栏下缘；只有面板延伸到菜单栏
-  以下时聚光灯与描边才可见。
-- 设置卡片沿用下一节的 760×530 单轴几何，只是放在同一画布上居中显示；其步骤轨道通过
-  `trackOffset`/`trackTotal` 接续教学步骤。
+  以下时聚光环才可见。
 - 岛收起时若有 Settings、Welcome 或 DEBUG sandbox 窗口可见，App 保持激活并把键盘交还该
   窗口，而不是把激活让回用户的编辑器（`IslandWindowKeyboardFocusPolicy.shouldReleaseActivation`）。
 
 ## Welcome 悬浮单轴几何（2026-09-22，取代 v6.36.0 编辑栏几何；自 2026-09-23 起描述全屏教程画布上的设置卡片）
 
-- Welcome 采用 2026-09-20 用户选定的「悬浮」方向：奶油单层画布，炭黑岛标本悬浮在
-  中央纵轴上，每步一个标题、一句说明、该步必要的选项和一个主操作。
-  固定几何：窗口 `760pt` × `530pt`，中央单栏 `520pt`，页眉页脚左右内边距 `32pt`。
-  所有文字、选项与主操作位于中央单栏；单栏加两侧内边距不得超过窗口宽度，不得依赖视图
-  压缩。第 2 步最多同时显示两行连接，更多连接在单栏内滚动，主操作不得被挤出窗口。
-- 岛标本是真实岛的样子而不是仿制：紧凑态为胶囊，展开态圆角等于面板圆角
-  `NotchMetrics.panelCornerRadius`；标本上方的标签必须说明其内容是示例（第 1、3 步）
-  还是实时（第 2、4 步）。画布上只允许一层以岛为中心的柔和光晕，外加岛自身的两层
-  接触阴影，不绘制其他背景装饰。第 3 步提醒方式为三选一：需要我时 / 完成时也提醒 /
+- 设置卡片沿用 2026-09-20 选定的「悬浮」单轴构图：每步一个标题、一句说明、该步必要的
+  选项和一个主操作。固定几何（2026-09-23 起高度随内容，不再固定 530pt）：
+  教学卡片宽 `760pt`，中央单栏 `520pt`，页眉页脚左右内边距 `32pt`。所有文字、选项与主操作位于中央单栏
+  （`OnboardingView` 只承载该栏，`WelcomeTutorialCanvas` 持有卡片页眉/页脚）；单栏加两侧内边距
+  不得超过卡片宽度，不得依赖视图压缩。接入步最多同时显示两行连接，更多连接在单栏内滚动，
+  主操作不得被挤出卡片。
+- 岛标本已于 2026-09-23 退役：示例会话与示例请求由真实岛通过 `IslandCoordinator.tutorialDemo`
+  显示（见上一节），不存在第二套岛的实现。提醒方式为三选一：需要我时 / 完成时也提醒 /
   只在岛上显示；选择"只在岛上显示"时完成引导不得请求系统通知权限。
-- 已放弃的方向不得回归：左右分栏编辑栏、巨型步骤编号、海报式口号、窗口内整页卡片。
-- 第 4 页 **Light up your island** 是 Tour 的最终决策页（第 4 步，主动作仍为唯一
-  **Start Dev Island**）。其标本只根据 `TaskStore.localHookServiceStatus` 与第 2 页已读取的
-  连接状态决定给用户看什么：listener 未达到 `listening` 时只显示“本地监听器正在启动…”且不给
-  命令；Claude Code 已连接显示逐字命令 `claude -p "say hi"`；Codex 已连接显示
+- 已放弃的方向不得回归：左右分栏编辑栏、巨型步骤编号、海报式口号、悬浮小窗。
+- 第 7 步 **Light up your island** 是 Tour 的最终决策页（设置卡第 3 页，主动作仍为唯一
+  **Start Dev Island**）。其说明文字只根据 `TaskStore.localHookServiceStatus` 与接入步已读取的
+  连接状态决定给用户看什么，真实岛此时只显示真实内容：listener 未达到 `listening` 时只显示
+  “本地监听器正在启动…”且不给命令；Claude Code 已连接显示逐字命令 `claude -p "say hi"`；Codex 已连接显示
   `codex exec "say hi"`，Codex 仅 `configured` 时显示两段式 `codex` → `/hooks` 信任说明；
   Cursor 已连接提示在 Cursor 内开始对话；其余已连接 Agent 给出通用会话提示；无连接则指回上一步。
   命令为不本地化的 `Text(verbatim:)`，只写入剪贴板，Welcome 不执行任何 Agent、不写 Hook、
   不调用 installer/probe，也不订阅 `TaskStore.onTaskTransition`。
-- 第 4 页的实时信号由纯值类型 `OnboardingLiveSignalState` 锁存：`waiting` → 任一选定来源
+- 第 7 步的实时信号由纯值类型 `OnboardingLiveSignalState` 锁存：`waiting` → 任一选定来源
   出现会话即 `seen(source)` → 该来源会话报告 `.completed` 即 `completed(source)`；只前进不回退，
   会话被 `SessionEnd` 删除后仍保持已达状态。View 通过 `@State store = TaskStore.shared` 派生
   该值并用 `.onChange(of:)` 交叉淡入 `.idle` → `.running` → `.completed` 点阵，不得为此在
   Welcome 内新增 detached task 或第三条 `LocalAgentConfigurationExecutor.run(` 调用。
-- 第 4 页提供「登录时打开 Dev Island」复选框，初始值读取 `SMAppService.mainApp.status`，
+- 第 7 步提供「登录时打开 Dev Island」复选框，初始值读取 `SMAppService.mainApp.status`，
   只有用户勾选才注册登录项；Welcome 不得自行注册。
-- `OnboardingLayoutTests` 必须用公开布局常量断言单栏与岛标本的几何关系；CI 静态门禁
-  同时固定常量值、实际布局用法和几何回归测试，防止仅改一处导致栏宽漂移。
+- `OnboardingLayoutTests` 必须用公开布局常量断言单栏与卡片边距的几何关系（退役标本的宽度
+  常量为此保留）；CI 静态门禁同时固定常量值、实际布局用法和几何回归测试，防止仅改一处导致
+  栏宽漂移。
 - 离屏快照只能证明当前静态层级、换行和裁切边界；不得把它们解释为真实翻页动效、
   hover/press、键盘焦点、VoiceOver 朗读或 Reduce Motion 实机验收。
 
@@ -3172,3 +3191,4 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-09-12 | v6.95.0 | **Codex 监控合并前评审修正**:`CodexSessionPhase` 稳定标记替代英文短语、岛条/通知本地化映射、用户中断不通知、快速扫描覆盖本地日期目录、历史写入去重、`.utility` 监控循环、`unsupportedHome` 错误、授权表单说明/Esc/后台定位 CLI、readiness 版本钉 `0.153.4`、`Package.resolved` 恢复 CI 解析 | `[S][contract] fix(codex): apply the pre-merge review to Codex monitoring` |
 | 2026-09-23 | v6.96.0 | **被放弃的退出后再次可退**:`AppTerminationCoordinator` 在一个 flight 已 reply 而 AppKit 再次询问时释放旧 token 并重新起一轮 cleanup/timeout/reply（进行中的 flight 仍共享同一 pending reply，迟到回调继续被 token 拒绝）；此前被取消的 Apple event Quit 会让之后每次菜单退出永久无响应 | `[S][contract] reliability: answer a repeated Quit after an abandoned termination` |
 | 2026-09-23 | v6.97.0 | **全屏分步 Welcome 教程**:`OnboardingWindow` 覆盖岛所在整块屏幕并置于菜单栏与岛之下（`.floating`），三个指向真实岛/面板/菜单栏图标的教学步骤先于原有四步，`WelcomeTutorialAnchors` 实时跟随岛轮廓，`WelcomeTutorialLayout` 纯函数放置聚光灯/卡片/连接线并有回归；岛收起时可见的 Settings/Welcome 窗口保留激活并取回键盘 | `[C][contract] feat(app): coach the real island in a full-screen Welcome` |
+| 2026-09-23 | v6.98.0 | **示例进真实岛 + 浅色渐变舞台 + 单一教学卡片**:`IslandCoordinator.tutorialDemo` 在 `IslandRootView` 的 presentation 接缝替换可见内容并拦截示例请求的回答，真实岛用同一套 `NotchPanelView`/`ActionRequestSurface` 显示示例审批与带选项的提问，永不进入 `TaskStore`；760×530 设置小窗与岛标本退役，七步共用一张卡片；舞台改为 `stage`→`stageDeep` 浅渐变加 `stageBloom` 光晕，`guide` 呼吸环与行进点、`stagedReveal` 逐行进入 | `[C][contract] feat(app): show the Welcome example on the real island over a light stage` |

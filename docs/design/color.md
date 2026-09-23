@@ -61,6 +61,9 @@ role. Opacity drops contrast below the numbers above, which is how the old
 | `textTertiary` | `s600`, Increased `s700` | 4.9:1 |
 | `textPlaceholder` | `s500` | placeholders and disabled labels only |
 | `attentionText` / `destructive` | `Signal.*OnLight` | ≥ 4.5:1 |
+| `stage` / `stageDeep` | `s50` · 0.96 / `s150` · 0.97 | Welcome wash; `ink` ≥ 7:1 and `textSecondary` ≥ 4.5:1 on both opaque stops (`WindowPaletteTests`) |
+| `stageBloom` | `s0` | the one highlight on the wash |
+| `guide` | `s900` · 0.55, Increased 0.85 | Welcome ring and connector marks, never text |
 
 Which window text color?
 

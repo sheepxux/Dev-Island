@@ -98,8 +98,8 @@ struct IslandRootView: View {
 
     var body: some View {
         let presentation = IslandPresentationSnapshot(
-            tasks: store.tasks,
-            pendingActionRequests: store.pendingActionRequests,
+            tasks: visibleTasks,
+            pendingActionRequests: visibleRequests,
             now: presentationNow
         )
         // VStack + trailing Spacer rather than a ZStack(.top) wrapper so the
@@ -204,17 +204,11 @@ struct IslandRootView: View {
                 apiKeyStatus: store.apiKeyStatus,
                 layout: baseLayout,
                 highlightedTask: coordinator.highlightedTask,
-                pendingActionRequests: store.pendingActionRequests,
+                pendingActionRequests: visibleRequests,
                 onTaskTap: handleTaskTap,
-                onActionDecision: { requestID, decision in
-                    store.respond(to: requestID, decision: decision)
-                },
-                onQuestionAnswer: { requestID, answers in
-                    store.respond(to: requestID, answers: answers)
-                },
-                onActionDefer: { requestID in
-                    store.deferActionRequestToAgent(requestID)
-                },
+                onActionDecision: decide,
+                onQuestionAnswer: answer,
+                onActionDefer: deferToAgent,
                 onSettingsTap: handleSettingsTap,
                 onConnectTap: handleConnectTap,
                 onHistoryTap: handleHistoryTap,
@@ -225,15 +219,8 @@ struct IslandRootView: View {
                 // reporting the height the silhouette morphs to. Continuous
                 // effects remain paused until the surface has settled.
                 isLive: panelEffectsLive,
-                todaySummary: DailyActivityPresentation.summaryLine(
-                    store.todayActivity,
-                    language: language
-                ),
-                reportingNotice: LocalAgentReportingPresentation.notice(
-                    store.reportingHealth,
-                    visibleTaskSources: Set(store.tasks.filter { $0.status == .running || $0.status == .waiting }.map(\.source)),
-                    language: language
-                )
+                todaySummary: panelTodaySummary,
+                reportingNotice: panelReportingNotice
             )
             .opacity(panelContentVisible ? 1 : 0)
             .offset(y: panelContentVisible || reduceMotion ? 0 : -2)
@@ -582,7 +569,60 @@ struct IslandRootView: View {
         coordinator.expandFromPointer()
     }
 
+    // MARK: - Visible content
+
+    /// The Welcome tutorial's example content stands in for the store at this
+    /// one seam; answers to it are routed back to the tour, never to the
+    /// store or an Agent.
+    private var visibleTasks: [AgentTask] {
+        coordinator.tutorialDemo?.tasks ?? store.tasks
+    }
+
+    private var visibleRequests: [AgentActionRequest] {
+        coordinator.tutorialDemo?.requests ?? store.pendingActionRequests
+    }
+
+    /// Real health lines stay out of the example panel.
+    private var panelTodaySummary: String? {
+        guard coordinator.tutorialDemo == nil else { return nil }
+        return DailyActivityPresentation.summaryLine(store.todayActivity, language: language)
+    }
+
+    private var panelReportingNotice: LocalAgentReportingNotice? {
+        guard coordinator.tutorialDemo == nil else { return nil }
+        return LocalAgentReportingPresentation.notice(
+            store.reportingHealth,
+            visibleTaskSources: Set(visibleTasks.filter { $0.status == .running || $0.status == .waiting }.map(\.source)),
+            language: language
+        )
+    }
+
+    private func decide(_ requestID: UUID, _ decision: AgentActionDecision) -> Bool {
+        if coordinator.recordTutorialDemoResponse(.decision(requestID: requestID, decision)) {
+            return true
+        }
+        return store.respond(to: requestID, decision: decision)
+    }
+
+    private func answer(_ requestID: UUID, _ answers: [AgentQuestionAnswer]) -> Bool {
+        if coordinator.recordTutorialDemoResponse(.answers(requestID: requestID, answers)) {
+            return true
+        }
+        return store.respond(to: requestID, answers: answers)
+    }
+
+    private func deferToAgent(_ requestID: UUID) {
+        if coordinator.recordTutorialDemoResponse(.deferred(requestID: requestID)) {
+            return
+        }
+        _ = store.deferActionRequestToAgent(requestID)
+    }
+
     private func handleTaskTap(_ task: AgentTask) {
+        // An example row has nowhere to jump; the tour just learns it was tapped.
+        if coordinator.recordTutorialDemoResponse(.taskTapped(task.identity)) {
+            return
+        }
         coordinator.clearHighlight()
         store.jumpToTask(task)
         coordinator.collapse()

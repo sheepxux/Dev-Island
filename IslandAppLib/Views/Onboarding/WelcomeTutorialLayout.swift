@@ -81,6 +81,38 @@ enum WelcomeTutorialLayout {
         )
     }
 
+    /// Where the stage's one bloom sits: on the spotlight when the tour
+    /// points at something, otherwise behind the card.
+    static func bloomCenter(of placement: Placement) -> CGPoint {
+        if let spotlight = placement.spotlight {
+            return CGPoint(x: spotlight.midX, y: spotlight.midY)
+        }
+        return CGPoint(x: placement.card.midX, y: placement.card.midY)
+    }
+
+    /// Opacity of the breathing ring for a loop phase in 0...1: a full cosine
+    /// breath from `restOpacity` up to 1 and back, continuous at the wrap.
+    static let restOpacity: Double = 0.45
+
+    static func breathOpacity(phase: Double) -> Double {
+        let wave = 0.5 - 0.5 * cos(2 * .pi * phase)
+        return restOpacity + (1 - restOpacity) * wave
+    }
+
+    /// The travelling point's position along the connector for a loop phase
+    /// in 0...1: eased from the spotlight toward the card, then it starts
+    /// over at the spotlight.
+    static func travelPoint(on connector: Connector, phase: Double) -> CGPoint {
+        let clamped = min(max(phase, 0), 1)
+        let eased = clamped < 0.5
+            ? 2 * clamped * clamped
+            : 1 - pow(-2 * clamped + 2, 2) / 2
+        return CGPoint(
+            x: connector.start.x + (connector.end.x - connector.start.x) * eased,
+            y: connector.start.y + (connector.end.y - connector.start.y) * eased
+        )
+    }
+
     private static func clamp(_ origin: CGPoint, cardSize: CGSize, in canvas: CGRect) -> CGPoint {
         let minX = canvas.minX + edgeMargin
         let maxX = max(minX, canvas.maxX - edgeMargin - cardSize.width)

@@ -553,7 +553,7 @@
 "Run one real command and watch the island answer. Nothing here is staged." = "运行一条真实命令，看岛如何回应。这里没有演示数据。";
 "See it first" = "先感受一下";
 "Send a prompt in Codex. Hook authorization is only needed for approvals." = "在 Codex 中发送一条消息。只有审批需要 Hook 授权。";
-"Show me a request" = "试着叫我一次";
+"Show me a request" = "给我看一个请求";
 "Skip to setup" = "跳过演示，直接接入";
 "Start a session in %@ and send any prompt." = "在 %@ 中开始会话并发送任意消息。";
 "Start an agent chat in Cursor and send any prompt." = "在 Cursor 中开始一次 Agent 对话并发送任意消息。";
@@ -583,3 +583,21 @@
 "Each row is a session. The clock opens your history, the gear opens Settings, and Esc or a click outside closes the panel." = "每一行是一个会话。时钟打开会话历史，齿轮打开设置；按 Esc 或点外部即可收起。";
 "The menu-bar item opens the island, Settings and this tour, and quits Dev Island." = "菜单栏图标可以打开岛、设置和这份引导，也能退出 Dev Island。";
 "Open it for me" = "帮我打开";
+
+/* Welcome demo on the real island (2026-09-23) */
+"Write release notes" = "撰写发布说明";
+"Fix flaky test" = "修复不稳定的测试";
+"Claude Code wants to run this in your project." = "Claude Code 想在你的项目里运行这条命令。";
+"Which package manager?" = "用哪个包管理器？";
+"Which package manager should the build use?" = "构建应该使用哪个包管理器？";
+"Build setup" = "构建设置";
+"Matches the lockfile in this repo" = "与仓库里的 lockfile 一致";
+"Faster installs; needs pnpm on this Mac" = "安装更快；需要这台 Mac 装有 pnpm";
+
+/* Welcome coaching copy (2026-09-23) */
+"Your turn" = "轮到你";
+"Options show up there too." = "有选项时，也在岛上选。";
+"Pick one and submit; the session carries on." = "选一个提交，会话就继续。";
+"Answer on the island: Allow once, or Deny." = "在岛上作答：仅允许一次，或拒绝。";
+"Choose an option on the island and submit." = "在岛上选一个选项并提交。";
+"Example · showing on your island" = "示例 · 正显示在你的岛上";

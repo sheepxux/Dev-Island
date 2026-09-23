@@ -583,3 +583,21 @@
 "Each row is a session. The clock opens your history, the gear opens Settings, and Esc or a click outside closes the panel." = "Each row is a session. The clock opens your history, the gear opens Settings, and Esc or a click outside closes the panel.";
 "The menu-bar item opens the island, Settings and this tour, and quits Dev Island." = "The menu-bar item opens the island, Settings and this tour, and quits Dev Island.";
 "Open it for me" = "Open it for me";
+
+/* Welcome demo on the real island (2026-09-23) */
+"Write release notes" = "Write release notes";
+"Fix flaky test" = "Fix flaky test";
+"Claude Code wants to run this in your project." = "Claude Code wants to run this in your project.";
+"Which package manager?" = "Which package manager?";
+"Which package manager should the build use?" = "Which package manager should the build use?";
+"Build setup" = "Build setup";
+"Matches the lockfile in this repo" = "Matches the lockfile in this repo";
+"Faster installs; needs pnpm on this Mac" = "Faster installs; needs pnpm on this Mac";
+
+/* Welcome coaching copy (2026-09-23) */
+"Your turn" = "Your turn";
+"Options show up there too." = "Options show up there too.";
+"Pick one and submit; the session carries on." = "Pick one and submit; the session carries on.";
+"Answer on the island: Allow once, or Deny." = "Answer on the island: Allow once, or Deny.";
+"Choose an option on the island and submit." = "Choose an option on the island and submit.";
+"Example · showing on your island" = "Example · showing on your island";

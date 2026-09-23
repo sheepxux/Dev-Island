@@ -44,15 +44,21 @@ extension Palette {
         static let ring = adaptive(standard: Sand.s900.opacity(0.07), increased: Sand.s900.opacity(0.24))
         static let hover = Sand.s900.opacity(0.045).color
         static let pressed = Sand.s900.opacity(0.08).color
-        /// Shadow ink for dark objects on the light ground (the Welcome
-        /// island specimen); callers set the opacity per layer.
+        /// Shadow ink for objects lifted off the light ground (the Welcome
+        /// coaching card); callers set the opacity per layer.
         static let shadow = Sand.s1000.color
-        /// The one painted element on the Welcome canvas: the glow centered
-        /// on the island specimen.
-        static let glow = Sand.s150.color
-        /// Full-screen Welcome tutorial backdrop over the user's desktop
-        /// (`WelcomeTutorialCanvas`); the real island and menu bar sit above it.
-        static let scrim = Sand.s1000.opacity(0.58).color
+        /// The full-screen Welcome stage (`WelcomeTutorialCanvas`): a light
+        /// wash from `stage` at the top to `stageDeep` at the bottom, nearly
+        /// opaque so the desktop only ghosts through; the real island and
+        /// menu bar sit above it. `stageBloom` is the one highlight painted
+        /// on the wash, centered on whatever the tour points at.
+        static let stage = Sand.s50.opacity(0.96).color
+        static let stageDeep = Sand.s150.opacity(0.97).color
+        static let stageBloom = Sand.s0.color
+        /// Guidance marks on the stage: the breathing ring around the panel
+        /// and the connector to the card. A quiet ink, stronger under
+        /// Increase Contrast.
+        static let guide = adaptive(standard: Sand.s900.opacity(0.55), increased: Sand.s900.opacity(0.85))
 
         // Signals on the light ground
         static let attention = Signal.attentionFill.color
@@ -110,6 +116,10 @@ enum WindowPaletteContrast {
     static let canvas = Sand.s50.hex
     static let canvasDeep = Sand.s100.hex
     static let surface = Sand.s0.hex
+    /// The Welcome stage's opaque stops; the wash is nearly opaque, so these
+    /// bound the ground every mark on it sits on.
+    static let stage = Sand.s50.hex
+    static let stageDeep = Sand.s150.hex
     static let ink = Sand.s900.hex
     static let onInk = Sand.s50.hex
     static let textSecondary = Sand.s700.hex

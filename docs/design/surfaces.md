@@ -91,9 +91,10 @@ Shadows vanish on black, so the island separates by tone and ring:
 - Row separators are `WindowDivider()`: one physical pixel (0.5pt on
   Retina), `Palette.Window.divider`. Spacing separates groups; don't add
   a divider between things that already have space between them.
-- The Welcome canvas paints one thing: a soft glow centered on the island
-  specimen (`Palette.Window.glow`), plus the specimen's own two-layer
-  contact shadow (`Palette.Window.shadow`). No other gradients, blobs or
-  arcs.
+- The Welcome stage paints two things: the light wash
+  (`Palette.Window.stage` → `stageDeep`, nearly opaque over the desktop) and
+  one `stageBloom` centered on whatever the tour points at. The coaching
+  card is flat `WindowCanvas` with a hairline and a two-layer contact shadow
+  (`Palette.Window.shadow`). No other gradients, blobs or arcs; no blur.
 - Offscreen snapshots (`cacheDisplay`) draw thin ticks at the ends of
   stroked capsules. Live windows do not; judge edges in a real window.

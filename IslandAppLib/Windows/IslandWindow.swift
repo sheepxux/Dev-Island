@@ -34,6 +34,13 @@ public final class IslandWindow: NSWindow {
     /// action shortcuts reach the real SwiftUI controls.
     private var keyboardInteractionEnabled = false
 
+    /// Whether the most recent consenting click had to activate the app (see
+    /// `sendEvent`), and which app owned activation before it. Collapse
+    /// consults them to hand activation back even when the island itself
+    /// never became key.
+    private var activatedByDirectEngagement = false
+    private var applicationToRestoreAfterEngagement: NSRunningApplication?
+
     public override var canBecomeKey: Bool {
         keyboardInteractionEnabled
     }
@@ -143,10 +150,44 @@ public final class IslandWindow: NSWindow {
 
     /// Release focus when the panel collapses. If another Dev Island window
     /// (Settings, onboarding, or the DEBUG sandbox) is key, leave it alone.
+    ///
+    /// Activation completes asynchronously after the consenting click, so
+    /// AppKit may have keyed some other window of ours (or none) by the time
+    /// the panel collapses. The island still owes the user's editor its focus
+    /// back in that case; only a conventional surface the user moved on to
+    /// may keep the app active.
     public func releaseKeyboardInteraction() {
-        guard NSApp.keyWindow === self else { return }
-        resignKey()
+        let keyWindow = NSApp.keyWindow
+        guard IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
+            islandIsKey: keyWindow === self,
+            activatedByDirectEngagement: activatedByDirectEngagement,
+            conventionalSurfaceIsKey: Self.isConventionalSurface(keyWindow)
+        ) else { return }
+
+        if keyWindow === self {
+            resignKey()
+        }
+        let application = applicationToRestoreAfterEngagement
+        applicationToRestoreAfterEngagement = nil
+        activatedByDirectEngagement = false
+        // A one-sided deactivate leaves Dev Island frontmost on macOS 14+.
+        // Mirror AppDelegate's Dock-lease release: yield to the app that had
+        // focus, then ask it to take activation from us.
+        if let application, !application.isTerminated {
+            NSApp.yieldActivation(to: application)
+            if application.activate(from: NSRunningApplication.current, options: []) {
+                return
+            }
+        }
         NSApp.deactivate()
+    }
+
+    private static func isConventionalSurface(_ window: NSWindow?) -> Bool {
+        guard let window else { return false }
+        #if DEBUG
+        if window is DebugSandboxWindow { return true }
+        #endif
+        return window is SettingsWindow || window is OnboardingWindow
     }
 
     public override func sendEvent(_ event: NSEvent) {
@@ -157,6 +198,25 @@ public final class IslandWindow: NSWindow {
         ) {
             // Click is the consent boundary: programmatic expansion remains
             // passive, while direct engagement unlocks the keyboard path.
+            //
+            // A borderless accessory window never activates its app on its
+            // own, and SwiftUI buttons inside the panel (gear, history, task
+            // rows, decisions) only act on clicks that reach a key window of
+            // the active app — the compact bar's tap gesture is the one
+            // control that does not care. Without activation the first
+            // engagement expanded the panel but every button inside stayed
+            // inert until some other surface (Settings, the tour) had made
+            // the app active. Activate here, on the same consenting click;
+            // collapse hands activation back through releaseKeyboardInteraction.
+            if !NSApp.isActive {
+                let frontmost = NSWorkspace.shared.frontmostApplication
+                applicationToRestoreAfterEngagement =
+                    frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+                        ? nil
+                        : frontmost
+                activatedByDirectEngagement = true
+                NSApp.activate()
+            }
             makeKey()
         }
         super.sendEvent(event)
@@ -401,6 +461,20 @@ enum IslandWindowKeyboardFocusPolicy {
         interactionEnabled
             && !ignoresMouseEvents
             && eventType == .leftMouseDown
+    }
+
+    /// Whether collapsing the panel must give activation back to the user's
+    /// app. The island always releases when it is key. When a consenting
+    /// click took activation but AppKit keyed no window of ours (or an
+    /// incidental one), the editor is still owed its focus; only a
+    /// conventional surface the user moved on to (Settings, the tour, the
+    /// DEBUG sandbox) may keep the app active.
+    static func shouldReleaseActivation(
+        islandIsKey: Bool,
+        activatedByDirectEngagement: Bool,
+        conventionalSurfaceIsKey: Bool
+    ) -> Bool {
+        islandIsKey || (activatedByDirectEngagement && !conventionalSurfaceIsKey)
     }
 }
 

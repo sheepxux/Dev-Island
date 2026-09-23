@@ -43,6 +43,38 @@ final class IslandWindowKeyboardFocusPolicyTests: XCTestCase {
         }
     }
 
+    func testCollapseReleasesActivationWheneverTheIslandIsKey() {
+        XCTAssertTrue(IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
+            islandIsKey: true,
+            activatedByDirectEngagement: false,
+            conventionalSurfaceIsKey: false
+        ))
+    }
+
+    func testCollapseReturnsFocusTakenByAClickEvenWhenNoIslandWindowIsKey() {
+        XCTAssertTrue(IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
+            islandIsKey: false,
+            activatedByDirectEngagement: true,
+            conventionalSurfaceIsKey: false
+        ))
+    }
+
+    func testCollapseLeavesASettingsOrTourWindowInCharge() {
+        XCTAssertFalse(IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
+            islandIsKey: false,
+            activatedByDirectEngagement: true,
+            conventionalSurfaceIsKey: true
+        ))
+    }
+
+    func testCollapseNeverDeactivatesAnAppTheIslandDidNotActivate() {
+        XCTAssertFalse(IslandWindowKeyboardFocusPolicy.shouldReleaseActivation(
+            islandIsKey: false,
+            activatedByDirectEngagement: false,
+            conventionalSurfaceIsKey: false
+        ))
+    }
+
     @MainActor
     func testIslandContentAcceptsTheFirstClickWithoutAnActivationRoundTrip() {
         let host = FirstMouseHostingView(rootView: Color.clear)

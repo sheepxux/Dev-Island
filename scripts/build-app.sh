@@ -183,6 +183,24 @@ echo "==> Building IslandApp (${CONFIG}, universal)"
 echo "==> SwiftPM scratch: ${SWIFT_SCRATCH_DIR}"
 cd "${ROOT}"
 
+# The App is assembled in a private sibling of its final destination and only
+# published through the output boundary once it is signed and verified. The
+# stage exists before the first compile because each architecture's executable
+# is captured into it as soon as that build finishes (see stage_architecture).
+STAGING_ROOT="$(mktemp -d "${BUILD_DIR}/.dev-island-build.XXXXXX")"
+chmod 0700 "${STAGING_ROOT}"
+cleanup_staging() {
+    if [[ -n "${STAGING_ROOT:-}" \
+       && "${STAGING_ROOT}" == "${BUILD_DIR}"/.dev-island-build.* \
+       && -d "${STAGING_ROOT}" \
+       && ! -L "${STAGING_ROOT}" ]]; then
+        rm -rf -- "${STAGING_ROOT}"
+    fi
+}
+trap cleanup_staging EXIT
+SLICE_ROOT="${STAGING_ROOT}/slices"
+mkdir -m 0700 "${SLICE_ROOT}"
+
 # Build for both architectures separately, then lipo. SPM's
 # `--arch arm64 --arch x86_64` does support universal in one pass on
 # recent toolchains, but we keep the separate-then-lipo path because
@@ -210,11 +228,49 @@ build_architecture() {
     fi
 }
 
+# SwiftPM does not promise a stable per-architecture output layout. Its
+# deprecated native build system writes each slice to
+# <scratch>/<triple>/<config>/IslandApp, while the Swift Build engine that
+# newer toolchains (Swift 6.4 / Xcode 27) select by default writes every
+# architecture to one <scratch>/out/Products/<Config>/IslandApp, so the x86_64
+# build silently replaces the arm64 executable. Ask the toolchain that just
+# built the slice where it put it (same scratch, configuration and
+# architecture, so the answer follows whichever build system it used), prove
+# the answer is a thin executable of exactly that architecture inside the
+# reviewed scratch, and copy it into the private stage before the next
+# architecture can overwrite it. `--show-bin-path` only prints build
+# parameters — it neither resolves dependencies nor compiles — so it carries
+# no lock-file flag; the Package.resolved hash check below still covers it.
+stage_architecture() {
+    local architecture="$1"
+    local bin_directory built_binary built_archs
+    bin_directory="$(swift build --disable-keychain --scratch-path "${SWIFT_SCRATCH_DIR}" \
+        -c "${CONFIG}" --arch "${architecture}" --show-bin-path)"
+    if [[ "${bin_directory}" != "${SWIFT_SCRATCH_DIR}/"* ]]; then
+        echo "error: SwiftPM binary directory for ${architecture} escaped the reviewed scratch"
+        exit 1
+    fi
+    built_binary="${bin_directory}/${EXEC_NAME}"
+    if [[ ! -f "${built_binary}" || -L "${built_binary}" || ! -x "${built_binary}" ]]; then
+        echo "error: ${architecture} IslandApp is missing from the SwiftPM binary directory"
+        exit 1
+    fi
+    built_archs="$(lipo -archs "${built_binary}")"
+    if [[ "${built_archs}" != "${architecture}" ]]; then
+        echo "error: ${architecture} build produced an executable for '${built_archs}'"
+        exit 1
+    fi
+    /usr/bin/install -m 0755 "${built_binary}" "${SLICE_ROOT}/${EXEC_NAME}-${architecture}"
+    echo "==> Staged ${architecture} slice from ${bin_directory#"${SWIFT_SCRATCH_DIR}/"}"
+}
+
 if [[ "${PERFORMANCE_QA}" == "1" ]]; then
     echo "==> Performance QA fixture enabled (never publish this bundle)"
 fi
 build_architecture arm64
+stage_architecture arm64
 build_architecture x86_64
+stage_architecture x86_64
 
 if [[ ! -f "${PACKAGE_RESOLVED}" || -L "${PACKAGE_RESOLVED}" ]]; then
     echo "error: Package.resolved changed type during the Universal build"
@@ -225,25 +281,19 @@ if [[ "$(shasum -a 256 "${PACKAGE_RESOLVED}" | awk '{print $1}')" != "${PACKAGE_
     exit 1
 fi
 
-ARM_BIN="${SWIFT_SCRATCH_DIR}/arm64-apple-macosx/${CONFIG}/${EXEC_NAME}"
-X86_BIN="${SWIFT_SCRATCH_DIR}/x86_64-apple-macosx/${CONFIG}/${EXEC_NAME}"
+ARM_BIN="${SLICE_ROOT}/${EXEC_NAME}-arm64"
+X86_BIN="${SLICE_ROOT}/${EXEC_NAME}-x86_64"
 
 echo "==> Lipoing into universal binary"
-STAGING_ROOT="$(mktemp -d "${BUILD_DIR}/.dev-island-build.XXXXXX")"
-chmod 0700 "${STAGING_ROOT}"
-cleanup_staging() {
-    if [[ -n "${STAGING_ROOT:-}" \
-       && "${STAGING_ROOT}" == "${BUILD_DIR}"/.dev-island-build.* \
-       && -d "${STAGING_ROOT}" \
-       && ! -L "${STAGING_ROOT}" ]]; then
-        rm -rf -- "${STAGING_ROOT}"
-    fi
-}
-trap cleanup_staging EXIT
 APP="${STAGING_ROOT}/Dev Island.app"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources" "${APP}/Contents/Frameworks"
 lipo -create -output "${APP}/Contents/MacOS/${EXEC_NAME}" "${ARM_BIN}" "${X86_BIN}"
 chmod +x "${APP}/Contents/MacOS/${EXEC_NAME}"
+# The output boundary publishes the App by moving it out of the stage and
+# then removes the emptied stage with a plain rmdir, so nothing else may be
+# left inside it. Drop the two staged slices explicitly, never recursively.
+rm -f -- "${ARM_BIN}" "${X86_BIN}"
+rmdir "${SLICE_ROOT}"
 
 # Verify the actual lipo'd executable, not only compiler flags or scratch-path
 # names. This rejects both directions of SwiftPM graph leakage: performance

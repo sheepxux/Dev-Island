@@ -1989,7 +1989,8 @@ private struct ManusServiceRow: View {
             HStack(spacing: 12) {
                 AgentStateTile(
                     state: store.apiKeyStatus == .valid ? .connected : .disconnected,
-                    isBusy: isSubmitting
+                    isBusy: isSubmitting,
+                    source: "manus"
                 )
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Manus").font(Typo.bodyStrong)
@@ -2218,7 +2219,7 @@ private struct AgentConnectionRow: View {
 
     private var headline: some View {
         HStack(spacing: 12) {
-            AgentStateTile(state: connectionState, isBusy: isBusy)
+            AgentStateTile(state: connectionState, isBusy: isBusy, source: descriptor.source)
 
             VStack(alignment: .leading, spacing: 2) {
                 // Preview connectors live in their own "Preview connectors"

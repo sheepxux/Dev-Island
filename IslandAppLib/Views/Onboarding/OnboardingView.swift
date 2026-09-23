@@ -1279,7 +1279,7 @@ private struct WelcomeManusChip: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            AgentStateTile(state: .disconnected, size: 24)
+            AgentStateTile(state: .disconnected, size: 24, source: "manus")
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Manus")
@@ -1322,7 +1322,7 @@ private struct WelcomeAgentChip: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            AgentStateTile(state: connectionState, isBusy: isWorking, size: 24)
+            AgentStateTile(state: connectionState, isBusy: isWorking, size: 24, source: descriptor.source)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(compactDisplayName)

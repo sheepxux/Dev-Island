@@ -4509,12 +4509,15 @@ for invariant in \
     || fail "Settings readiness retry visual invariant missing: $invariant"
 done
 # Settings › Agent groups rows by diagnostics state through one read-only pass;
-# the row never re-derives vendor trust on its own and never writes.
+# the row never re-derives vendor trust on its own and never writes. The
+# leading tile takes the vendor mark from the registry descriptor
+# (2026-09-23): identity comes from the same read-only row input as the
+# state, never from a lookup the row performs itself.
 for invariant in \
   'LocalAgentHookDiagnostics\.snapshotResolvingVendorActivation\(\)' \
   'LocalAgentRowPresentation\.grouped\(LocalAgentRegistry\.all, states: connectionStates\)' \
   'guard connectionSnapshotToken == token else \{ return \}' \
-  'AgentStateTile\(state: connectionState, isBusy: isBusy\)'; do
+  'AgentStateTile\(state: connectionState, isBusy: isBusy, source: descriptor\.source\)'; do
   rg -q "$invariant" "$SETTINGS_VIEW" \
     || fail "Settings grouped Agent rows invariant missing: $invariant"
 done

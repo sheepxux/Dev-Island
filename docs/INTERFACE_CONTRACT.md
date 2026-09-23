@@ -862,6 +862,10 @@ public enum ManusError: Error, Sendable {
   竞争同一 finish-once reply；超时不得等待一个未响应的 task-group child，也不得触发
   credential/ledger 清除。cleanup 返回 pending 或两秒超时都允许 AppKit 退出，只是未完成
   的远端清理保留为下次启动责任。`applicationWillTerminate` 不得再启动第二个 shutdown。
+- 同一 flight 进行中的重复 AppKit 询问共享它的 pending reply，不得再起第二轮 cleanup。但一个
+  已经 reply 过的 flight 之后 AppKit 仍再次询问，只可能是那次终止已被放弃（例如被发送方取消
+  的 Apple event Quit）：必须释放旧 token、重新起一轮 cleanup/timeout/reply 来回答这次请求，
+  不得让此后的每次退出都永久等待一个已被消费的 reply；旧 flight 的迟到回调继续被 token 拒绝。
 - `yieldedDuplicate`、`performanceQA` 和 `hermeticLaunchSmoke` 三种无产品服务所有权的进程
   必须立即 `.terminateNow`，不得调度 cleanup/timeout/reply，也不得因退出路径构造
   `TaskStore.shared`。
@@ -3142,3 +3146,4 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-09-06 | v6.92.0 | **Codex 独立会话监控与显式授权**:只读 `sessions/YYYY/MM/DD/rollout-*.jsonl` 监控与 Hook 分离、默认开启；岛内审阅精确 Hook 定义后经签名 CLI App Server `hooks/list`/`config/read`/`config/batchWrite` 写 `trusted_hash` 并复查 | `[S][contract] Separate Codex monitoring from reviewed hook authorization` |
 | 2026-09-11 | v6.93.0 | **Codex 会话监控事件驱动化**:`CodexSessionLogWatcher` 单条 FSEvents 目录级订阅（1 秒合并、不读路径、根缺失盯父目录）、`CodexSessionChangeSignal` 折叠唤醒、`CodexSessionMonitorSchedule` 仅按到期/补读设截止；TaskStore 移除 1 秒 / 3 秒轮询，Hook 快照可唤醒 `.notFound` 监控 | `[S][contract] perf(core): drive Codex session monitoring by filesystem events` |
 | 2026-09-12 | v6.95.0 | **Codex 监控合并前评审修正**:`CodexSessionPhase` 稳定标记替代英文短语、岛条/通知本地化映射、用户中断不通知、快速扫描覆盖本地日期目录、历史写入去重、`.utility` 监控循环、`unsupportedHome` 错误、授权表单说明/Esc/后台定位 CLI、readiness 版本钉 `0.153.4`、`Package.resolved` 恢复 CI 解析 | `[S][contract] fix(codex): apply the pre-merge review to Codex monitoring` |
+| 2026-09-23 | v6.96.0 | **被放弃的退出后再次可退**:`AppTerminationCoordinator` 在一个 flight 已 reply 而 AppKit 再次询问时释放旧 token 并重新起一轮 cleanup/timeout/reply（进行中的 flight 仍共享同一 pending reply，迟到回调继续被 token 拒绝）；此前被取消的 Apple event Quit 会让之后每次菜单退出永久无响应 | `[S][contract] reliability: answer a repeated Quit after an abandoned termination` |

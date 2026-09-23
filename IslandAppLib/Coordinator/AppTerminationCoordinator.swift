@@ -58,10 +58,12 @@ public final class AppTerminationCoordinator {
     private let timeoutScheduler: TimeoutScheduler
     private let timeoutNanoseconds: UInt64
 
-    /// A coordinator represents one process lifetime, so its first owner
-    /// request permanently owns the token. Keeping the token after replying
-    /// prevents a repeated AppKit query from starting a second cleanup during
-    /// the small interval before process exit.
+    /// A coordinator represents one process lifetime. The token identifies the
+    /// flight whose completion or timeout may consume `pendingReply`; a
+    /// repeated AppKit query while that flight is live shares it instead of
+    /// starting a second cleanup. Once the flight has replied and AppKit still
+    /// asks again, the earlier termination was abandoned (an Apple-event Quit
+    /// the sender cancelled, for example) and a fresh flight must answer.
     private var terminationToken: UUID?
     private var pendingReply: Reply?
 
@@ -94,6 +96,14 @@ public final class AppTerminationCoordinator {
         let decision = AppTerminationPolicy.decision(for: mode)
         guard decision == .terminateLater else { return decision }
 
+        // A flight that already replied cannot answer this query: AppKit only
+        // asks again when it did not exit on that reply. Release the stale
+        // token so the request below re-arms cleanup, timeout and reply
+        // instead of waiting forever for an answer that was consumed. Late
+        // callbacks from the abandoned flight keep failing the token check.
+        if terminationToken != nil, pendingReply == nil {
+            terminationToken = nil
+        }
         guard terminationToken == nil else {
             return .terminateLater
         }

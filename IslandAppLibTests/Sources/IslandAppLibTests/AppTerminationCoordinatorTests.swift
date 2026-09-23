@@ -111,6 +111,77 @@ final class AppTerminationCoordinatorTests: XCTestCase {
         XCTAssertEqual(secondReplyCount, 0)
     }
 
+    func testOwnerRequestAfterAnAbandonedFlightIsAnsweredAgain() async {
+        let fixture = Fixture()
+        var firstReplyCount = 0
+        var secondCleanupCount = 0
+        var secondReplyCount = 0
+
+        _ = fixture.coordinator.requestTermination(
+            mode: .owner,
+            cleanup: {},
+            reply: { firstReplyCount += 1 }
+        )
+        await fixture.cleanup.runNext()
+        XCTAssertEqual(firstReplyCount, 1)
+
+        // AppKit did not exit on that reply (the Apple-event Quit that started
+        // it was cancelled by its sender) and asks again from the menu.
+        let second = fixture.coordinator.requestTermination(
+            mode: .owner,
+            cleanup: { secondCleanupCount += 1 },
+            reply: { secondReplyCount += 1 }
+        )
+
+        XCTAssertEqual(second, .terminateLater)
+        XCTAssertEqual(fixture.cleanup.pendingCount, 1)
+        XCTAssertEqual(fixture.timeout.pendingCount, 2)
+
+        await fixture.cleanup.runNext()
+        XCTAssertEqual(secondCleanupCount, 1)
+        XCTAssertEqual(secondReplyCount, 1)
+        XCTAssertEqual(firstReplyCount, 1)
+
+        // Neither the abandoned flight's late timeout nor the new flight's own
+        // timeout may answer AppKit a second time.
+        fixture.timeout.fireNext()
+        fixture.timeout.fireNext()
+        XCTAssertEqual(secondReplyCount, 1)
+        XCTAssertEqual(firstReplyCount, 1)
+    }
+
+    func testOwnerRequestAfterATimedOutFlightIsAnsweredAgain() async {
+        let fixture = Fixture()
+        var firstReplyCount = 0
+        var secondReplyCount = 0
+
+        _ = fixture.coordinator.requestTermination(
+            mode: .owner,
+            cleanup: {},
+            reply: { firstReplyCount += 1 }
+        )
+        fixture.timeout.fireNext()
+        XCTAssertEqual(firstReplyCount, 1)
+
+        XCTAssertEqual(
+            fixture.coordinator.requestTermination(
+                mode: .owner,
+                cleanup: {},
+                reply: { secondReplyCount += 1 }
+            ),
+            .terminateLater
+        )
+        XCTAssertEqual(fixture.cleanup.pendingCount, 2)
+
+        // The hung first cleanup finishing late must not answer the new
+        // flight; only the new flight's own completion may.
+        await fixture.cleanup.runNext()
+        XCTAssertEqual(secondReplyCount, 0)
+        await fixture.cleanup.runNext()
+        XCTAssertEqual(secondReplyCount, 1)
+        XCTAssertEqual(firstReplyCount, 1)
+    }
+
     func testAllThreeBypassModesTerminateNowInPurePolicy() {
         let bypassModes: [AppTerminationMode] = [
             .yieldedDuplicate,

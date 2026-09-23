@@ -17,7 +17,10 @@ struct IslandApp: App {
         //
         // Replacing the scene's default Command-, entry keeps the native
         // shortcut useful without letting SwiftUI create a second settings
-        // window beside that explicitly-owned surface.
+        // window beside that explicitly-owned surface. macOS 26 and later
+        // nevertheless present an app's only scene at launch; AppDelegate
+        // closes that empty window again right after the island is up
+        // (see `dismissInertSettingsScene`).
         Settings {
             EmptyView()
         }
@@ -161,6 +164,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // click can enter the approval/question surface, while automatic
         // request expansion never steals focus from the user's editor.
         window.enableKeyboardInteraction()
+
+        dismissInertSettingsScene()
+        DispatchQueue.main.async { [weak self] in
+            self?.dismissInertSettingsScene()
+        }
 
         #if DEBUG
         // Open the Debug Sandbox alongside the island so every dev launch
@@ -534,6 +542,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Settings
+
+    /// The SwiftUI `Settings` scene exists only to carry the Command-,
+    /// replacement; `SettingsWindow` is the real surface. macOS 26 and later
+    /// present an app's sole scene at launch, which left an empty
+    /// "Dev Island Settings" window behind the user's other apps — easy to
+    /// mistake for a broken Settings button. SwiftUI names that window with
+    /// its frame-autosave key; close it once the island is up, and again on
+    /// the next turn in case SwiftUI orders it in after launch completes.
+    private static let inertSettingsSceneAutosaveName = "com_apple_SwiftUI_Settings_window"
+
+    private func dismissInertSettingsScene() {
+        for window in NSApp.windows
+        where window.frameAutosaveName == Self.inertSettingsSceneAutosaveName
+            || window.identifier?.rawValue == Self.inertSettingsSceneAutosaveName {
+            window.close()
+        }
+    }
 
     private func openSettings(showHistory: Bool = false) {
         pendingHistoryRequest = pendingHistoryRequest || showHistory

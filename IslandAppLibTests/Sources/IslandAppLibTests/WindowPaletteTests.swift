@@ -38,6 +38,21 @@ final class WindowPaletteTests: XCTestCase {
         )
     }
 
+    func testTutorialPlateCarriesThePulseAndStaysLighterThanTheIsland() {
+        XCTAssertGreaterThanOrEqual(C.ratio(C.stageSignal, on: C.stagePlate), 7)
+        XCTAssertGreaterThan(
+            C.ratio(C.stageSignal, on: C.stagePlateIncreased),
+            C.ratio(C.stageSignal, on: C.stagePlate),
+            "Increase Contrast darkens the plate under the light pulse"
+        )
+        XCTAssertLessThan(
+            C.relativeLuminance(hex: C.islandOnStage),
+            C.relativeLuminance(hex: C.stagePlate),
+            "the island stays the darkest thing on the stage, three ramp steps below its plate"
+        )
+        XCTAssertGreaterThanOrEqual(C.ratio(C.stagePlate, on: C.stage), 7, "the plate is the focusing device")
+    }
+
     func testTertiaryInkSupportsSmallStatusAndAuthorizationText() {
         for ground in [C.canvas, C.canvasDeep, 0xFFFFFF] {
             XCTAssertGreaterThanOrEqual(C.ratio(C.textTertiary, on: ground), 4.5)

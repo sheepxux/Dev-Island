@@ -91,10 +91,14 @@ Shadows vanish on black, so the island separates by tone and ring:
 - Row separators are `WindowDivider()`: one physical pixel (0.5pt on
   Retina), `Palette.Window.divider`. Spacing separates groups; don't add
   a divider between things that already have space between them.
-- The Welcome stage paints two things: the light wash
-  (`Palette.Window.stage` → `stageDeep`, nearly opaque over the desktop) and
-  one `stageBloom` centered on whatever the tour points at. The coaching
-  card is flat `WindowCanvas` with a hairline and a two-layer contact shadow
-  (`Palette.Window.shadow`). No other gradients, blobs or arcs; no blur.
+- The Welcome stage paints two things: a see-through wash
+  (`Palette.Window.stage` → `stageDeep`, light enough that the desktop
+  ghosts through) and one charcoal plate (`stagePlate`) hanging from the
+  menu bar's lower edge behind whatever the tour points at, with a 2pt stem
+  in the same colour dropping to the card. The plate is flat: no ring, no
+  shadow, no gradient. The coaching card is flat `WindowCanvas` with the
+  raised-paper `ring` and a two-layer contact shadow (`Palette.Window.shadow`
+  0.06 / 0.14). Nothing is ever painted inside the menu-bar band. No bloom,
+  no other gradients, blobs or arcs; no blur.
 - Offscreen snapshots (`cacheDisplay`) draw thin ticks at the ends of
   stroked capsules. Live windows do not; judge edges in a real window.

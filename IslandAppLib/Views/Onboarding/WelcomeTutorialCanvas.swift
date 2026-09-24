@@ -1,18 +1,24 @@
 import AppKit
 import SwiftUI
 
-/// The full-screen Welcome (2026-09-23): a light wash over the user's desktop
-/// with the real island and menu bar left untouched above it. The tour
-/// coaches the real island — three example sessions, then an approval and a
-/// question the user answers on the island itself, supplied through
+/// The full-screen Welcome (2026-09-23; stage redesigned 2026-09-24): a
+/// see-through wash over the user's desktop, from the menu bar's lower edge
+/// down, with the real island and the native menu bar untouched above it.
+/// Whatever the tour talks about sits on one charcoal plate that hangs from
+/// the band; a stem in the plate's own colour drops to a paper caption card,
+/// and one light pulse travels it on the island's own clock. The tour coaches
+/// the real island — three example sessions, then an approval and a question
+/// the user answers on the island itself, supplied through
 /// `IslandCoordinator.tutorialDemo` and rendered by the same views a real
-/// request uses — and the setup steps follow as cards on the same stage, so
-/// the first live signal lights up the island the user was just shown.
-/// Nothing here writes configuration or reaches an Agent.
+/// request uses — and the setup steps follow as the same card on the same
+/// stage, so the first live signal lights up the island the user was just
+/// shown. Nothing here writes configuration or reaches an Agent.
 ///
-/// The tour window sits below the menu bar and the island, so nothing drawn
-/// inside the menu-bar band is visible: pointers end at its lower edge, and
-/// the ring appears only once the panel reaches below it.
+/// The tour window stops at the menu bar's lower edge (macOS 26 shows what
+/// a window paints under its transparent menu bar, and a light wash there
+/// erased the menu-bar icons), so nothing is ever painted inside the band:
+/// the collapsed island and the menu-bar item are pointed at from below by
+/// a shelf, and the plate wraps the panel only once it reaches below.
 struct WelcomeTutorialCanvas: View {
     let anchors: WelcomeTutorialAnchors
     let onFinish: (_ requestsNotificationAuthorization: Bool) -> Void
@@ -42,6 +48,14 @@ struct WelcomeTutorialCanvas: View {
             case .menuBar, .connect, .reminders, .firstSignal: return false
             }
         }
+
+        /// The steps that point at something on screen.
+        var hasTarget: Bool {
+            switch self {
+            case .island, .panel, .request, .menuBar, .firstSignal: return true
+            case .connect, .reminders: return false
+            }
+        }
     }
 
     static let totalStepCount = Step.allCases.count
@@ -49,16 +63,46 @@ struct WelcomeTutorialCanvas: View {
     /// How long the island's own "Allowed once" / "Answers sent" receipt
     /// plays before the next example beat arrives.
     static let beatHandoffDelay: Duration = .milliseconds(1_300)
+    /// The entrance: the plate drops shortly after the window fades in, the
+    /// stem draws and the words land once the plate has settled.
+    static let plateDropDelay: Duration = .milliseconds(60)
+    static let stemDrawDelay: Duration = .milliseconds(300)
+
+    /// The card's vertical rhythm, on a 4pt grid.
+    private enum CardRhythm {
+        static let topToEyebrow: CGFloat = 32
+        static let eyebrowToContent: CGFloat = 14
+        static let contentToFooter: CGFloat = 28
+        static let footerHeight: CGFloat = 20
+        static let footerToBottom: CGFloat = 24
+        static let closeInset: CGFloat = 14
+        /// A one- or two-line lead makes the same card on the coaching
+        /// steps: title, gap, two lines, gap, action.
+        static let coachMinHeight: CGFloat = 152
+        static let actionSlotHeight: CGFloat = 40
+    }
 
     @State private var step: Step = .island
     @State private var cardSize: CGSize = .zero
     @State private var coordinator = IslandCoordinator.shared
     @State private var revealed = false
     @State private var beatHandoffID = UUID()
+    /// The curve the plate moves on, chosen by what caused the change: the
+    /// island's own morph, a step change, or a retreat into the band.
+    @State private var plateAnimation: Animation = Motion.tourStep
+    @State private var plateDropped = false
+    @State private var stemDrawn = false
+    @State private var loopsSettled = false
+    @State private var settleID = UUID()
+    @State private var entranceID = UUID()
+    /// The plate the tour last showed, so it can retreat in place.
+    @State private var lastPlate: WelcomeTutorialLayout.Plate?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.devIslandLanguage) private var language
 
     private var demoBeat: IslandTutorialDemo.Beat? { coordinator.tutorialDemo?.beat }
+
+    private var isLive: Bool { loopsSettled && !reduceMotion }
 
     var body: some View {
         GeometryReader { proxy in
@@ -69,11 +113,14 @@ struct WelcomeTutorialCanvas: View {
                 cardSize: cardSize,
                 canvas: canvas
             )
+            let presented = presentedPlate(placement.plate, canvas: canvas)
 
             ZStack(alignment: .topLeading) {
-                stage(bloom: WelcomeTutorialLayout.bloomCenter(of: placement), canvas: canvas)
+                stage
 
-                guidance(placement, showsRing: (target?.height ?? 0) > 1)
+                plate(presented.plate, visible: presented.visible)
+
+                stem(placement.connector)
 
                 card
                     .background(
@@ -82,11 +129,17 @@ struct WelcomeTutorialCanvas: View {
                         }
                     )
                     .offset(x: placement.card.minX, y: placement.card.minY)
-                    .animation(reduceMotion ? nil : Motion.tourStep, value: placement.card)
+                    // One composition, one curve: the card moves on whatever
+                    // the plate and stem move on (the step curve, the
+                    // retreat, or the island's own morph).
+                    .animation(reduceMotion ? nil : plateAnimation, value: placement.card)
             }
             .onPreferenceChange(CardSizeKey.self) { size in
                 guard size != cardSize else { return }
                 cardSize = size
+            }
+            .onChange(of: placement.plate) { _, plate in
+                if let plate { lastPlate = plate }
             }
         }
         .foregroundStyle(Palette.Window.ink)
@@ -94,15 +147,19 @@ struct WelcomeTutorialCanvas: View {
         .preferredColorScheme(.light)
         .onAppear {
             coordinator.beginTutorialDemo(WelcomeDemoContent.demo(beat: .working, language: language))
-            reveal()
+            enter()
         }
         .onDisappear {
+            loopsSettled = false
             coordinator.endTutorialDemo()
         }
         .onChange(of: coordinator.mode) { _, mode in
+            // The plate follows the island on the island's own curve.
+            plateAnimation = Motion.islandMorph(expanding: mode == .expanded)
+            settleLoops()
             // Opening the island by hand is the first step's own action.
             if step == .island, mode == .expanded {
-                move(to: .panel)
+                move(to: .panel, plateAnimation: Motion.islandMorph)
             }
         }
         .onChange(of: coordinator.tutorialDemoResponse) { _, response in
@@ -120,98 +177,140 @@ struct WelcomeTutorialCanvas: View {
         let screenRect: CGRect?
         switch step {
         case .island, .panel, .request, .firstSignal:
-            screenRect = anchors.islandRect
+            screenRect = WelcomeTutorialLayout.usableTarget(anchors.islandRect, within: anchors.screenFrame)
         case .menuBar:
-            screenRect = anchors.statusItemRect
+            // An item the menu bar moved into its overflow is not pointed at.
+            let band = CGRect(
+                x: anchors.screenFrame.minX,
+                y: anchors.screenFrame.maxY - anchors.menuBarHeight,
+                width: anchors.screenFrame.width,
+                height: anchors.menuBarHeight
+            )
+            screenRect = WelcomeTutorialLayout.usableTarget(anchors.statusItemRect, within: band)
         case .connect, .reminders:
             screenRect = nil
         }
-        guard let screenRect, !screenRect.isEmpty else { return nil }
+        guard let screenRect else { return nil }
+        // The canvas starts at the menu bar's lower edge; a target that sits
+        // inside the band (the collapsed island, the menu-bar item) becomes a
+        // zero-height mark on the top edge that the shelf hangs from. The
+        // collapsed island peeks a hover boost below the band while the
+        // pointer is on it; that is still the band.
         let rect = WelcomeTutorialLayout.canvasRect(
             fromScreenRect: screenRect,
-            screenFrame: anchors.screenFrame
+            screenFrame: anchors.stageFrame
         )
-        // Nothing below the menu bar can point higher than its lower edge.
-        let visibleTop = anchors.menuBarHeight
-        guard rect.maxY > visibleTop else {
-            return CGRect(x: rect.minX, y: visibleTop, width: rect.width, height: 0)
+        guard rect.maxY > canvas.minY + WelcomeTutorialLayout.inBandTolerance else {
+            return CGRect(x: rect.minX, y: canvas.minY, width: rect.width, height: 0)
         }
-        return rect.intersection(
-            CGRect(x: canvas.minX, y: visibleTop, width: canvas.width, height: canvas.height)
-        )
+        return rect.intersection(canvas)
     }
 
     // MARK: - Stage
 
-    /// The wash and its one bloom, which follows whatever the tour points at.
-    private func stage(bloom: CGPoint, canvas: CGRect) -> some View {
-        ZStack {
-            LinearGradient(
-                colors: [Palette.Window.stage, Palette.Window.stageDeep],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            RadialGradient(
-                colors: [
-                    Palette.Window.stageBloom.opacity(0.95),
-                    Palette.Window.stageBloom.opacity(0),
-                ],
-                center: UnitPoint(
-                    x: bloom.x / max(canvas.width, 1),
-                    y: bloom.y / max(canvas.height, 1)
-                ),
-                startRadius: 0,
-                endRadius: 560
-            )
-            .animation(reduceMotion ? nil : Motion.tourStep, value: bloom)
-        }
+    /// The see-through wash: the one thing painted over the desktop.
+    private var stage: some View {
+        LinearGradient(
+            colors: [Palette.Window.stage, Palette.Window.stageDeep],
+            startPoint: .top,
+            endPoint: .bottom
+        )
         .ignoresSafeArea()
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    /// The breathing ring around the target and the point travelling the
-    /// connector toward the card. One small mark moves; under Reduce Motion
-    /// both rest.
+    /// The plate to draw right now: the placement's own once it has dropped,
+    /// otherwise the same plate retracted to the band's lower edge, where it
+    /// waits to drop from or retreats to.
+    private func presentedPlate(
+        _ plate: WelcomeTutorialLayout.Plate?,
+        canvas: CGRect
+    ) -> (plate: WelcomeTutorialLayout.Plate, visible: Bool) {
+        if let plate, plateDropped {
+            return (plate, true)
+        }
+        let basis = plate ?? lastPlate ?? WelcomeTutorialLayout.Plate(
+            rect: CGRect(
+                x: canvas.midX - WelcomeTutorialLayout.shelfHeight,
+                y: canvas.minY,
+                width: WelcomeTutorialLayout.shelfHeight * 2,
+                height: 0
+            ),
+            cornerRadius: WelcomeTutorialLayout.shelfCornerRadius
+        )
+        let retracted = WelcomeTutorialLayout.Plate(
+            rect: CGRect(x: basis.rect.minX, y: canvas.minY, width: basis.rect.width, height: 0),
+            cornerRadius: basis.cornerRadius
+        )
+        return (retracted, false)
+    }
+
+    /// The dark ground behind what the tour points at. Square top corners on
+    /// the band's lower edge, so it reads as sliding out from under the menu
+    /// bar; flat, with no ring or shadow.
+    private func plate(_ plate: WelcomeTutorialLayout.Plate, visible: Bool) -> some View {
+        // Geometry and opacity are keyed separately, opacity outermost: the
+        // geometry's `nil` under Reduce Motion (nothing moves) must not
+        // swallow the dissolve the plate still owes when it appears or
+        // leaves.
+        ZStack(alignment: .topLeading) {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: plate.cornerRadius,
+                bottomTrailingRadius: plate.cornerRadius,
+                topTrailingRadius: 0,
+                style: .continuous
+            )
+            .fill(Palette.Window.stagePlate)
+            .frame(width: max(plate.rect.width, 0), height: max(plate.rect.height, 0))
+            .offset(x: plate.rect.minX, y: plate.rect.minY)
+            // Geometry never moves under Reduce Motion, and a plate that is
+            // still waiting to drop jumps to its new place unseen.
+            .animation(reduceMotion || !plateDropped ? nil : plateAnimation, value: plate)
+        }
+        .opacity(visible ? 1 : 0)
+        .animation(Motion.respectingReducedMotion(reduceMotion, preferred: plateAnimation), value: visible)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// The stem from the plate to the card, in the plate's own colour, and
+    /// the one pulse travelling it. Only the pulse's offset and opacity live
+    /// inside the timeline.
     @ViewBuilder
-    private func guidance(_ placement: WelcomeTutorialLayout.Placement, showsRing: Bool) -> some View {
-        if let connector = placement.connector {
-            TimelineView(.animation(paused: reduceMotion)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                let travel = reduceMotion
-                    ? 0
-                    : Double(StatusPhase.cyclePhase(t, period: Motion.guideTravelPeriod))
-                let breath = reduceMotion
-                    ? 1
-                    : WelcomeTutorialLayout.breathOpacity(
-                        phase: Double(StatusPhase.cyclePhase(t, period: Motion.guideBreathPeriod))
+    private func stem(_ connector: WelcomeTutorialLayout.Connector?) -> some View {
+        if let connector {
+            let length = max(connector.end.y - connector.start.y, 0)
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(Palette.Window.stagePlate)
+                    .frame(
+                        width: WelcomeTutorialLayout.stemWidth,
+                        height: stemDrawn || reduceMotion ? length : 0
                     )
-                let point = WelcomeTutorialLayout.travelPoint(on: connector, phase: travel)
-
-                ZStack(alignment: .topLeading) {
-                    Path { path in
-                        path.move(to: connector.start)
-                        path.addLine(to: connector.end)
-                    }
-                    .stroke(
-                        Palette.Window.guide.opacity(0.45),
-                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                    .offset(
+                        x: connector.start.x - WelcomeTutorialLayout.stemWidth / 2,
+                        y: connector.start.y
                     )
+                    .animation(reduceMotion ? nil : Motion.guideDraw, value: stemDrawn)
+                    .animation(reduceMotion ? nil : plateAnimation, value: connector)
 
-                    Circle()
-                        .fill(Palette.Window.guide)
-                        .frame(width: 7, height: 7)
-                        .offset(x: point.x - 3.5, y: point.y - 3.5)
+                TimelineView(.animation(paused: !isLive)) { context in
+                    let pulse = pulseState(at: context.date)
+                    let point = WelcomeTutorialLayout.travelPoint(on: connector, phase: pulse.progress)
 
-                    if showsRing, let spotlight = placement.spotlight {
-                        RoundedRectangle(
-                            cornerRadius: WelcomeTutorialLayout.spotlightCornerRadius,
-                            style: .continuous
+                    Capsule()
+                        .fill(Palette.Window.stageSignal)
+                        .frame(
+                            width: WelcomeTutorialLayout.pulseWidth,
+                            height: WelcomeTutorialLayout.pulseLength
                         )
-                        .strokeBorder(Palette.Window.guide, lineWidth: 1.5)
-                        .frame(width: spotlight.width, height: spotlight.height)
-                        .offset(x: spotlight.minX, y: spotlight.minY)
-                        .opacity(breath)
-                    }
+                        .offset(
+                            x: point.x - WelcomeTutorialLayout.pulseWidth / 2,
+                            y: point.y - WelcomeTutorialLayout.pulseLength / 2
+                        )
+                        .opacity(pulse.opacity)
                 }
             }
             .allowsHitTesting(false)
@@ -219,13 +318,36 @@ struct WelcomeTutorialCanvas: View {
         }
     }
 
+    /// Where the pulse is on the island's clock: travelling while the stage
+    /// is live, hidden while geometry settles, and a still pointer arrived
+    /// at the card under Reduce Motion.
+    private func pulseState(at date: Date) -> WelcomeTutorialLayout.Pulse {
+        if reduceMotion {
+            return WelcomeTutorialLayout.Pulse(progress: 1, opacity: 1)
+        }
+        guard isLive else {
+            return WelcomeTutorialLayout.Pulse(progress: 0, opacity: 0)
+        }
+        let phase = Double(StatusPhase.cyclePhase(
+            date.timeIntervalSinceReferenceDate,
+            period: Motion.runningOrbitPeriod
+        ))
+        return WelcomeTutorialLayout.pulse(phase: phase)
+    }
+
     // MARK: - Card
 
+    /// A caption on paper: eyebrow, content, footer; a corner close. No
+    /// header, no step name, no page-control pill.
     private var card: some View {
         VStack(spacing: 0) {
-            header
+            eyebrow
+                .padding(.top, CardRhythm.topToEyebrow)
+                .padding(.bottom, CardRhythm.eyebrowToContent)
             content
             footer
+                .padding(.top, CardRhythm.contentToFooter)
+                .padding(.bottom, CardRhythm.footerToBottom)
         }
         .frame(width: OnboardingMetrics.width)
         .background(WindowCanvas())
@@ -234,10 +356,26 @@ struct WelcomeTutorialCanvas: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: OnboardingMetrics.windowRadius, style: .continuous)
-                .strokeBorder(Palette.Window.hairlineStrong, lineWidth: 0.75)
+                .strokeBorder(Palette.Window.ring, lineWidth: 0.75)
         }
-        .shadow(color: Palette.Window.shadow.opacity(0.05), radius: 2, y: 1)
-        .shadow(color: Palette.Window.shadow.opacity(0.10), radius: 28, y: 14)
+        .overlay(alignment: .topTrailing) {
+            closeButton
+                .padding(CardRhythm.closeInset)
+        }
+        .shadow(color: Palette.Window.shadow.opacity(0.06), radius: 2, y: 1)
+        .shadow(color: Palette.Window.shadow.opacity(0.14), radius: 32, y: 16)
+    }
+
+    private var eyebrow: some View {
+        Text(L10n.string(step.showsExample ? "Example · showing on your island" : stepName, language: language))
+            .font(Typo.calloutStrong)
+            .foregroundStyle(Palette.Window.textTertiary)
+            .frame(height: 16)
+            .frame(maxWidth: .infinity)
+            .animation(
+                Motion.respectingReducedMotion(reduceMotion, preferred: Motion.colorTransition),
+                value: step
+            )
     }
 
     @ViewBuilder
@@ -250,54 +388,48 @@ struct WelcomeTutorialCanvas: View {
                 onContinue: { advance() },
                 onFinish: onFinish
             )
-            .padding(.top, 8)
-            .padding(.bottom, 26)
+            .padding(.top, 6)
         } else {
             coachContent
                 .id(step)
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
+                .transition(.asymmetric(
+                    insertion: .identity,
+                    removal: .opacity.animation(Motion.tourExit)
+                ))
         }
     }
 
     private var coachContent: some View {
-        VStack(spacing: 24) {
-            VStack(spacing: 10) {
-                if step.showsExample {
-                    revealing(0) {
-                        Text(L10n.string("Example · showing on your island", language: language))
-                            .font(Typo.caption.weight(.medium))
-                            .foregroundStyle(Palette.Window.textTertiary)
-                    }
-                }
-
-                revealing(1) {
-                    Text(L10n.string(title, language: language))
-                        .font(Typo.display)
-                        .tracking(Typo.displayTracking)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
-                }
-
-                revealing(2) {
-                    Text(L10n.string(detail, language: language))
-                        .font(Typo.lead)
-                        .foregroundStyle(Palette.Window.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 430)
-                }
+        VStack(spacing: 0) {
+            revealing(0) {
+                Text(L10n.string(title, language: language))
+                    .font(Typo.display)
+                    .tracking(Typo.displayTracking)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
             }
-            .frame(maxWidth: .infinity)
 
-            revealing(3) {
+            revealing(1) {
+                Text(L10n.string(detail, language: language))
+                    .font(Typo.lead)
+                    .foregroundStyle(Palette.Window.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 430)
+            }
+            .padding(.top, 10)
+
+            revealing(2) {
                 coachAction
+                    .frame(height: CardRhythm.actionSlotHeight)
             }
+            .padding(.top, 28)
         }
-        .frame(width: OnboardingMetrics.columnWidth)
-        .padding(.top, 18)
-        .padding(.bottom, 30)
+        .frame(width: OnboardingMetrics.columnWidth, alignment: .top)
+        .frame(minHeight: CardRhythm.coachMinHeight, alignment: .top)
+        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
     }
 
     /// Lines of the card follow it in, one after the other.
@@ -306,7 +438,10 @@ struct WelcomeTutorialCanvas: View {
             .opacity(revealed ? 1 : 0)
             .offset(y: revealed || reduceMotion ? 0 : 6)
             .animation(
-                reduceMotion ? nil : Motion.stagedReveal.delay(Double(index) * Motion.stagedRevealStep),
+                Motion.respectingReducedMotion(
+                    reduceMotion,
+                    preferred: Motion.stagedReveal.delay(Double(index) * Motion.stagedRevealStep)
+                ),
                 value: revealed
             )
     }
@@ -321,7 +456,7 @@ struct WelcomeTutorialCanvas: View {
         case .request:
             switch demoBeat {
             case .resumed:
-                primaryAction("Next") { advance() }
+                primaryAction("Continue") { advance() }
             case .askingPermission, .askingQuestion, .working, nil:
                 if coordinator.mode == .expanded {
                     Text(L10n.string(
@@ -340,7 +475,7 @@ struct WelcomeTutorialCanvas: View {
                 }
             }
         case .menuBar:
-            primaryAction("Next") { advance() }
+            primaryAction("Start setup") { advance() }
         case .connect, .reminders, .firstSignal:
             EmptyView()
         }
@@ -354,69 +489,30 @@ struct WelcomeTutorialCanvas: View {
         .keyboardShortcut(.defaultAction)
     }
 
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(nsImage: NSApplication.shared.applicationIconImage)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(width: 26, height: 26)
-                .accessibilityHidden(true)
-
-            Text("Dev Island")
-                .font(Typo.bodyStrong)
-                .foregroundStyle(Palette.Window.ink)
-
-            Spacer()
-
-            Button {
-                onFinish(false)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Palette.Window.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
-            .pointingHandCursor()
-            .keyboardShortcut(.cancelAction)
-            .help(L10n.string("Close welcome tour", language: language))
-            .accessibilityLabel(L10n.string("Close welcome tour", language: language))
+    private var closeButton: some View {
+        Button {
+            onFinish(false)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.Window.textSecondary)
+                .frame(width: 28, height: 28)
+                .contentShape(Circle())
         }
-        .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding - 8)
-        .padding(.leading, 8)
-        .frame(height: 56)
+        .buttonStyle(PressableButtonStyle(pressedScale: 0.96))
+        .pointingHandCursor()
+        .keyboardShortcut(.cancelAction)
+        .help(L10n.string("Close welcome tour", language: language))
+        .accessibilityLabel(L10n.string("Close welcome tour", language: language))
     }
 
     private var footer: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                ForEach(0..<Self.totalStepCount, id: \.self) { index in
-                    Capsule()
-                        .fill(index == step.rawValue ? Palette.Window.ink : Palette.Window.hairlineStrong)
-                        .frame(width: index == step.rawValue ? 18 : 5, height: 5)
-                }
-            }
-            .animation(reduceMotion ? nil : Motion.tourStep, value: step)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-                L10n.format(
-                    "Step %lld of %lld",
-                    language: language,
-                    Int64(step.rawValue + 1),
-                    Int64(Self.totalStepCount)
-                )
-            )
-
-            Text(L10n.string(stepName, language: language))
-                .font(Typo.callout)
-                .foregroundStyle(Palette.Window.textSecondary)
-                .padding(.leading, 4)
+            ledger
 
             Spacer()
 
-            if step.setupStep == nil {
+            if step.showsExample {
                 Button(L10n.string("Skip to setup", language: language)) {
                     move(to: .connect)
                 }
@@ -429,7 +525,40 @@ struct WelcomeTutorialCanvas: View {
             }
         }
         .padding(.horizontal, OnboardingMetrics.contentHorizontalPadding)
-        .frame(height: 56)
+        .frame(height: CardRhythm.footerHeight)
+    }
+
+    /// Seven equal marks reading progress: done, current, still to come.
+    private var ledger: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<Self.totalStepCount, id: \.self) { index in
+                ledgerMark(for: index)
+            }
+        }
+        .animation(
+            Motion.respectingReducedMotion(reduceMotion, preferred: Motion.colorTransition),
+            value: step
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            L10n.format(
+                "Step %lld of %lld",
+                language: language,
+                Int64(step.rawValue + 1),
+                Int64(Self.totalStepCount)
+            ) + " " + L10n.string(stepName, language: language)
+        )
+    }
+
+    @ViewBuilder
+    private func ledgerMark(for index: Int) -> some View {
+        if index < step.rawValue {
+            Circle().fill(Palette.Window.textTertiary).frame(width: 5, height: 5)
+        } else if index == step.rawValue {
+            Circle().fill(Palette.Window.ink).frame(width: 5, height: 5)
+        } else {
+            Circle().strokeBorder(Palette.Window.hairlineStrong, lineWidth: 1).frame(width: 5, height: 5)
+        }
     }
 
     // MARK: - Copy
@@ -487,12 +616,39 @@ struct WelcomeTutorialCanvas: View {
         move(to: next)
     }
 
-    private func move(to next: Step) {
+    /// Moves the tour to `next`. The plate retreats into the band when the
+    /// step has nothing to point at, drops again when a target returns, and
+    /// otherwise moves on the step curve unless the island's own morph is
+    /// the cause.
+    private func move(to next: Step, plateAnimation cause: Animation? = nil) {
+        let plateReturns = !step.hasTarget && next.hasTarget
         prepareIsland(for: next)
+        plateAnimation = cause ?? (next.hasTarget ? Motion.tourStep : Motion.tourRetract)
+        if plateReturns {
+            plateDropped = false
+            stemDrawn = false
+        }
+        // The step change moves the card and reflows its content: geometry,
+        // so it snaps under Reduce Motion; the words still fade in through
+        // `revealing`, and the eyebrow and ledger carry their own dissolve.
         withAnimation(reduceMotion ? nil : Motion.tourStep) {
             step = next
         }
+        settleLoops()
         reveal()
+        guard plateReturns else { return }
+        // The plate has moved to its new place unseen; now let it drop, and
+        // once it has, draw the stem toward the card.
+        let id = UUID()
+        entranceID = id
+        Task { @MainActor in
+            await Task.yield()
+            guard entranceID == id else { return }
+            withAnimation(reduceMotion ? nil : Motion.tourStep) { plateDropped = true }
+            try? await Task.sleep(for: .seconds(Motion.tourStepDuration))
+            guard entranceID == id else { return }
+            withAnimation(reduceMotion ? nil : Motion.guideDraw) { stemDrawn = true }
+        }
     }
 
     /// Puts the real island in the state the step talks about.
@@ -541,7 +697,7 @@ struct WelcomeTutorialCanvas: View {
         reveal()
         guard next != .resumed else {
             // Answering on the island keyed the island; give Return back to
-            // the card's "Next".
+            // the card's "Continue".
             NSApp.windows.first { $0 is OnboardingWindow && $0.isVisible }?.makeKey()
             return
         }
@@ -553,6 +709,46 @@ struct WelcomeTutorialCanvas: View {
             coordinator.updateTutorialDemo(WelcomeDemoContent.demo(beat: next, language: language))
             openIsland()
             reveal()
+        }
+    }
+
+    // MARK: - Choreography
+
+    /// First appearance: the window fades in with the wash and the empty
+    /// card; the plate drops from the band; the stem draws toward the card
+    /// as the words land; the pulse joins the island's clock once everything
+    /// has settled. Under Reduce Motion everything is simply there.
+    private func enter() {
+        guard !reduceMotion else {
+            plateDropped = true
+            stemDrawn = true
+            revealed = true
+            loopsSettled = true
+            return
+        }
+        let id = UUID()
+        entranceID = id
+        Task { @MainActor in
+            try? await Task.sleep(for: Self.plateDropDelay)
+            guard entranceID == id else { return }
+            withAnimation(Motion.tourStep) { plateDropped = true }
+            try? await Task.sleep(for: Self.stemDrawDelay - Self.plateDropDelay)
+            guard entranceID == id else { return }
+            withAnimation(Motion.guideDraw) { stemDrawn = true }
+            reveal()
+            settleLoops()
+        }
+    }
+
+    /// Loops wait for the plate and card to settle after any geometry change.
+    private func settleLoops() {
+        loopsSettled = false
+        let id = UUID()
+        settleID = id
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Motion.guideLoopDelay))
+            guard settleID == id else { return }
+            loopsSettled = true
         }
     }
 

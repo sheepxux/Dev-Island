@@ -9,11 +9,19 @@ import Observation
 public final class WelcomeTutorialAnchors {
     /// Frame of the screen the tour covers.
     public var screenFrame: CGRect
-    /// Height of that screen's menu bar. Anything the tour draws inside the
-    /// band sits under the menu bar and the island, so pointers stop there.
+    /// Height of that screen's menu bar. The macOS 26 menu bar is transparent
+    /// and shows whatever a window paints under it (2026-09-24: a light wash
+    /// there erased the white menu-bar icons), so the tour window stops at
+    /// the band's lower edge and never paints inside it.
     public var menuBarHeight: CGFloat
     public var islandRect: CGRect?
     public var statusItemRect: CGRect?
+
+    /// The screen minus its menu-bar band: the frame the tour window fills
+    /// and the space the canvas converts targets into.
+    public var stageFrame: CGRect {
+        WelcomeTutorialLayout.stageFrame(screenFrame: screenFrame, menuBarHeight: menuBarHeight)
+    }
 
     public init(
         screen: NSScreen,

@@ -61,9 +61,9 @@ role. Opacity drops contrast below the numbers above, which is how the old
 | `textTertiary` | `s600`, Increased `s700` | 4.9:1 |
 | `textPlaceholder` | `s500` | placeholders and disabled labels only |
 | `attentionText` / `destructive` | `Signal.*OnLight` | ≥ 4.5:1 |
-| `stage` / `stageDeep` | `s50` · 0.96 / `s150` · 0.97 | Welcome wash; `ink` ≥ 7:1 and `textSecondary` ≥ 4.5:1 on both opaque stops (`WindowPaletteTests`) |
-| `stageBloom` | `s0` | the one highlight on the wash |
-| `guide` | `s900` · 0.55, Increased 0.85 | Welcome ring and connector marks, never text |
+| `stage` / `stageDeep` | `s50` · 0.70 / `s100` · 0.78; alpha 1.0 under Reduce Transparency | Welcome wash, see-through; no text ever sits on it. The opaque stops keep `ink` ≥ 7:1 and `textSecondary` ≥ 4.5:1 (`WindowPaletteTests`) |
+| `stagePlate` | `s800` · 0.97, Increased `s850` · 1.0; alpha 1.0 under Reduce Transparency | the dark ground behind what the Welcome tour points at, and its stem; the island (`s950`) sits three steps darker on it. Never text |
+| `stageSignal` | `s50` | the pulse on the Welcome stem: over 10:1 on `stagePlate`, higher increased. A mark, never text |
 
 Which window text color?
 
@@ -94,3 +94,6 @@ On the island, quiet roles step one ramp step brighter and rules gain
 alpha. In windows, quiet ink steps one step darker. Both read the same
 system switch (`InterfaceContrastPolicy.systemPrefersIncreasedContrast`).
 Only role tokens adapt, which is the practical reason for the layer rule.
+The Welcome wash and plate are see-through, so their alpha answers Reduce
+Transparency (both go opaque), while the plate's lightness answers Increase
+Contrast (s800 → s850). One system switch per concern.

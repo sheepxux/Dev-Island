@@ -555,6 +555,7 @@
 "Send a prompt in Codex. Hook authorization is only needed for approvals." = "Send a prompt in Codex. Hook authorization is only needed for approvals.";
 "Show me a request" = "Show me a request";
 "Skip to setup" = "Skip to setup";
+"Start setup" = "Start setup";
 "Start a session in %@ and send any prompt." = "Start a session in %@ and send any prompt.";
 "Start an agent chat in Cursor and send any prompt." = "Start an agent chat in Cursor and send any prompt.";
 "The island folds back and stays quiet until the next time you are needed." = "The island folds back and stays quiet until the next time you are needed.";

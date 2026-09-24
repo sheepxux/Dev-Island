@@ -47,7 +47,17 @@ enum Motion {
     /// Welcome Tour page choreography. The travel is intentionally short:
     /// the fixed instrument should feel as though its content is refocusing,
     /// not as though an entire web carousel is sliding through the window.
-    static let tourStep = Animation.smooth(duration: 0.24, extraBounce: 0)
+    static let tourStepDuration: TimeInterval = 0.24
+    static let tourStep = Animation.smooth(duration: tourStepDuration, extraBounce: 0)
+    /// Outgoing Welcome card lines. Exits are shorter than entrances, and
+    /// they fade in place: no offset on the way out.
+    static let tourExit = Animation.easeIn(duration: 0.12)
+    /// The Welcome plate leaving into the menu-bar band when a step has no
+    /// target; shorter than the `tourStep` it reverses, as `islandCollapse`
+    /// is to `islandMorph`.
+    static let tourRetract = Animation.smooth(duration: 0.18, extraBounce: 0)
+    /// The Welcome stem being drawn from the plate toward the card.
+    static let guideDraw = Animation.easeOut(duration: 0.22)
     /// Lines of a Welcome coaching card follow the card in, one after the
     /// other, so the eye lands on the title first.
     static let stagedReveal = Animation.easeOut(duration: 0.22)
@@ -71,11 +81,17 @@ enum Motion {
 
     static let runningOrbitPeriod: TimeInterval = 1.8
     static let waitingBreathPeriod: TimeInterval = 1.4
-    /// Welcome guidance: the ring around what the tour points at breathes,
-    /// and a point travels the connector toward the card. Opacity and
-    /// position of one small mark only; both rest under Reduce Motion.
-    static let guideBreathPeriod: TimeInterval = 2.4
-    static let guideTravelPeriod: TimeInterval = 1.6
+    /// Welcome guidance: one light pulse travels the stem from the plate to
+    /// the card on `runningOrbitPeriod`, sharing the island's orbit clock
+    /// through `StatusPhase.cyclePhase`, so the mark and the island's dots
+    /// breathe to one wall-clock phase. It rests hidden for this fraction
+    /// of each period so it reads as a signal arriving, not a conveyor belt.
+    /// Rests at the card under Reduce Motion.
+    static let guideTravelDwell: Double = 0.25
+    /// Welcome loops wait until the plate and card have settled: the step
+    /// curve plus the same margin `IslandPanelActivityTiming.liveEffectsDelay`
+    /// leaves after the island's morph.
+    static let guideLoopDelay: TimeInterval = tourStepDuration + 0.04
 
     // MARK: - Accessibility
 

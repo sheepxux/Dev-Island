@@ -555,6 +555,7 @@
 "Send a prompt in Codex. Hook authorization is only needed for approvals." = "在 Codex 中发送一条消息。只有审批需要 Hook 授权。";
 "Show me a request" = "给我看一个请求";
 "Skip to setup" = "跳过演示，直接接入";
+"Start setup" = "开始接入";
 "Start a session in %@ and send any prompt." = "在 %@ 中开始会话并发送任意消息。";
 "Start an agent chat in Cursor and send any prompt." = "在 Cursor 中开始一次 Agent 对话并发送任意消息。";
 "The island folds back and stays quiet until the next time you are needed." = "处理完，岛就收回屏幕顶端，直到下一次需要你。";

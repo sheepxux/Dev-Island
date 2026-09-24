@@ -59,10 +59,11 @@ struct IslandRootView: View {
     @State private var panelEffectsLive = false
     @State private var panelRevealID = UUID()
     /// AppKit hit-testing and system shadow cannot read SwiftUI's in-flight
-    /// presentation frame. This explicit phase keeps them conservative:
-    /// expanding accepts input only on the compact island; collapsing makes
-    /// the disappearing body click-through while retaining its panel shadow
-    /// until the silhouette has fully returned to rest.
+    /// presentation frame. This explicit phase keeps them honest: expanding
+    /// claims the panel's region at once but its controls stay inert until
+    /// the morph settles; collapsing makes the disappearing body
+    /// click-through while retaining its panel shadow until the silhouette
+    /// has fully returned to rest.
     @State private var visualPhase: VisualPhase = .collapsed
     @State private var visualPhaseID = UUID()
     @State private var reportedPanelHeight = NotchMetrics.panelMinHeight
@@ -163,16 +164,18 @@ struct IslandRootView: View {
         return CGRect(x: x, y: 0, width: w, height: h)
     }
 
-    /// Conservative hit region reported to AppKit while geometry animates.
-    /// We cannot observe every interpolated SwiftUI frame, so the region
-    /// changes only after the corresponding visual edge has arrived.
+    /// Hit region reported to AppKit while geometry animates. We cannot
+    /// observe every interpolated SwiftUI frame, so the region jumps to the
+    /// silhouette the morph is heading for: on expand it is the panel from
+    /// the first frame (the panel's own controls stay inert until
+    /// `.expanded`, so an early click is swallowed rather than misdelivered,
+    /// and the Welcome tour's plate can ride the same morph), on collapse it
+    /// is the compact bar at once so the disappearing body is click-through.
     private var reportedSilhouetteRect: CGRect {
         switch visualPhase {
         case .collapsed:
             return silhouetteRect
-        case .expanding:
-            return rect(width: baseLayout.totalWidth, height: baseLayout.barHeight)
-        case .expanded:
+        case .expanding, .expanded:
             return rect(width: panelWidth, height: reportedPanelHeight)
         case .collapsing:
             // The click that initiated collapse already reached its target.

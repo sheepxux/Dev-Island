@@ -47,18 +47,34 @@ extension Palette {
         /// Shadow ink for objects lifted off the light ground (the Welcome
         /// coaching card); callers set the opacity per layer.
         static let shadow = Sand.s1000.color
-        /// The full-screen Welcome stage (`WelcomeTutorialCanvas`): a light
-        /// wash from `stage` at the top to `stageDeep` at the bottom, nearly
-        /// opaque so the desktop only ghosts through; the real island and
-        /// menu bar sit above it. `stageBloom` is the one highlight painted
-        /// on the wash, centered on whatever the tour points at.
-        static let stage = Sand.s50.opacity(0.96).color
-        static let stageDeep = Sand.s150.opacity(0.97).color
-        static let stageBloom = Sand.s0.color
-        /// Guidance marks on the stage: the breathing ring around the panel
-        /// and the connector to the card. A quiet ink, stronger under
-        /// Increase Contrast.
-        static let guide = adaptive(standard: Sand.s900.opacity(0.55), increased: Sand.s900.opacity(0.85))
+        /// The Welcome stage (`WelcomeTutorialCanvas`): a light, see-through
+        /// wash from the menu bar's lower edge to the bottom of the screen, so
+        /// the user's desktop ghosts through (2026-09-24, replacing the 0.96
+        /// sheet and its bloom). Opaque under Reduce Transparency. No text
+        /// ever sits on it; every string lives on the card's opaque `canvas`.
+        /// Tune alpha only, never the stops: s150/s200 read grey, not light.
+        static let stage = translucent(standard: Sand.s50, alpha: 0.70)
+        static let stageDeep = translucent(standard: Sand.s100, alpha: 0.78)
+        /// The dark ground behind whatever the tour points at
+        /// (`WelcomeTutorialCanvas` plate and stem): the expanded panel, or a
+        /// shelf hanging from the band under an in-band target. Read from the
+        /// island's end of the ramp, three steps above the panel (s950, with
+        /// `islandBorder`) so the black island sits on it rather than melting
+        /// into it (judged live 2026-09-24: on s850 the collapsed island and
+        /// its shelf read as one blob). Nearly opaque so the pulse's contrast
+        /// never depends on the desktop and no text ghosts through; opaque
+        /// under Reduce Transparency; one step darker under Increase
+        /// Contrast. Never text.
+        static let stagePlate = translucent(
+            standard: Sand.s800,
+            increased: Sand.s850,
+            alpha: 0.97,
+            increasedAlpha: 1.0
+        )
+        /// The light pulse travelling the stem toward the card
+        /// (`WelcomeTutorialCanvas`). A mark, never text: over 10:1 on
+        /// `stagePlate` whatever the desktop, higher under Increase Contrast.
+        static let stageSignal = Sand.s50.color
 
         // Signals on the light ground
         static let attention = Signal.attentionFill.color
@@ -91,6 +107,28 @@ extension Palette {
                     : standard.nsColor
             })
         }
+
+        /// See-through stage surfaces. Reduce Transparency is the system
+        /// switch that governs translucent surfaces, so it makes them opaque;
+        /// Increase Contrast moves lightness one step, as `adaptive` does.
+        private static func translucent(
+            standard: OKLCH,
+            increased: OKLCH? = nil,
+            alpha: Double,
+            increasedAlpha: Double? = nil
+        ) -> Color {
+            Color(nsColor: NSColor(name: nil) { _ in
+                let increasedContrast = InterfaceContrastPolicy.systemPrefersIncreasedContrast
+                let base = increasedContrast ? (increased ?? standard) : standard
+                let resolvedAlpha: Double
+                if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
+                    resolvedAlpha = 1
+                } else {
+                    resolvedAlpha = increasedContrast ? (increasedAlpha ?? alpha) : alpha
+                }
+                return base.opacity(resolvedAlpha).nsColor
+            })
+        }
     }
 }
 
@@ -116,10 +154,17 @@ enum WindowPaletteContrast {
     static let canvas = Sand.s50.hex
     static let canvasDeep = Sand.s100.hex
     static let surface = Sand.s0.hex
-    /// The Welcome stage's opaque stops; the wash is nearly opaque, so these
-    /// bound the ground every mark on it sits on.
+    /// The Welcome stage's opaque stops: the wash is see-through, so these
+    /// are the grounds it becomes under Reduce Transparency. No text sits on
+    /// them, but they stay inside the ink ratios so the sheet is never a
+    /// surprise.
     static let stage = Sand.s50.hex
-    static let stageDeep = Sand.s150.hex
+    static let stageDeep = Sand.s100.hex
+    /// The plate the tour's pulse travels on, and the island that sits on it.
+    static let stagePlate = Sand.s800.hex
+    static let stagePlateIncreased = Sand.s850.hex
+    static let stageSignal = Sand.s50.hex
+    static let islandOnStage = Sand.s950.hex
     static let ink = Sand.s900.hex
     static let onInk = Sand.s50.hex
     static let textSecondary = Sand.s700.hex

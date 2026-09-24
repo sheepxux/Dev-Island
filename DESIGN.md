@@ -58,11 +58,18 @@ Increase Contrast, which only adapts role tokens.
 ## Where decisions are recorded
 
 - Welcome is a full-screen tutorial over the real desktop (owner decision,
-  2026-09-23): a light wash (`stage` → `stageDeep`) with one bloom below
-  the menu bar and the island; the example sessions, approval and question
-  are shown on the real island (`IslandCoordinator.tutorialDemo`) and
-  answered there; one coaching card carries all seven steps with a
-  breathing ring, a travelling connector point and staged text. Contract:
+  2026-09-23; stage redesigned 2026-09-24). The tour window stops at the
+  menu bar's lower edge and never paints inside the band, so the menu bar
+  is native on every wallpaper. The stage is a see-through wash
+  (`stage` → `stageDeep`, Sand s50 · 0.70 → s100 · 0.78) the desktop ghosts
+  through; whatever the tour points at sits on one charcoal plate
+  (`stagePlate`, s800) that hangs from the band and morphs with the island;
+  a 2pt stem in the plate's colour drops to a paper caption card and one
+  light pulse (`stageSignal`) travels it on the island's own 1.8s clock.
+  The example sessions, approval and question are shown on the real island
+  (`IslandCoordinator.tutorialDemo`) and answered there; one caption card
+  (eyebrow, title, lead, one primary, a seven-mark ledger) carries all seven
+  steps with staged text. No bloom, no ring, no blur. Contract:
   `docs/INTERFACE_CONTRACT.md`, section "Welcome 全屏分步教程".
 - The setup steps keep the owner-approved "float" column (2026-09-20): one
   central 520pt column, one title, one sentence, one primary action. The

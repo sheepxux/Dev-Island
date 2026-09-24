@@ -6,9 +6,13 @@ public extension Notification.Name {
 }
 
 /// The Welcome tour's window: since 2026-09-23 a borderless sheet over the
-/// whole screen the island lives on. It floats above ordinary windows but
-/// below the menu bar and the island, so the tutorial can point at the real
-/// island and the real menu-bar item while everything else is dimmed.
+/// screen the island lives on, stopping at the menu bar's lower edge. It
+/// floats above ordinary windows but below the menu bar and the island, so
+/// the tutorial can hang its plate under the real island and the real
+/// menu-bar item while the desktop ghosts through a light wash. The
+/// menu-bar band is left alone: macOS 26 draws the menu bar transparently
+/// over whatever sits beneath it, and a light window there washed the
+/// menu-bar icons away (2026-09-24).
 public final class OnboardingWindow: NSWindow {
     public static let completionKey = "island.didCompleteFirstLaunch"
 
@@ -31,7 +35,7 @@ public final class OnboardingWindow: NSWindow {
         self.anchors = anchors
         self.finishHandler = onFinish
         super.init(
-            contentRect: screen.frame,
+            contentRect: anchors.stageFrame,
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -57,7 +61,7 @@ public final class OnboardingWindow: NSWindow {
                 }
             }
         )
-        setFrame(screen.frame, display: false)
+        setFrame(anchors.stageFrame, display: false)
     }
 
     /// Route Command-W through the same semantic close path as the custom X

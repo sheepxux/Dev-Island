@@ -2526,24 +2526,47 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 
 ---
 
-## Welcome 全屏分步教程（2026-09-23）
+## Welcome 全屏分步教程（2026-09-23；2026-09-24 舞台改版）
 
 - 用户于 2026-09-23 选定：Welcome 不再是一扇悬浮小窗，而是覆盖岛所在整块屏幕的分步教程。
-  `OnboardingWindow` 的 frame 等于 `screen.frame`，`level = .floating`：在用户的普通窗口之上、
-  菜单栏（`.mainMenu`）与岛（`.statusBar`）之下，所以真实的岛和菜单栏图标始终可见、可点。
-  窗口不可移动、无阴影。舞台是浅色渐变：`Palette.Window.stage`（Sand s50 · 0.96）自上而下到
-  `stageDeep`（Sand s150 · 0.97），近乎不透明、桌面只隐约透出；舞台上只画一层以当前指向目标为
-  中心的 `stageBloom`（Sand s0）光晕；引导描边与连接线用 `guide`（s900 · 0.55，Increase Contrast
-  0.85）。不用毛玻璃，不画其他渐变、色块或弧线。
-- 教程共七步，一张卡片贯穿（页眉/页脚/七格轨道由 `WelcomeTutorialCanvas` 持有）：
+  `OnboardingWindow` 的 frame 等于 `WelcomeTutorialAnchors.stageFrame`（`screen.frame` 去掉顶部菜单栏带，
+  高度为 `screen.frame.height − menuBarHeight`，纯函数 `WelcomeTutorialLayout.stageFrame`），
+  `level = .floating`：在用户的普通窗口之上、菜单栏（`.mainMenu`）与岛（`.statusBar`）之下。macOS 26 的
+  菜单栏是透明的，窗口在菜单栏带内画的任何东西都会透出来（2026-09-24：浅色底把白色菜单栏图标抹掉了），
+  因此教程窗口止于菜单栏下缘、**永不在菜单栏带内绘制**，菜单栏在任何壁纸上都保持原生。
+  窗口不可移动、无阴影。
+- 舞台（2026-09-24 改版，取代 0.96 近不透明底与光晕）只画两样东西：
+  **透视浅底** `Palette.Window.stage`（Sand s50 · 0.70）自上而下到 `stageDeep`（Sand s100 · 0.78），
+  桌面透出、只作纹理不可读；Reduce Transparency 下两档 alpha 均为 1.0（成为不透明的 s50→s100 纸面）；
+  实机调校只调 alpha，不下移色阶。**深色底板** `stagePlate`（Sand s800 · 0.97；Increase Contrast 为
+  s850 · 1.0；Reduce Transparency 为 alpha 1.0；2026-09-24 实机判定 s850 时收起的岛与搁板融成一团，
+  故取岛色阶之上三档）是当前指向区域的背景：`UnevenRoundedRectangle` 只圆下角，
+  顶边恒贴画布 y = 0（菜单栏下缘），像从菜单栏后面伸出来；展开面板时包住面板（四周 `plateInset` 16，
+  下角 38 = `NotchMetrics.panelCornerRadius` 22 + 16），目标在菜单栏带内（收起的岛、状态栏按钮）时是一块
+  40pt 高、下角 20 的搁板（目标两侧各 `shelfInset` 14，并加宽到包含连接线 x），无目标时收回菜单栏带
+  （高度 → 0、淡出）。底板无环、无阴影、无渐变。不再有 `stageBloom` 光晕、`guide` 描边与聚光环；
+  不用毛玻璃，不画其他渐变、色块或弧线。舞台与底板上永远没有文字；所有文字都在卡片的不透明
+  `canvas` 上。
+- 连接线（stem）是 2pt、不透明、与底板同色（`stagePlate`）的竖线，从底板下缘到卡片上缘，长
+  `connectorLength` 28；一枚 2×14 的浅色脉冲 `stageSignal`（Sand s50，底板上 ≥ 10:1）沿线从底板向卡片
+  行进，周期取 `Motion.runningOrbitPeriod`（1.8s），经 `StatusPhase.cyclePhase` 与岛上点阵共用同一
+  墙钟相位；每周期后 25%（`Motion.guideTravelDwell`）隐藏停留，首尾各 10% 行程淡入/淡出
+  （纯函数 `WelcomeTutorialLayout.pulse(phase:)`）。这是舞台上唯一的循环。
+- 教程共七步，一张卡片贯穿（眉标/页脚/七点进度由 `WelcomeTutorialCanvas` 持有）：
   **认识你的岛**（真实岛的紧凑条显示三条示例会话；主动作 `expand(highlighting:)` 被动展开、不抢
   焦点，用户亲手点岛展开同样推进）→ **面板**（示例三行；主动作"给我看一个请求"）→ **轮到你**
   （示例审批请求出现在真实岛的面板里，用户在岛上点「仅允许一次」或「拒绝」；岛播放自己的回执后
-  出现带两个选项的示例提问，用户在岛上选择并提交；随后会话"已继续工作"，卡片给出下一步；岛被
-  Esc/点外部收起时卡片显示"帮我打开"）→ **菜单栏**（收起岛，指示线指向状态栏按钮）→
-  **接入**、**提醒方式**、**点亮你的岛**（设置三步；进入接入步即结束示例，真实岛此后只显示
-  `TaskStore` 的真实内容；最后一步聚光真实的岛）。「跳过演示，直接接入」结束示例、收起岛并进入
-  接入步。示例期间卡片眉标为「示例 · 正显示在你的岛上」。
+  出现带两个选项的示例提问，用户在岛上选择并提交；随后会话"已继续工作"，卡片主动作为「继续」；岛被
+  Esc/点外部收起时卡片显示"帮我打开"）→ **菜单栏**（收起岛，搁板挂在状态栏按钮下方，主动作
+  「开始接入」`"Start setup"`，此步不显示「跳过演示」）→ **接入**、**提醒方式**、**点亮你的岛**
+  （设置三步；进入接入步即结束示例，真实岛此后只显示 `TaskStore` 的真实内容；最后一步搁板再次落在
+  真实的岛下方）。「跳过演示，直接接入」结束示例、收起岛并进入接入步。
+- 卡片（760 / 520 / 32 不变）是纸面说明卡：无图标与 "Dev Island" 页眉、无步骤名页脚、无拉长的分页胶囊；
+  每步都有眉标（示例期间「示例 · 正显示在你的岛上」，其后为步骤名），一个 `display` 标题、一句 `lead`、
+  一个黑色主胶囊，教学列 `minHeight` 152 使第 1–4 步卡片等高；右上角 28pt 关闭按钮（内缩 14）；页脚左侧
+  七个等大 5pt 圆点记录进度（当前 `ink` 实心、已完成 `textTertiary` 实心、未到 `hairlineStrong` 描边），
+  右侧唯一安静动作：第 1–3 步「跳过演示，直接接入」、第 4–5 步无、第 6–7 步「返回」。卡片描边为
+  `Palette.Window.ring`，阴影 `shadow` 0.06 r2 y1 + 0.14 r32 y16。
 - 示例只存在于 `IslandCoordinator.tutorialDemo`（`IslandTutorialDemo`：`AgentTask` /
   `AgentActionRequest` / `AgentQuestion` 等公开值类型，由 `WelcomeDemoContent` 按当前语言构建，
   请求 id 固定、任务 URL 非 `file://`、`currentPhase` 为 nil），永不进入 `TaskStore`、不落库、
@@ -2556,16 +2579,30 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
   引导结束（完成、关闭、Esc、Cmd-W）与画布消失都调用 `endTutorialDemo()`。
 - 锚点由 `WelcomeTutorialAnchors` 承载（屏幕 frame、菜单栏高度、岛轮廓 screen rect、
   状态栏按钮 frame）：`AppDelegate.beginOnboarding` 注入并通过
-  `IslandWindow.onSilhouetteScreenRectChanged` 实时更新，`completeOnboardingFlow` 解除订阅。
-  屏幕坐标换算与聚光灯/卡片/连接线/光晕放置是纯函数 `WelcomeTutorialLayout`，由
-  `WelcomeTutorialLayoutTests` 固定：卡片居中于目标之下并夹在画布边距内、贴右边时连接线
-  避开卡片圆角、卡片超高时贴底且不画连接线、无目标时居中、光晕跟随聚光灯否则落在卡片、
-  呼吸环在 `restOpacity` 与 1 之间、连接线上的点从聚光灯出发到卡片结束。
-- 引导动效：聚光环按 `Motion.guideBreathPeriod` 呼吸、连接线上的点按 `Motion.guideTravelPeriod`
-  行进（`TimelineView`，只改一个小标记的不透明度与位置），卡片文字按 `Motion.stagedReveal` +
-  `stagedRevealStep` 逐行进入；Reduce Motion 下环与点静止、文字只淡入、几何不位移。
-- 菜单栏带内的任何绘制都被菜单栏和岛盖住，指示线止于菜单栏下缘；只有面板延伸到菜单栏
-  以下时聚光环才可见。
+  `IslandWindow.onSilhouetteScreenRectChanged` 实时更新，`bringToFront` 后再读取一次状态栏按钮 frame，
+  `completeOnboardingFlow` 解除订阅。屏幕坐标换算与底板/卡片/连接线放置是纯函数
+  `WelcomeTutorialLayout`，由 `WelcomeTutorialLayoutTests` 固定：带内目标 → 搁板（目标 ±14，0…40，
+  圆角 20）且卡片顶边在阅读线 `readingLine` 68（= 40 + 28）；面板目标 → 包板（±16，底边 +16，
+  圆角 38 = `NotchMetrics.panelCornerRadius` + `plateInset`）且卡片顶边 = 底板下缘 + 28；卡片居中于
+  目标之下并夹在画布边距 24 内；贴右边时连接线离卡片圆角 32 且搁板加宽到包含连接线；卡片超高时贴底
+  且不画连接线；无目标时卡片水平居中、顶边仍在阅读线 68、无底板无连接线；状态栏按钮 rect 为 nil、空或
+  不在菜单栏带内（`usableTarget`）时按无目标处理，绝不在 x = 0 画搁板；脉冲 `pulse(phase:)` 的行程与
+  不透明度、`travelPoint` 从底板出发到卡片结束。
+- 引导动效：首次出现按序进行——窗口 0.18s 淡入 → +0.06s 底板从菜单栏带落下（`Motion.tourStep` 0.24）
+  → +0.30s 连接线从底板向卡片描出（`Motion.guideDraw` 0.22）同时卡片文字按 `Motion.stagedReveal` +
+  `stagedRevealStep` 逐行进入 → 几何静止后（`Motion.guideLoopDelay` = `tourStepDuration` + 0.04）脉冲才
+  开始。换步时：离场文字只淡出不位移（`Motion.tourExit` 0.12）、底板换目标沿 `tourStep` 变形、无目标时
+  沿 `Motion.tourRetract`（0.18）收回菜单栏带、目标回来时底板先无声移到新位置再落下并描出连接线、
+  卡片沿 `tourStep` 移动、进场文字逐行进入、脉冲在 `guideLoopDelay` 后恢复且不重置相位；底板因岛自身
+  展开/收起而变形时沿 `Motion.islandMorph(expanding:)`，与面板同曲线。所有单次动效 ≤ 0.30s，退场短于
+  进场，键盘与点击相同。Reduce Motion 下：几何一律不位移，底板出现/消失为 0.14s 溶解，连接线直接画满，
+  脉冲静止于卡片端、不透明度 1，文字只淡入。
+- 菜单栏带内不绘制任何东西：收起的岛与状态栏按钮只由贴着菜单栏下缘的搁板从下方指示；只有面板
+  延伸到菜单栏以下时底板才把它包住。指针悬停使收起的岛向菜单栏下方多出 hover boost（2pt）时，
+  目标仍按带内处理（`WelcomeTutorialLayout.inBandTolerance`），搁板与卡片不得随悬停抖动。
+  为让底板与面板同步变形，`IslandRootView` 自 `.expanding` 阶段起即上报面板轮廓（面板内控件仍到
+  `.expanded` 才可点，提前落在该区域的点击被岛吞掉而不会误投递到下层 App）；收起时仍立即回报
+  紧凑条。
 - 岛收起时若有 Settings、Welcome 或 DEBUG sandbox 窗口可见，App 保持激活并把键盘交还该
   窗口，而不是把激活让回用户的编辑器（`IslandWindowKeyboardFocusPolicy.shouldReleaseActivation`）。
 
@@ -3192,3 +3229,4 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-09-23 | v6.96.0 | **被放弃的退出后再次可退**:`AppTerminationCoordinator` 在一个 flight 已 reply 而 AppKit 再次询问时释放旧 token 并重新起一轮 cleanup/timeout/reply（进行中的 flight 仍共享同一 pending reply，迟到回调继续被 token 拒绝）；此前被取消的 Apple event Quit 会让之后每次菜单退出永久无响应 | `[S][contract] reliability: answer a repeated Quit after an abandoned termination` |
 | 2026-09-23 | v6.97.0 | **全屏分步 Welcome 教程**:`OnboardingWindow` 覆盖岛所在整块屏幕并置于菜单栏与岛之下（`.floating`），三个指向真实岛/面板/菜单栏图标的教学步骤先于原有四步，`WelcomeTutorialAnchors` 实时跟随岛轮廓，`WelcomeTutorialLayout` 纯函数放置聚光灯/卡片/连接线并有回归；岛收起时可见的 Settings/Welcome 窗口保留激活并取回键盘 | `[C][contract] feat(app): coach the real island in a full-screen Welcome` |
 | 2026-09-23 | v6.98.0 | **示例进真实岛 + 浅色渐变舞台 + 单一教学卡片**:`IslandCoordinator.tutorialDemo` 在 `IslandRootView` 的 presentation 接缝替换可见内容并拦截示例请求的回答，真实岛用同一套 `NotchPanelView`/`ActionRequestSurface` 显示示例审批与带选项的提问，永不进入 `TaskStore`；760×530 设置小窗与岛标本退役，七步共用一张卡片；舞台改为 `stage`→`stageDeep` 浅渐变加 `stageBloom` 光晕，`guide` 呼吸环与行进点、`stagedReveal` 逐行进入 | `[C][contract] feat(app): show the Welcome example on the real island over a light stage` |
+| 2026-09-24 | v6.99.0 | **Welcome 舞台改版：透视浅底 + 深色底板 + 说明卡**：教程窗口止于菜单栏下缘（`stageFrame`）、带内不绘制；`stage`→`stageDeep` 改为 s50 · 0.70 → s100 · 0.78 透视浅底（Reduce Transparency 为 1.0）；`stagePlate`（s800 · 0.97 / Increase Contrast s850）作为指向区域的深色底板，随岛变形、无目标时收回；2pt 同色连接线与 `stageSignal` 脉冲共用 `runningOrbitPeriod` 相位；`stageBloom`、`guide`、聚光环、`guideBreathPeriod`、`guideTravelPeriod` 退役；卡片去页眉页脚名、等大进度点、第 4 步「开始接入」 | `[C][contract] feat(app): stage the Welcome tour on a see-through wash with a dark plate` |

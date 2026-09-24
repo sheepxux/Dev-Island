@@ -666,6 +666,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         onboardingWindow = window
         window.bringToFront()
+        // The menu bar lays its items out on its own schedule; read the
+        // button's frame once more now that the tour is up so the menu-bar
+        // step points at the item's settled position.
+        DispatchQueue.main.async { [weak self, weak anchors] in
+            anchors?.statusItemRect = self?.statusItemController?.buttonScreenFrame
+        }
     }
 
     /// Finish one Welcome flow with an atomic Dock handoff. The old lease is

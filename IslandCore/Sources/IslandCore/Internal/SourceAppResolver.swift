@@ -49,6 +49,19 @@ enum SourceAppResolver {
         return candidates(for: source).first(where: running.contains)
     }
 
+    /// The running app the resolver would activate for `task`, so the caller
+    /// can ask `SessionDeepLinkPolicy` whether that app can open the exact
+    /// session instead of merely coming forward.
+    @MainActor
+    static func resolvedHostBundleIdentifier(for task: AgentTask) -> String? {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        return resolveBundleId(
+            source: task.source,
+            running: running,
+            preferredTerminalBundleIdentifier: task.jumpContext?.terminalBundleIdentifier
+        )
+    }
+
     /// Activate the resolved app. Returns false when nothing suitable is
     /// running (caller falls back to `openTaskInBrowser` behavior).
     @MainActor

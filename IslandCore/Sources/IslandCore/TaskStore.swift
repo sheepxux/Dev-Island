@@ -924,12 +924,24 @@ public final class TaskStore {
     /// Jump back to the session behind a task (contract v1.4.0, J2).
     /// Managed terminal Hooks prefer the actual host that emitted the event;
     /// tmux sessions select their original window and pane before activation.
-    /// Without live context, falls back to the source app / running terminal,
-    /// then to `openTaskInBrowser` (local task → Finder, Manus → browser).
-    /// Returns true when a running host app was asked to activate, so the
-    /// caller can leave activation with it (v7.0.0).
+    /// When the resolved host app has a reviewed deep link for this source
+    /// (Codex Desktop threads, Claude Desktop Code sessions, Cursor
+    /// workspaces), the link opens the exact session; Launch Services brings
+    /// the app forward as part of that (v7.1.0). Without live context, falls
+    /// back to the source app / running terminal, then to `openTaskInBrowser`
+    /// (local task → Finder, Manus → browser). Returns true when a running
+    /// host app was asked to activate, so the caller can leave activation
+    /// with it (v7.0.0).
     @discardableResult
     public func jumpToTask(_ task: AgentTask) -> Bool {
+        if let host = SourceAppResolver.resolvedHostBundleIdentifier(for: task),
+           let link = SessionDeepLinkPolicy.deepLink(for: task, hostBundleIdentifier: host),
+           openDestination(link) {
+            IslandLogger.store.debug(
+                "Opened session deep link for \(task.source, privacy: .public) session"
+            )
+            return true
+        }
         if SourceAppResolver.activateApp(for: task) {
             IslandLogger.store.debug(
                 "Activated host app for \(task.source, privacy: .public) session"

@@ -395,6 +395,12 @@ public final class TaskStore {
     public func jumpToTask(source: String, id: String)
     /// 返回 true 表示已请求某个正在运行的宿主 App 激活（v7.0.0）；调用方据此把
     /// 激活留给宿主，而不是在收起岛时交还给点击前的前台 App。
+    /// v7.1.0：若解析出的宿主对该来源有经审阅的深链接（`SessionDeepLinkPolicy`：
+    /// Codex Desktop `codex://threads/<会话 id>`、Claude Desktop
+    /// `claude://claude.ai/epitaxy/<app 会话 id>`（由 App 自己的会话索引按 CLI 会话 id 查得）、
+    /// Cursor `cursor://file/<已验证的项目目录>`），先经同一个 `openDestination`
+    /// 打开该链接以定位到具体会话；链接只由已验证的 UUID 形 id / 目录拼装，
+    /// 绝不使用 `taskURL` 或任何厂商文本；终端宿主与其他来源仍走 App 级激活。
     @discardableResult
     public func jumpToTask(_ task: AgentTask) -> Bool
 
@@ -3234,3 +3240,4 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-09-23 | v6.98.0 | **示例进真实岛 + 浅色渐变舞台 + 单一教学卡片**:`IslandCoordinator.tutorialDemo` 在 `IslandRootView` 的 presentation 接缝替换可见内容并拦截示例请求的回答，真实岛用同一套 `NotchPanelView`/`ActionRequestSurface` 显示示例审批与带选项的提问，永不进入 `TaskStore`；760×530 设置小窗与岛标本退役，七步共用一张卡片；舞台改为 `stage`→`stageDeep` 浅渐变加 `stageBloom` 光晕，`guide` 呼吸环与行进点、`stagedReveal` 逐行进入 | `[C][contract] feat(app): show the Welcome example on the real island over a light stage` |
 | 2026-09-24 | v6.99.0 | **Welcome 舞台改版：透视浅底 + 深色底板 + 说明卡**：教程窗口止于菜单栏下缘（`stageFrame`）、带内不绘制；`stage`→`stageDeep` 改为 s50 · 0.70 → s100 · 0.78 透视浅底（Reduce Transparency 为 1.0）；`stagePlate`（s800 · 0.97 / Increase Contrast s850）作为指向区域的深色底板，随岛变形、无目标时收回；2pt 同色连接线与 `stageSignal` 脉冲共用 `runningOrbitPeriod` 相位；`stageBloom`、`guide`、聚光环、`guideBreathPeriod`、`guideTravelPeriod` 退役；卡片去页眉页脚名、等大进度点、第 4 步「开始接入」 | `[C][contract] feat(app): stage the Welcome tour on a see-through wash with a dark plate` |
 | 2026-09-24 | v7.0.0 | **岛上跳转与手形光标可靠性**：`TaskStore.jumpToTask(_:)` 返回是否已请求宿主 App 激活（`@discardableResult`），`SourceAppResolver` 改用协作式激活（`yieldActivation` + `activate(from:)`，失败回退 `activate()`）；行点击命中宿主后岛发出 `islandActivationHandedOff`，`IslandWindow.handOffActivation()` 让随后的收起不再把激活交还给点击前的 App；`PointingHandCursor` 经 `IslandCursorAffordance` 登记悬停中的控件，`IslandWindow` 轮询在悬停控件期间以 25Hz 重设手形并新增 `hoveringControl` 节律参数（`testExpandedPointerOverAControlKeepsTheHandAlive`），未悬停时仍为 1s 看门狗 | `[S][contract] fix(app): keep the pointing hand and the jump's activation on the island` |
+| 2026-09-24 | v7.1.0 | **跳转到具体会话（深链接）**：`SessionDeepLinkPolicy` 在解析出的宿主为 Codex Desktop / Claude Desktop / Cursor 时拼装 `codex://threads/<id>`、`claude://claude.ai/epitaxy/<app 会话 id>`（`ClaudeDesktopSessionIndex` 只读 App 自己的会话索引中 `sessionId`/`cliSessionId` 两个键，≤ 512 个文件、每个 ≤ 256 KiB）、`cursor://file/<目录>`（目录须先通过 `TaskDestinationPolicy`）；`jumpToTask` 先经注入的 `openDestination` 打开链接再回退 App 级激活；id 必须是 UUID 形，`taskURL` 与厂商文本永不进入链接（`SessionDeepLinkPolicyTests`） | `[S][contract] feat(core): open the exact session through vendor deep links` |

@@ -926,14 +926,18 @@ public final class TaskStore {
     /// tmux sessions select their original window and pane before activation.
     /// Without live context, falls back to the source app / running terminal,
     /// then to `openTaskInBrowser` (local task → Finder, Manus → browser).
-    public func jumpToTask(_ task: AgentTask) {
+    /// Returns true when a running host app was asked to activate, so the
+    /// caller can leave activation with it (v7.0.0).
+    @discardableResult
+    public func jumpToTask(_ task: AgentTask) -> Bool {
         if SourceAppResolver.activateApp(for: task) {
             IslandLogger.store.debug(
                 "Activated host app for \(task.source, privacy: .public) session"
             )
-            return
+            return true
         }
         openTask(task)
+        return false
     }
 
     public func jumpToTask(source: String, id: String) {

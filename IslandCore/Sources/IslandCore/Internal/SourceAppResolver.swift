@@ -71,10 +71,24 @@ enum SourceAppResolver {
                 _ = TmuxSessionNavigator.selectOriginalPane(context)
                 _ = await MainActor.run {
                     NSWorkspace.shared.runningApplications
-                        .first(where: { $0.bundleIdentifier == bundleId })?
-                        .activate()
+                        .first(where: { $0.bundleIdentifier == bundleId })
+                        .map(activate)
                 }
             }
+            return true
+        }
+        return activate(app)
+    }
+
+    /// Cooperative activation (macOS 14+): Dev Island is the active app at
+    /// this point, because the click that asked for the jump activated it,
+    /// so it yields to the host first and asks the host to take activation
+    /// from it. A plain `activate()` is only honoured when the system feels
+    /// like it; the fallback keeps older behaviour.
+    @MainActor
+    private static func activate(_ app: NSRunningApplication) -> Bool {
+        NSApplication.shared.yieldActivation(to: app)
+        if app.activate(from: NSRunningApplication.current, options: []) {
             return true
         }
         return app.activate()

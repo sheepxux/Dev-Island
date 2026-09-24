@@ -1,5 +1,11 @@
 import AppKit
 import SwiftUI
+
+public extension Notification.Name {
+    /// Posted by the island when a row tap activated the session's host app,
+    /// so the collapse that follows leaves activation with that app.
+    static let islandActivationHandedOff = Notification.Name("island.activationHandedOff")
+}
 import IslandCore
 
 /// Single borderless NSWindow that hosts both bar and panel modes via
@@ -40,6 +46,10 @@ public final class IslandWindow: NSWindow {
     /// never became key.
     private var activatedByDirectEngagement = false
     private var applicationToRestoreAfterEngagement: NSRunningApplication?
+    /// Set when a row tap activated the session's host app: the next release
+    /// must leave activation with that app rather than restoring or
+    /// deactivating (either hands the front back to the previous app).
+    private var activationHandedOff = false
 
     public override var canBecomeKey: Bool {
         keyboardInteractionEnabled
@@ -166,6 +176,14 @@ public final class IslandWindow: NSWindow {
     /// the panel collapses. The island still owes the user's editor its focus
     /// back in that case; only a conventional surface the user moved on to
     /// may keep the app active.
+    /// A row tap just activated the session's host app (`TaskStore.jumpToTask`).
+    /// The collapse that follows must not hand activation back to whatever
+    /// was frontmost before the click, or the jump is undone.
+    public func handOffActivation() {
+        applicationToRestoreAfterEngagement = nil
+        activationHandedOff = true
+    }
+
     public func releaseKeyboardInteraction() {
         let keyWindow = NSApp.keyWindow
         let conventionalSurface = Self.visibleConventionalSurface()
@@ -186,8 +204,17 @@ public final class IslandWindow: NSWindow {
             resignKey()
         }
         let application = applicationToRestoreAfterEngagement
+        let handedOff = activationHandedOff
         applicationToRestoreAfterEngagement = nil
         activatedByDirectEngagement = false
+        activationHandedOff = false
+        // After a jump the host app already holds our yielded activation;
+        // both restoring the previous app and `deactivate()` would hand the
+        // front straight back to it (seen live 2026-09-24: the row's session
+        // came forward, then the editor took it back).
+        if handedOff {
+            return
+        }
         // A one-sided deactivate leaves Dev Island frontmost on macOS 14+.
         // Mirror AppDelegate's Dock-lease release: yield to the app that had
         // focus, then ask it to take activation from us.
@@ -344,22 +371,24 @@ public final class IslandWindow: NSWindow {
         // because move monitors and silhouette changes own the immediate
         // transitions.
         let coordinatorMode = IslandCoordinator.shared.mode
+        let hoveringControl = IslandCursorAffordance.wantsPointingHand
         let wantedInterval = IslandWindowMouseTrackingPolicy.interval(
             pointerInside: inside,
-            mode: coordinatorMode
+            mode: coordinatorMode,
+            hoveringControl: hoveringControl
         )
         if wantedInterval != mouseTrackingInterval {
             scheduleMouseTrackingTimer(interval: wantedInterval)
         }
 
         // Pointing-hand affordance for the collapsed bar (the whole bar is
-        // one big "open the panel" button). Driven from this poll — the
-        // SwiftUI-side NSCursor push/pop was unreliable in this borderless,
-        // non-key window (AppKit cursorUpdate kept resetting to arrow, and
-        // the pop leg never ran after click-to-expand). Writes fire on
-        // transitions only: while expanded, panel sub-elements own the
-        // cursor via `.pointingHandCursor()`.
-        let wantsHand = inside && coordinatorMode == .collapsed
+        // one big "open the panel" button) and for any panel control that
+        // reports hover. Driven from this poll — the SwiftUI-side NSCursor
+        // push/pop was unreliable in this borderless, non-key window (AppKit
+        // cursorUpdate kept resetting to arrow, and the pop leg never ran
+        // after click-to-expand), and a one-shot set() from a row's onHover
+        // was clobbered by the active app within a second.
+        let wantsHand = inside && (coordinatorMode == .collapsed || hoveringControl)
         if wantsHand {
             // Re-assert EVERY tick, not just on the transition: as a
             // non-active app our set() can be clobbered whenever the
@@ -513,16 +542,20 @@ enum IslandWindowMouseTrackingPolicy {
     static let activeInterval: TimeInterval = 0.04
     /// Boundary crossings are event-driven. This only catches state changes
     /// that arrive without a mouse event or while a monitor is starved. The
-    /// expanded panel always uses this cadence: its controls own their own
-    /// cursors, so polling them at the compact island's 25 Hz would be pure
-    /// main-thread work while the user is reading.
+    /// expanded panel uses this cadence except while a control reports
+    /// hover: polling at the compact island's 25 Hz while the user is only
+    /// reading would be pure main-thread work.
     static let idleWatchdogInterval: TimeInterval = 1.0
 
     static func interval(
         pointerInside: Bool,
-        mode: IslandCoordinator.Mode
+        mode: IslandCoordinator.Mode,
+        hoveringControl: Bool = false
     ) -> TimeInterval {
-        pointerInside && mode == .collapsed
+        // The expanded panel spins fast only while a control reports hover
+        // (the hand has to survive the active app's cursor writes); while
+        // the user reads, the watchdog is enough.
+        (pointerInside && mode == .collapsed) || (pointerInside && hoveringControl)
             ? activeInterval
             : idleWatchdogInterval
     }

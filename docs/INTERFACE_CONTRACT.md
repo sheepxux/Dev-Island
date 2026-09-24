@@ -393,7 +393,10 @@ public final class TaskStore {
     /// (本地任务 → Finder 打开项目目录,Manus → 浏览器)。
     public func jumpToTask(id: String)
     public func jumpToTask(source: String, id: String)
-    public func jumpToTask(_ task: AgentTask)
+    /// 返回 true 表示已请求某个正在运行的宿主 App 激活（v7.0.0）；调用方据此把
+    /// 激活留给宿主，而不是在收起岛时交还给点击前的前台 App。
+    @discardableResult
+    public func jumpToTask(_ task: AgentTask) -> Bool
 
     /// 通过 Manus API 停止任务。
     public func stopTask(id: String) async throws
@@ -3230,3 +3233,4 @@ public struct HermeticLocalListenerReadinessHarness: Sendable {
 | 2026-09-23 | v6.97.0 | **全屏分步 Welcome 教程**:`OnboardingWindow` 覆盖岛所在整块屏幕并置于菜单栏与岛之下（`.floating`），三个指向真实岛/面板/菜单栏图标的教学步骤先于原有四步，`WelcomeTutorialAnchors` 实时跟随岛轮廓，`WelcomeTutorialLayout` 纯函数放置聚光灯/卡片/连接线并有回归；岛收起时可见的 Settings/Welcome 窗口保留激活并取回键盘 | `[C][contract] feat(app): coach the real island in a full-screen Welcome` |
 | 2026-09-23 | v6.98.0 | **示例进真实岛 + 浅色渐变舞台 + 单一教学卡片**:`IslandCoordinator.tutorialDemo` 在 `IslandRootView` 的 presentation 接缝替换可见内容并拦截示例请求的回答，真实岛用同一套 `NotchPanelView`/`ActionRequestSurface` 显示示例审批与带选项的提问，永不进入 `TaskStore`；760×530 设置小窗与岛标本退役，七步共用一张卡片；舞台改为 `stage`→`stageDeep` 浅渐变加 `stageBloom` 光晕，`guide` 呼吸环与行进点、`stagedReveal` 逐行进入 | `[C][contract] feat(app): show the Welcome example on the real island over a light stage` |
 | 2026-09-24 | v6.99.0 | **Welcome 舞台改版：透视浅底 + 深色底板 + 说明卡**：教程窗口止于菜单栏下缘（`stageFrame`）、带内不绘制；`stage`→`stageDeep` 改为 s50 · 0.70 → s100 · 0.78 透视浅底（Reduce Transparency 为 1.0）；`stagePlate`（s800 · 0.97 / Increase Contrast s850）作为指向区域的深色底板，随岛变形、无目标时收回；2pt 同色连接线与 `stageSignal` 脉冲共用 `runningOrbitPeriod` 相位；`stageBloom`、`guide`、聚光环、`guideBreathPeriod`、`guideTravelPeriod` 退役；卡片去页眉页脚名、等大进度点、第 4 步「开始接入」 | `[C][contract] feat(app): stage the Welcome tour on a see-through wash with a dark plate` |
+| 2026-09-24 | v7.0.0 | **岛上跳转与手形光标可靠性**：`TaskStore.jumpToTask(_:)` 返回是否已请求宿主 App 激活（`@discardableResult`），`SourceAppResolver` 改用协作式激活（`yieldActivation` + `activate(from:)`，失败回退 `activate()`）；行点击命中宿主后岛发出 `islandActivationHandedOff`，`IslandWindow.handOffActivation()` 让随后的收起不再把激活交还给点击前的 App；`PointingHandCursor` 经 `IslandCursorAffordance` 登记悬停中的控件，`IslandWindow` 轮询在悬停控件期间以 25Hz 重设手形并新增 `hoveringControl` 节律参数（`testExpandedPointerOverAControlKeepsTheHandAlive`），未悬停时仍为 1s 看门狗 | `[S][contract] fix(app): keep the pointing hand and the jump's activation on the island` |

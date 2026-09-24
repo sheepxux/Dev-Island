@@ -54,4 +54,25 @@ final class IslandWindowMouseTrackingPolicyTests: XCTestCase {
             IslandWindowMouseTrackingPolicy.idleWatchdogInterval
         )
     }
+
+    func testExpandedPointerOverAControlKeepsTheHandAlive() {
+        // A row or button under the pointer needs the hand re-asserted at
+        // the compact cadence; a pointer outside the silhouette never does.
+        XCTAssertEqual(
+            IslandWindowMouseTrackingPolicy.interval(
+                pointerInside: true,
+                mode: .expanded,
+                hoveringControl: true
+            ),
+            IslandWindowMouseTrackingPolicy.activeInterval
+        )
+        XCTAssertEqual(
+            IslandWindowMouseTrackingPolicy.interval(
+                pointerInside: false,
+                mode: .expanded,
+                hoveringControl: true
+            ),
+            IslandWindowMouseTrackingPolicy.idleWatchdogInterval
+        )
+    }
 }

@@ -3,6 +3,26 @@ import AppKit
 
 // Shared interaction affordances for elements inside the island window.
 
+/// Which panel controls the pointer is over right now. As a non-active
+/// app our `NSCursor.set()` is clobbered whenever the active app or the
+/// system touches the cursor, with no notification; `IslandWindow`'s mouse
+/// poll re-asserts the hand while this is non-empty (2026-09-24: hovering a
+/// session row showed the hand for a second, then an arrow).
+@MainActor
+enum IslandCursorAffordance {
+    private(set) static var hoveredControls: Set<UUID> = []
+
+    static var wantsPointingHand: Bool { !hoveredControls.isEmpty }
+
+    static func setHovering(_ hovering: Bool, control: UUID) {
+        if hovering {
+            hoveredControls.insert(control)
+        } else {
+            hoveredControls.remove(control)
+        }
+    }
+}
+
 /// Hover-driven pointing-hand cursor for interactive panel elements.
 ///
 /// Uses `NSCursor.set()` rather than the push/pop stack: our borderless,
@@ -10,18 +30,28 @@ import AppKit
 /// so a push whose matching pop is skipped (click morphs the hierarchy
 /// before un-hover fires) permanently corrupts the stack. `set()` is
 /// idempotent and self-healing — the window's mouse-tracking poll resets
-/// the cursor at every silhouette boundary crossing anyway.
+/// the cursor at every silhouette boundary crossing anyway, and keeps
+/// re-asserting the hand while any control reports hover
+/// (`IslandCursorAffordance`).
 struct PointingHandCursor: ViewModifier {
     var isEnabled = true
 
+    @State private var control = UUID()
+
     func body(content: Content) -> some View {
-        content.onHover { hovering in
-            if hovering && isEnabled {
-                NSCursor.pointingHand.set()
-            } else {
-                NSCursor.arrow.set()
+        content
+            .onHover { hovering in
+                let wantsHand = hovering && isEnabled
+                IslandCursorAffordance.setHovering(wantsHand, control: control)
+                if wantsHand {
+                    NSCursor.pointingHand.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
             }
-        }
+            .onDisappear {
+                IslandCursorAffordance.setHovering(false, control: control)
+            }
     }
 }
 

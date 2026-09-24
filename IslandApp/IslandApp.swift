@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenChangeObserver: NSObjectProtocol?
     private var openSettingsObserver: NSObjectProtocol?
     private var openOnboardingObserver: NSObjectProtocol?
+    private var activationHandoffObserver: NSObjectProtocol?
 
     #if DEV_ISLAND_PERFORMANCE_QA
     /// A recursive main-queue work item drives the isolated transition
@@ -227,6 +228,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // A row tap that reached its session's host app owns the activation
+        // hand-off; the collapse must not restore the previous app.
+        activationHandoffObserver = NotificationCenter.default.addObserver(
+            forName: .islandActivationHandedOff,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.islandWindow?.handOffActivation()
+            }
+        }
+
         openOnboardingObserver = NotificationCenter.default.addObserver(
             forName: .islandOpenOnboardingRequested,
             object: nil,
@@ -371,6 +384,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = openSettingsObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = activationHandoffObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = openOnboardingObserver {

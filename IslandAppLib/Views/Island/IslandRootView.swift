@@ -627,7 +627,11 @@ struct IslandRootView: View {
             return
         }
         coordinator.clearHighlight()
-        store.jumpToTask(task)
+        if store.jumpToTask(task) {
+            // The host app now owns activation; the collapse below must not
+            // hand it back to whatever was frontmost before the click.
+            NotificationCenter.default.post(name: .islandActivationHandedOff, object: nil)
+        }
         coordinator.collapse()
     }
 

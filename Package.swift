@@ -43,7 +43,7 @@ let package = Package(
         // Exact pin: Sparkle is part of the app's update trust boundary.
         // Version changes must be reviewed together with the framework-copy,
         // signing, appcast-generation, and security-invariant checks.
-        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.9.6"),
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.10.0"),
     ],
     targets: [
         // ── C 侧：前端 App ────────────────────────────────────────────

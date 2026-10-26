@@ -1,5 +1,5 @@
 {
-  "originHash" : "20e6d993d807813e255d58990f108c45228ab9246c678462bc529b44f175afaa",
+  "originHash" : "c801061134c33fdf20e2d56bb52234bb89333c003edd7b4f1298ad98c782e68f",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephencelis/CSQLite",
       "state" : {
-        "revision" : "8ad83035460a3d1029a2c5a0cca4f980297a9ca2",
-        "version" : "3.53.3"
+        "revision" : "3fecd9f88f50c3a9baf3456e7d4af1b16e71dc23",
+        "version" : "3.53.4"
       }
     },
     {
@@ -33,17 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sparkle-project/Sparkle.git",
       "state" : {
-        "revision" : "ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a",
-        "version" : "2.9.6"
-      }
-    },
-    {
-      "identity" : "sqlcipher.swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/sqlcipher/SQLCipher.swift",
-      "state" : {
-        "revision" : "f879fffaaa3ad3541a77830daad4a28726dfa927",
-        "version" : "4.18.0"
+        "revision" : "eef1a539a373c1f1a320624b1130fc5de7b2e100",
+        "version" : "2.10.0"
       }
     },
     {
@@ -51,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephencelis/SQLite.swift.git",
       "state" : {
-        "revision" : "964c300fb0736699ce945c9edb56ecd62eba27a3",
-        "version" : "0.16.0"
+        "revision" : "4114679379eeb4538638f49ec14e1854dd9cf73c",
+        "version" : "0.17.0"
       }
     },
     {
@@ -107,6 +98,15 @@
       "state" : {
         "revision" : "6675bc0ff86e61436e615df6fc5174e043e57924",
         "version" : "1.4.1"
+      }
+    },
+    {
+      "identity" : "swift-configuration",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-configuration.git",
+      "state" : {
+        "revision" : "4e916072eb34f3c136ae64bd2859d6072cdb1b6e",
+        "version" : "1.3.0"
       }
     },
     {

@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Dev Island — flat layered app icon</title>
+<g id="body" fill="#DED3BF">
+<rect x="100" y="100" width="824" height="824" rx="180"/>
+</g>
+<g id="screen" fill="#191D1B">
+<rect x="188" y="244" width="648" height="536" rx="62"/>
+</g>
+<g id="glyph" fill="#91E6A2">
+<rect x="236" y="404" width="24" height="24"/>
+<rect x="260" y="404" width="24" height="24"/>
+<rect x="284" y="404" width="24" height="24"/>
+<rect x="308" y="404" width="24" height="24"/>
+<rect x="236" y="428" width="24" height="24"/>
+<rect x="332" y="428" width="24" height="24"/>
+<rect x="236" y="452" width="24" height="24"/>
+<rect x="332" y="452" width="24" height="24"/>
+<rect x="236" y="476" width="24" height="24"/>
+<rect x="332" y="476" width="24" height="24"/>
+<rect x="236" y="500" width="24" height="24"/>
+<rect x="332" y="500" width="24" height="24"/>
+<rect x="236" y="524" width="24" height="24"/>
+<rect x="332" y="524" width="24" height="24"/>
+<rect x="236" y="548" width="24" height="24"/>
+<rect x="260" y="548" width="24" height="24"/>
+<rect x="284" y="548" width="24" height="24"/>
+<rect x="308" y="548" width="24" height="24"/>
+<rect x="404" y="452" width="24" height="24"/>
+<rect x="428" y="452" width="24" height="24"/>
+<rect x="452" y="452" width="24" height="24"/>
+<rect x="380" y="476" width="24" height="24"/>
+<rect x="476" y="476" width="24" height="24"/>
+<rect x="380" y="500" width="24" height="24"/>
+<rect x="404" y="500" width="24" height="24"/>
+<rect x="428" y="500" width="24" height="24"/>
+<rect x="452" y="500" width="24" height="24"/>
+<rect x="476" y="500" width="24" height="24"/>
+<rect x="380" y="524" width="24" height="24"/>
+<rect x="404" y="548" width="24" height="24"/>
+<rect x="428" y="548" width="24" height="24"/>
+<rect x="452" y="548" width="24" height="24"/>
+<rect x="476" y="548" width="24" height="24"/>
+<rect x="524" y="452" width="24" height="24"/>
+<rect x="620" y="452" width="24" height="24"/>
+<rect x="524" y="476" width="24" height="24"/>
+<rect x="620" y="476" width="24" height="24"/>
+<rect x="524" y="500" width="24" height="24"/>
+<rect x="620" y="500" width="24" height="24"/>
+<rect x="548" y="524" width="24" height="24"/>
+<rect x="596" y="524" width="24" height="24"/>
+<rect x="572" y="548" width="24" height="24"/>
+<rect x="668" y="548" width="24" height="24"/>
+<rect x="692" y="548" width="24" height="24"/>
+<rect x="716" y="548" width="24" height="24"/>
+<rect x="740" y="548" width="24" height="24"/>
+<rect x="764" y="548" width="24" height="24"/>
+</g>
+</svg>

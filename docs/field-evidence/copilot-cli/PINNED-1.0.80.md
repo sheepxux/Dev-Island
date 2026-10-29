@@ -25,7 +25,31 @@ successful denial. The successful repeat used separate key presses and verified
 the denied file was absent. A conversational approval question preceded the
 earlier attempt; that question is not the native file permission decision.
 
-Still pending for this pinned version: a dedicated approval timeout/cancel run,
-controlled API/network failure and recoverable classification, configuration
-removal with a clean follow-up request, and macOS integration acceptance. Local
-project probes remain installed for those follow-ups. No global hooks changed.
+## Follow-up: waiting, failure and cleanup
+
+At 18:02:11 UTC the native permission menu was left untouched. It remained open
+for about 85 seconds without a timeout or further hook event. Ctrl+C cancelled
+the request; the target file was absent. No Stop/ErrorOccurred followed the
+cancellation; /exit recorded SessionEnd at 18:03:41. This bounds the observation
+window; it does not prove there is no longer timeout.
+
+A process-local unreachable HTTP(S) proxy stopped GitHub token validation before
+a model turn. That startup failure did not produce ErrorOccurred. No stored
+credentials or system proxy settings were changed.
+
+A separate process used documented offline/BYOK mode with an unreachable
+loopback endpoint (port 1) and no API key. This is an induced transport failure,
+not evidence of a GitHub-hosted API failure. The real CLI emitted six
+ErrorOccurred records at 18:05:48–18:06:03; every one had `recoverable: true`,
+including the last attempt before the terminal reported retry exhaustion.
+Fields: error.message/name/stack, error_context, session_id, timestamp, cwd and
+hook_event_name. No `recoverable: false` was observed; do not infer false from
+the terminal's final error. /exit recorded SessionEnd.
+
+After closing both pinned sessions, their two project hook files were moved to
+private backups. A fresh 1.0.80 prompt-mode hi completed with exit 0 and no new
+timeline events (last record remained 18:06:50). No global hooks changed.
+
+Remaining limitations: recoverable=false and other notification categories have
+not been observed; network failure coverage is limited to the cases above.
+macOS integration acceptance remains with the owner.

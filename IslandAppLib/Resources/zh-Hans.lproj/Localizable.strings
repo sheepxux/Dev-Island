@@ -37,8 +37,8 @@
 "Checking…" = "正在检查…";
 "Checking agent configuration" = "正在检查 Agent 配置";
 "Checking configuration…" = "正在检查配置…";
-"Checking managed Hooks" = "正在检查受管 Hook";
-"Checking managed Hooks…" = "正在检查受管 Hook…";
+"Checking managed Hooks" = "正在检查托管 Hook";
+"Checking managed Hooks…" = "正在检查托管 Hook…";
 "Enabling…" = "正在启用…";
 "Disabling…" = "正在停用…";
 "%lld updates" = "%lld 个待更新";
@@ -98,7 +98,7 @@
 "Retry" = "重试";
 "Update" = "更新";
 "Add" = "添加";
-"Configured; confirm Hook trust in %@" = "已配置；请在 %@ 中确认 Hook 信任";
+"Configured; confirm Hook trust in %@" = "已配置；请在 %@ 中确认信任 Hook";
 "Checking %@ connection" = "正在检查 %@ 连接";
 "Update %@ connection" = "更新 %@ 连接";
 "Connect %@" = "连接 %@";
@@ -248,7 +248,7 @@
 "Check again" = "再次检查";
 "Update available" = "有可用更新";
 "Checking %@ Hook trust…" = "正在检查 %@ Hook 信任状态…";
-"Connected — Hook trust verified by %@" = "已连接 — %@ 已验证 Hook 信任";
+"Connected — Hook trust verified by %@" = "已连接 — %@ 已验证 Hook 信任状态";
 "Configured — review and trust the Dev Island entries in %@ %@" = "已配置 — 请在 %@ %@ 中审阅并信任 Dev Island 条目";
 "Preview connected — requests work in simulation; real CLI check pending" = "预览连接已启用 — 请求可在模拟中使用，仍待真实 CLI 验证";
 "Connected — requests can be handled in the island" = "已连接 — 可直接在灵动岛中处理请求";
@@ -473,7 +473,7 @@
 "In Codex %@, review and trust only the Dev Island entries. “Continue without trusting” keeps approvals outside the island." = "请在 Codex %@ 中审阅并仅信任 Dev Island 条目；选择“无信任继续”会让审批留在 Codex，不会进入灵动岛。";
 "Local setup still needs attention." = "本地设置仍需处理。";
 "%@ and %@" = "%@ 和 %@";
-"Checks local CLI versions, managed Hooks, Codex trust, and the private listener without changing configuration." = "检查本地 CLI 版本、受管 Hook、Codex 信任与私有监听器，不会更改配置。";
+"Checks local CLI versions, managed Hooks, Codex trust, and the private listener without changing configuration." = "检查本地 CLI 版本、托管 Hook、Codex 信任状态与私有监听器，不会更改配置。";
 "Preparing plan…" = "正在准备计划…";
 "Preparing Claude Code plan" = "正在准备 Claude Code 计划";
 

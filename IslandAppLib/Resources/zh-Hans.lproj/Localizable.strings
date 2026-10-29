@@ -178,7 +178,7 @@
 "Track sessions and handle tool approvals in the island" = "跟踪会话，并直接在灵动岛中处理工具审批";
 "Track Cursor agent lifecycle and results in the island" = "跟踪 Cursor Agent 的运行状态与结果";
 "Track lifecycle and permission attention in the island" = "跟踪运行状态，并提示需要审批的请求";
-"Preview lifecycle and handle documented tool approvals" = "预览运行状态，并处理已验证协议的工具审批";
+"Preview lifecycle and handle documented tool approvals" = "预览运行状态，并处理有文档说明的工具审批";
 "Preview lifecycle, approval and input attention" = "预览运行状态，并提示审批与输入请求";
 "Preview lifecycle and approval attention" = "预览运行状态，并提示审批请求";
 "Preview lifecycle and permission attention through a local plugin" = "通过本地插件预览运行状态与权限请求";
@@ -289,8 +289,8 @@
 "Request denied" = "已拒绝请求";
 "Plan approved" = "计划已批准";
 "Plan rejected" = "计划已拒绝";
-"Decision sent" = "决定已送达";
-"Answers sent" = "回答已送达";
+"Decision sent" = "决定已发送";
+"Answers sent" = "回答已发送";
 "Response sent to %@" = "响应已发送给 %@";
 "Select one or more" = "选择一个或多个";
 "This plan cannot be rendered safely." = "此计划无法安全呈现。";

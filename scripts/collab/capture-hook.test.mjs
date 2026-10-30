@@ -61,6 +61,33 @@ test('invalid agent and unwritable destination remain silent and exit zero', t =
   run(file, '{}');
 });
 
+test('dynamic map keys are hidden while known protocol fields remain readable', t => {
+  const root = fixture(t);
+  const input = JSON.stringify({ metadata: {
+    'C:/private/customer-project': { prompt: 'private prose' },
+    'private-key-two': { session_id: 'private-session' },
+  }, properties: { sessionID: 'private-session' }, type: 'permission.asked' });
+  run(root, input, ['opencode', 'permission.asked']);
+  const line = JSON.parse(readFileSync(join(root, 'opencode/timeline.jsonl'), 'utf8'));
+  assert.equal(line.event, 'permission.asked');
+  assert.equal(line.shape.type, 'permission.asked');
+  assert.equal(Object.keys(line.shape.metadata).length, 2);
+  assert.match(line.shape.properties.sessionID, /^<id [a-f0-9]{8}>$/);
+  assert.doesNotMatch(JSON.stringify(line), /private|customer-project/);
+});
+
+test('oversized stdin is drained without buffering or retaining the original payload', t => {
+  const root = fixture(t);
+  run(root, JSON.stringify({ prompt: 'sensitive'.repeat(1024 * 1024) }));
+  const line = JSON.parse(readFileSync(join(root, 'copilot/timeline.jsonl'), 'utf8'));
+  assert.equal(line.shape.capture_truncated, true);
+  const files = readdirSync(join(root, 'copilot/raw'));
+  const raw = readFileSync(join(root, 'copilot/raw', files[0]), 'utf8');
+  assert.ok(raw.length < 200);
+  assert.doesNotMatch(raw, /sensitive/);
+  assert.ok(JSON.parse(raw).observed_bytes > 8 * 1024 * 1024);
+});
+
 test('ES module import has no side effects; same-millisecond records are unique and do not mutate payload', t => {
   const root = fixture(t);
   const code = `

@@ -1,5 +1,32 @@
 # Windows capture preflight — 2026-10-28
 
+## Follow-up review — 2026-10-30
+
+Six Node tests now pass, including dynamic map-key redaction and oversized stdin.
+Unknown object keys become indexed key-length markers; only reviewed protocol
+field names remain visible. Shapes sample at most 128 fields per object, three
+array items and 32 nesting levels. This intentionally hides unreviewed schema
+extensions until their field names have been inspected locally.
+
+CLI stdin is limited to an 8 MiB buffered copy. Above that limit, the original
+payload is discarded and only a capture_truncated/observed_bytes/limit_bytes
+metadata record is stored, while input continues draining until EOF or the
+existing deadline. Its timeline bytes describe that metadata, not the discarded
+original. The imported plugin API does not apply this stdin buffering limit.
+
+**Filesystem permissions:** local-only storage is not an owner-only Windows
+access guarantee. Node's mode 0600 does not configure Windows ACLs; these files
+inherit the destination directory's ACL. This helper does not change existing
+directory ACLs. Use a directory restricted appropriately for the local machine
+and never share raw files. Here, "private" capture-root names describe intended
+use, not a verified ACL property or encryption.
+
+permission.asked is now a reviewed enum, based on real OpenCode evidence in
+PR #32. Previously collected evidence was manually checked before publication;
+it is not claimed to have been captured using these later changes.
+
+## Original preflight
+
 This is a capture-tool validation report, **not real CLI event evidence**.
 No connector is promoted from Preview by these results.
 

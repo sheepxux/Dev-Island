@@ -23,7 +23,8 @@ Project settings asked for edit/bash approval and disabled automatic updates.
 ## Contract differences
 
 The actual permission-request event is **permission.asked**, not
-permission.updated. No permission.updated was observed. Request schema:
+permission.updated. No permission.updated was observed. Observed file-request
+shape (not a complete schema; bash and other permissions were not sampled):
 
 ```text
 id: string
@@ -43,7 +44,8 @@ properties:
 ```
 
 permission.replied has properties.sessionID/requestID/reply. It follows the
-native decision. The capture was already present when the permission UI was
+OpenCode decision, including the headless auto-rejection. For the mini-TUI
+allow/deny cases it followed the native menu decision. The request capture was already present when the permission UI was
 inspected; polling cannot establish exact UI-frame latency.
 
 Despite registering `permission.ask`, **zero invocations** were captured for

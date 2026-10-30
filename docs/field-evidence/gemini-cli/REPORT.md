@@ -22,7 +22,7 @@ no approval decision. Approvals used the native default approval mode.
 | Mid-generation Ctrl+C | A long response was visibly streaming when interrupted. AfterAgent at 00:25:22 contained the partial response shape, stop_hook_active=false, and 15462 bytes. |
 | API failure | An intentionally nonexistent model returned ModelNotFoundError/404 and exit 1. SessionStart → BeforeAgent → SessionEnd; no AfterAgent. No key or network configuration changed. |
 | Concurrent projects | Project B e140aab9 remained at native approval while A 60b72845 completed hi and resume. Distinct IDs confirmed; not simultaneous model generation. |
-| Remove configuration | After /quit, removed only our hooks from both project settings, preserving other keys and private backups. Fresh pinned-version hi returned exit 0; timeline stayed at 47 total private records. |
+| Remove configuration | After /quit, removed only our hooks from both project settings, preserving other keys and private backups. Fresh pinned-version hi returned exit 0; the separate local capture store stayed at 47 records. The committed export contains 30 pinned-version events; the other 17 local records belong to excluded earlier/version-unverified sessions. The unchanged local count is an operator observation, not independently provable from this filtered export. |
 
 ## Connector questions
 

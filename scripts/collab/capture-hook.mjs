@@ -30,7 +30,7 @@ const enumValues = new Set([
   "Stop", "StopFailure", "ErrorOccurred", "TurnStarted", "Interrupt",
   "ToolPermission", "permission_prompt", "idle_prompt",
   "session.created", "session.updated", "session.deleted", "session.status",
-  "session.idle", "session.error", "permission.updated", "permission.replied",
+  "session.idle", "session.error", "permission.asked", "permission.updated", "permission.replied",
   "permission.ask", "busy", "idle", "retry", "allow", "deny", "ask",
   "approved", "denied", "cancelled", "canceled", "success", "error",
 ]);

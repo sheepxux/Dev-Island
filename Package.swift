@@ -39,11 +39,11 @@ let package = Package(
         // Dev Island uses this spec-compliant parser only to validate the
         // complete document before and after byte-preserving managed-block
         // edits; parser changes are part of the config-safety boundary.
-        .package(url: "https://github.com/mattt/swift-toml.git", exact: "2.0.0"),
+        .package(url: "https://github.com/mattt/swift-toml.git", exact: "2.1.0"),
         // Exact pin: Sparkle is part of the app's update trust boundary.
         // Version changes must be reviewed together with the framework-copy,
         // signing, appcast-generation, and security-invariant checks.
-        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.9.6"),
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.10.1"),
     ],
     targets: [
         // ── C 侧：前端 App ────────────────────────────────────────────
